@@ -19,3 +19,9 @@
 - **Finding.** [VERIFIED by execution] The Euclidean → Hyperbolic Retraining Protocol PDF (7 pp., SHA-256 `4bcca0fa…d89472`, filed byte-identical in workstream) passed math verification (Lorentz consistency, distance ordering 0.1106 vs 0.7584 on probes, Poincaré validity incl. near-boundary, preservation 0.80×0.98=0.784, 68 h reserve arithmetic) and compatibility checks (C05 claim boundary, C06.13 ladder, C09 proof-artifact rules satisfied on anti-gaming clauses).
 - **Evidence.** [VERIFIED by file presence + recomputation log] `Euclidean-Hyperbolic-Retraining-Protocol.pdf`, `Pre-Registration-A40-v1.md`, `A40-PressureTest-2026-10-27.md`, claims CC-015…CC-020 in `Claims_Register.md`.
 - **Consequence.** [INFERRED] The design is ready for condition-closure (C-A40-01…C-A40-08) and hash filing before any A40 run. It does not establish that hyperbolic retraining works or beats any baseline.
+
+## 2026-10-27 — A40 v1.1 closes all eight conditions (design success, not experimental)
+
+- **Finding.** [VERIFIED by file presence] `Pre-Registration-A40-v1.1.md` (canonical hash `ac991e6e…a125c`) supersedes v1 per ADR-19 with thresholds FROZEN and all conditions closed by construction: disjoint/blinded G1 split + overlap audit (C-01), exact quad construction ≥120/≥4 depths (C-02), M rubric + 0.50 floor + void-if-M_A<0.05 (C-03), N≥150/domain + power plan + Wilson reporting (C-04), B0 arm + B−B0 decision rule (C-05), 4 named domains + hardware pins + `hardware` log field + macro-average (C-06), two-process repeatability (C-07), replication + removal ablation (C-08).
+- **Evidence.** [VERIFIED] v1.1 hash filed as FILED/CANONICAL in `Claims_Register.md`; v1 marked SUPERSEDED, PRESERVED; condition-closure map in v1.1.
+- **Consequence.** [INFERRED] A40 is RUN-READY on filing — next step is the frozen run manifest, not more prereg text. F-A40-01…05 retired as blockers; they persist as history. No experimental claim is established.
