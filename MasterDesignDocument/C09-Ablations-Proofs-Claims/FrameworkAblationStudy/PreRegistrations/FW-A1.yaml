@@ -1,0 +1,214 @@
+# Pre-Registration: FW-A1 — Hyperbolic KV Kernels (C++ vs Rust MLX)
+#
+# This file MUST be hashed and the hash filed BEFORE any ablation run.
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-A1.hash
+#
+# C09 Ablation Framework — Framework Selection Study
+# Status: DRAFT → will be PREREGISTERED on hash filing
+
+ablation_id: "FW-A1"
+title: "Hyperbolic KV Kernels: C++ (clang, SIMD, mmap) vs Rust (MLX Metal, portable_simd)"
+hypothesis: |
+  C++ kernel implementation achieves ≥1.5x throughput at equal peak memory vs Rust MLX Metal
+  for VP-tree + Lorentz ops + Picard reduction on H³×T²/Γ₁₂ (Whitehead 12-vertex).
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  primary:
+    name: "MacBook Pro M3 Max"
+    cpu: "Apple M3 Max (16-core)"
+    gpu: "Apple M3 Max (40-core GPU)"
+    memory_gb: 36
+    memory_bandwidth_gbps: 400
+    os: "macOS 15.0 (Sequoia)"
+    rustc: "1.82.0 (stable)"
+    clang: "17.0.0"
+    mlx_version: "0.21.0"
+  replica:
+    name: "Mac Studio M2 Ultra"
+    cpu: "Apple M2 Ultra (24-core)"
+    gpu: "Apple M2 Ultra (76-core GPU)"
+    memory_gb: 96
+    memory_bandwidth_gbps: 800
+    os: "macOS 15.0 (Sequoia)"
+    rustc: "1.82.0 (stable)"
+    clang: "17.0.0"
+    mlx_version: "0.21.0"
+  optional:
+    - name: "Linux + NVIDIA H100"
+      note: "For CUDA portability check only; not required for primary claim"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "hyperbolic_kv_bench"
+  description: |
+    Mixed insert/knn_search/evict/picard_reduce workload on H³×T² manifold
+    with Whitehead 12-vertex structure (Picard fundamental domain Γ₁₂).
+  vectors: 1_000_000
+  dimensions:
+    h3: 3 # Lorentz coordinates (x0, x1, x2, x3) with x0 > 0
+    t2: 2 # Toroidal phase (θ_f, θ_s)
+  fixed_point: "Q32.31 with i128 accumulator for Minkowski products"
+  operations:
+    - name: "insert"
+      count: 1_000_000
+      description: "Insert vectors into VP-tree with geometric eviction (max x0 unpinned)"
+    - name: "knn_search"
+      count: 100_000
+      k: 32
+      description: "k-nearest neighbors in H³ using VP-tree with hyperbolic distance"
+    - name: "evict"
+      count: 100_000
+      description: "Geometric eviction: victim = argmax x0 (unpinned)"
+    - name: "picard_reduce"
+      count: 10_000
+      description: "Picard fundamental domain reduction for x0 > 8 (PSL(2, Z[i]))"
+  iterations: 1000
+  warmup_iterations: 100
+  seed: 42 # Deterministic VP-tree construction order
+
+# ── Baseline (C++) ────────────────────────────────────────────────────────
+baseline:
+  language: "C++20"
+  compiler: "clang-17"
+  flags: "-O3 -march=native -ffast-math -flto=thin"
+  simd:
+    backend: "Hand-rolled NEON/AVX2 intrinsics"
+    operations:
+      ["Minkowski dot", "arcosh", "VP-tree distance", "Picard matrix ops"]
+  memory:
+    allocator: "jemalloc (via tikv-jemallocator)"
+    ipc: "mmap + atomic refcount (Q32.31 fixed-offset layout)"
+    cache: "VP-tree nodes in mmap region, KV slices adjacent"
+  kernel_fusion:
+    enabled: true
+    rules: |
+      1. Lorentz boost + VP-tree search → single kernel
+      2. TwisterAttention + output projection → single kernel
+      3. n-gram draft + verification → speculative kernel pair
+    verification: "Algebraic simplifier (C12.3) proves fusion correctness"
+  build:
+    system: "CMake 3.28 + Ninja"
+    time_target_seconds: 120
+  binary_size_target_mb: 10
+
+# ── Treatment (Rust MLX) ──────────────────────────────────────────────────
+treatment:
+  language: "Rust 1.82.0"
+  metal_backend: "mlx 0.21.0 + metal 0.28.0"
+  simd:
+    backend: "std::simd (portable_simd) + mlx::ops"
+    operations:
+      ["Minkowski dot via mlx", "arcosh via mlx", "VP-tree via custom"]
+  memory:
+    allocator: "GlobalAlloc (jemallocator)"
+    ipc: "mmap via memmap2 + atomic refcount"
+    cache: "VP-tree nodes in mmap, KV slices via mlx arrays"
+  kernel_fusion:
+    enabled: true
+    mechanism: "MLX graph capture + lazy evaluation (mx.eval)"
+    verification: "MLX graph optimization pass + manual inspection"
+  build:
+    system: "Cargo + build.rs for mlx-sys"
+    time_target_seconds: 180
+  binary_size_target_mb: 15
+
+# ── Judge (Pass/Fail Predicate) ───────────────────────────────────────────
+judge:
+  primary:
+    metric: "throughput_ratio"
+    threshold: ">= 1.5"
+    description: "C++ throughput (M vec/s) / Rust throughput ≥ 1.5"
+  memory:
+    metric: "peak_memory_ratio"
+    threshold: "<= 1.05"
+    description: "C++ peak memory (GB) / Rust peak memory ≤ 1.05"
+  secondary:
+    - metric: "instruction_count_ratio"
+      threshold: "<= 0.8"
+      description: "C++ instructions / Rust instructions ≤ 0.8 (perf stat)"
+    - metric: "compile_time_ratio"
+      threshold: "<= 1.5"
+      description: "C++ build time / Rust build time ≤ 1.5"
+    - metric: "kernel_fusion_verification"
+      threshold: "PASS"
+      description: "Algebraic simplifier verifies all 3 fusion rules"
+
+# ── Effect Size Plan ──────────────────────────────────────────────────────
+effect_size_plan:
+  throughput:
+    type: "Cohen's d"
+    method: "bootstrap"
+    samples: 10000
+    meaningful_threshold: 0.8
+  peak_memory:
+    type: "percent_change"
+    method: "percentile_bootstrap"
+    samples: 10000
+    meaningful_threshold: 15
+  instruction_count:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.25
+  compile_time:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.5
+
+# ── Statistical Design ────────────────────────────────────────────────────
+statistical_design:
+  alpha: 0.05
+  power: 0.80
+  effect_size_assumed: 0.8 # Cohen's d
+  alpha_spending:
+    method: "Lan-DeMets"
+    rho: 2 # Conservative
+  interim_analyses: 4 # At 25%, 50%, 75%, 100%
+  futility_threshold: 0.2 # Conditional power
+  sample_size_per_group: 30 # Determined by power analysis
+
+# ── Null Handling (Pre-Stated) ────────────────────────────────────────────
+null_handling:
+  if_treatment_wins_or_ties:
+    interpretation: "C++ not necessary for hyperbolic kernels; mark Rust as viable alternative"
+    action: "FW-A1 result → OPTIONAL for C++; proceed to FW-A4 (inference engine) with Rust kernels"
+    design_decision: "Consolidate to Rust for kernels; eliminate C++ boundary"
+  if_inconclusive:
+    interpretation: "Insufficient evidence; neither language proven necessary"
+    action: "Extend sample size to 60/group; test hybrid (Rust caller + C++ kernels via cxx-rs)"
+    design_decision: "Defer framework lock; run FW-A1-retry with larger N"
+  if_baseline_wins_but_small_effect:
+    interpretation: "C++ wins but effect < threshold (d < 0.8)"
+    action: "Record as INFERRED; necessity ablation (FW-NEC-KERNELS) required"
+    design_decision: "Keep C++ for kernels; necessity test before lock"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# TO BE FILLED BEFORE RUN:
+pre_registration_hash: "sha256:0d15384aab39a3d728a3453d1869326da653a9341d9e7e8d82abb9ae6edac5b9"
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md"
+  traceability:
+    - "C05 Atlas/Hyperbolic KV (kernels)"
+    - "C12 Server Inference Engine (kernel logic)"
+    - "C08 Framework Requirements (NF1, NF4, NF5)"
+    - "C09 Ablations (A1, A31-A35)"
+  gates:
+    - "Gate 3 (Kernel Qualification)"
+    - "Gate 4 (Integration)"
+    - "Gate 8 (Performance)"
+
+# ── Required Artifacts (Post-Run) ─────────────────────────────────────────
+required_artifacts:
+  - "ablation_results/FW-A1/raw_data.json"
+  - "ablation_results/FW-A1/analysis.ipynb"
+  - "ablation_results/FW-A1/claim.json"
+  - "ablation_results/FW-A1/failure.json" # If FAIL
+  - "ablation_results/FW-A1/perf_stat.txt" # perf stat output
+  - "ablation_results/FW-A1/build_log.txt"
+  - "ablation_results/FW-A1/receipt.json" # Merkle receipt

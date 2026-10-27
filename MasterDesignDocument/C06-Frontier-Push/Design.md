@@ -506,3 +506,30 @@ recover(pointer, mode):
 - [OPEN] File shared A36/A37 registration text before either Muse item may run.
 - [OPEN] File dedicated registrations for C06.3, C06.4, C06.8, C06.9, C06.10, and C06.11.
 - [OPEN] Before any A38 run, the A38 run manifest must freeze the exact final-query prompt, strict-JSON response schema, baseline truncation order, and the scenario × field expected-value table referenced by the preregistration.
+
+## C06.21 Reasoning Distillation: Global Map → Carved Swarm Map (methodology sidecar)
+
+A methodology specification is filed in the sidecar `ReasoningDistillationMapCarving.md` (this folder). It formalizes the distillation operator `Φ : M_G × T → M_T` and its dissolution inverse `Φ^{-1}`, the task-to-basin necessity table/scoring/filter (§5), map weight `λ_map ∈ [0, 0.35]` (§6), and active-inference swarm resource accounting (§7).
+
+**Ablation owner:** A39, filed as `Pre-Registration-A39-v1.md` (sidecar); canonical hash `sha256:4e8695fa4b0f115444b7b188881d7a8ee07f9fb387648aeaad664919a44e7fd6`. Claim ownership: CC-010 … CC-014 in `Claims_Register.md`. A39 tests the map-carving assignment A/B (non-tuned subagent without map vs. map-assigned) and explicitly does _not_ re-test A1, A4/A21, or A38.
+
+## C06.22 CUDA / Rust / NVIDIA framework consideration (appended 2026-10-27, C03.3 — no earlier C06 text rewritten)
+
+**Status.** [PROPOSED] This section CONSIDERS the Framework Ablation Study (C09, now tracked for git) and the CUDA/Rust NVIDIA doc in context. It does not certify any CUDA claim, and it does not rewrite C06.1–C06.21.
+
+**What was considered.** [VERIFIED on disk] `FrameworkAblationStudy/PreRegistrations/FW-A1-CUDA.yaml` (219 lines): Hyperbolic KV Kernels, CUDA Rust cutile-rs (Tile track) vs C++ (hand-rolled SIMD, mmap), on Linux + NVIDIA GPU (H100 sm_90 / B200 sm_100 / RTX 5090 sm_120, CUDA 12.x/13.3, rustc stable 1.89+). Judges preregistered: throughput_ratio ≥ 0.95, peak_memory_ratio ≤ 1.05, compile_time_ratio ≤ 1.5, plus Tile-IR autotune correctness across sm_90/100/120, partition-safety verification, cuda-oxide SIMT escape-hatch function, and shared-runtime interop. Null handling preregistered: parity → C++ OPTIONAL on NVIDIA, consolidate to CUDA Rust for NVIDIA kernels, Metal for Apple Silicon (separate ablation FW-A3).
+
+**CUDA Rust research basis.** [REPORTED, 2026-10-27 research pull] cutile-rs is the Tile track — the microkernel unit is the TILE, not the thread; Tile IR JIT compiles to cubin per arch. cuda-oxide is the SIMT escape hatch — early alpha, custom rustc backend (MIR → Pliron → LLVM → PTX), shared memory still unsafe, used only for warp/shared/TMA/cluster control (here: the Picard reduction). NVIDIA's rule as recorded: Tile first, SIMT only where Tile cannot reach.
+
+**What FW-A1-CUDA actually has today — and what it does not.** [VERIFIED, independent audit 2026-10-27, Mac] Rust harness in `ablation_benchmarks/cuda_rust/` compiles, 16/16 tests PASS, cargo check 0 errors but 48 bin warnings (not warning-clean); scaled CPU-fallback smoke reproduced in the same ballpark (insert ~3.49 M vec/s, k-NN 0.008, Picard ~15k K ops/s). C++ scaffold in `ablation_benchmarks/metal_cpp/` is PROPOSED only, unbuilt — nvcc and cmake are absent on the Mac, no ablation_results directory exists in either tree. [VERIFIED in code] BM-01 Picard gap: `verify_idempotence` returns false by design, the test asserts the gap, the simplified back-map discards the w fiber, and full SL(2,Z[i]) action is blocked on C05 GAP-C05-01. [VERIFIED] Ledger entries S-FW-A1-CUDA-01/02 are present in `FrameworkAblationStudy/Successes.md`. **NOT certified:** no CUDA code has executed (cutile/cuda-oxide paths are cfg-gated, the stub build is CPU fallback only), no throughput_ratio or peak_memory_ratio exists yet, no FW-A1-CUDA claim is filed. The Linux + NVIDIA/H100 full run is still required. CUDA does NOT run on Apple Silicon — the Mac can only ever give the CPU-fallback smoke, never the CUDA judge.
+
+**Consequence for C06.** The C06 microkernel story (see `MicrokernelBuildAndCertification-Spec.md`, and PATCH-03 Kuramoto mean-field reduction, now tracked) must be read as a TWO-SUBSTRATE story, not a Metal-only story:
+
+1. Apple Silicon substrate: Rust + Metal, safe SIMD, MLX — the FW-A1 baseline treatment, already the local lane.
+2. NVIDIA substrate: Rust + cutile-rs Tile kernels, cuda-oxide SIMT only for the Picard warp reduction — the FW-A1-CUDA treatment, PROPOSED, awaiting Linux+H100.
+
+A C06 microkernel claim that does not name its substrate is incomplete. Any future C06 kernel claim must state: substrate (Metal vs NVIDIA Tile vs NVIDIA SIMT), arch (sm_90/100/120 where NVIDIA), judge (FW-A1-CUDA ratios where NVIDIA), and whether the number came from a CPU fallback, a scaffold, or executed GPU code. Fallback smoke numbers must never be presented as CUDA numbers.
+
+**Open, blocking C06's NVIDIA leg.** [OPEN] Linux+NVIDIA/H100 run of CUDA Rust + C++ baseline, then throughput_ratio / peak_memory_ratio filing. [OPEN] BM-01 Picard reducer rewrite (full SL(2,Z[i]) action, w fiber preserved) — until then the Picard correctness gate fails by design. [OPEN] FW-A6 / FW-A10 / FW-A12 scaffolds — not answered, not built, not part of this section. [OPEN] The A39 hole (see C06.21 / A39 run records) is unchanged by this section: A39 efficacy is still not supported, and no CUDA result rescues a scoping claim without the attribution linker (v1.1 precondition 6).
+
+**What this section does not do.** It does not promote FW-A1-CUDA from PROPOSED to certified, does not claim CUDA Rust parity with C++, does not import the CPU-fallback smoke as a CUDA result, and does not alter any preregistration hash. FW-A1-CUDA.yaml, FW-A1.hash, and the C09 ledger entries stay exactly as filed.

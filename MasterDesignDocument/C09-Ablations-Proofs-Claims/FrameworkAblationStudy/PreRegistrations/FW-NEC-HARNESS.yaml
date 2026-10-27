@@ -1,0 +1,131 @@
+# Pre-Registration: FW-NEC-HARNESS — Necessity Test: Rust Agent Harness
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-NEC-HARNESS.hash
+# C09 Ablation Framework — Necessity Testing (C13.1 / C09.5)
+
+ablation_id: "FW-NEC-HARNESS"
+title: "Necessity Test: Rust Agent Harness (Rust vs best alternative from FW-A6/A7)"
+hypothesis: |
+  Rust agent harness (traits, async-trait, typestate session types) is NECESSARY.
+  Removal (replacement with Zig/Go) causes regression in compile-time guarantees
+  (allowlist enforcement, session type verification) and/or tail latency.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  primary:
+    name: "MacBook Pro M3 Max"
+    memory_gb: 36
+  replica:
+    name: "Mac Studio M2 Ultra"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "agent_harness_bench"
+  description: "Same as FW-A6 workload"
+  lanes: 8
+  tools_per_lane: 20
+  handoffs: 1000
+  iterations: 100
+  seed: 42
+
+# ── Comparison ────────────────────────────────────────────────────────────
+comparison:
+  baseline:
+    name: "Rust harness (FW-A6 baseline)"
+    language: "Rust 1.82 + tokio + async-trait + typestate"
+    guarantees:
+      - "Compile-time tool allowlist enforcement"
+      - "Compile-time session type handoff verification"
+      - "Zero-GC tail latency"
+    source: "FW-A6 baseline implementation"
+  treatment:
+    name: "Best alternative from FW-A6 (Zig) / FW-A7 (Go)"
+    selection: |
+      Winner of FW-A6 (Zig comptime) vs FW-A7 (Go interfaces)
+      Criteria:
+        1. Compile-time allowlist enforcement (PASS/FAIL)
+        2. Compile-time session type verification (PASS/FAIL)
+        3. Tail latency (p99) regression
+    language: "TBD from FW-A6/FW-A7 results"
+
+# ── Bayesian Design ───────────────────────────────────────────────────────
+bayesian_design:
+  prior:
+    h0_probability: 0.5
+    h1_probability: 0.5
+  likelihood:
+    model: "Multivariate: throughput + tail_latency + guarantee_loss (binary)"
+    guarantee_loss_weight: 2.0  # Compile-time guarantees heavily weighted
+  decision_rule:
+    bf01_threshold_required: 10
+    bf01_threshold_optional: 0.1
+    bf01_inconclusive: "0.1 ≤ BF₀₁ ≤ 10"
+  guarantee_loss_penalty: |
+    If treatment FAILS compile-time allowlist → log-likelihood penalty
+    If treatment FAILS compile-time session types → log-likelihood penalty
+    These are NOT recoverable by throughput parity
+
+# ── Judge (Bayesian Decision) ─────────────────────────────────────────────
+judge:
+  primary:
+    metric: "bayes_factor_bf01"
+    threshold_required: "> 10"
+    threshold_optional: "< 0.1"
+    description: "BF₀₁ evidence for Rust harness necessity"
+  secondary:
+    - metric: "compile_time_allowlist_enforcement"
+      threshold: "PASS"
+      description: "Treatment MUST enforce allowlist at compile-time"
+    - metric: "compile_time_session_types"
+      threshold: "PASS"
+      description: "Treatment MUST verify session types at compile-time"
+    - metric: "tail_latency_p99_regression_percent"
+      threshold: "<= 50"
+      description: "Tail latency regression ≤ 50% acceptable if guarantees kept"
+
+# ── Null Handling ─────────────────────────────────────────────────────────
+null_handling:
+  if_bf01_gt_10:
+    interpretation: "STRONG EVIDENCE: Rust harness NECESSARY (compile-time guarantees)"
+    action: "Claim C09-FW-NEC-HARNESS → VERIFIED; Rust REQUIRED for harness"
+    design_decision: "Lock Rust for agent harness"
+  if_bf01_lt_0_1:
+    interpretation: "STRONG EVIDENCE: Rust harness NOT NECESSARY"
+    action: "Claim C09-FW-NEC-HARNESS → VERIFIED; Rust OPTIONAL for harness"
+    design_decision: "Consolidate to best alternative (Zig if compile-time PASS)"
+  if_inconclusive:
+    interpretation: "INSUFFICIENT EVIDENCE"
+    action: "Claim C09-FW-NEC-HARNESS → INFERRED; more data needed"
+    design_decision: "Defer framework lock"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md (Rule FW-4, FW-11)"
+  traceability:
+    - "C07 Memory/State Management"
+    - "C14 Assembly/Build"
+    - "C25 Hole Substrate"
+    - "C27 Workflows"
+    - "C28 Skills/Hooks"
+    - "C29 Tools"
+    - "C30 Lanes"
+    - "C34 Personas"
+    - "C13 Testing Necessity"
+  gates:
+    - "Gate 4 (Integration - necessity)"
+    - "Gate 6 (Chaos/Recovery)"
+    - "Gate 7 (Compliance)"
+
+required_artifacts:
+  - "ablation_results/FW-NEC-HARNESS/raw_data.json"
+  - "ablation_results/FW-NEC-HARNESS/analysis.ipynb"
+  - "ablation_results/FW-NEC-HARNESS/claim.json"
+  - "ablation_results/FW-NEC-HARNESS/bayes_factor_calculation.json"
+  - "ablation_results/FW-NEC-HARNESS/receipt.json"

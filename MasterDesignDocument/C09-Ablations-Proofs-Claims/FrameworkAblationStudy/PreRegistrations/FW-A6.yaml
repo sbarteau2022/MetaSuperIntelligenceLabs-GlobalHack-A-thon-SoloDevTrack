@@ -1,0 +1,221 @@
+# Pre-Registration: FW-A6 — Agent Harness (Rust vs Zig)
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-A6.hash
+# C09 Ablation Framework — Framework Selection Study
+
+ablation_id: "FW-A6"
+title: "Agent Harness: Rust (traits, async-trait, typestate) vs Zig (comptime interfaces, async)"
+hypothesis: |
+  Rust trait-based agent harness achieves ≤2x lane spawn latency and ≤1.5x tool dispatch overhead
+  vs Zig comptime interfaces, with compile-time allowlist enforcement and session-type handoff verification.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  primary:
+    name: "MacBook Pro M3 Max"
+    cpu: "Apple M3 Max (16-core)"
+    memory_gb: 36
+    os: "macOS 15.0 (Sequoia)"
+    rustc: "1.82.0 (stable)"
+    zig: "0.13.0"
+  replica:
+    name: "Mac Studio M2 Ultra"
+    cpu: "Apple M2 Ultra (24-core)"
+    memory_gb: 96
+    os: "macOS 15.0 (Sequoia)"
+    rustc: "1.82.0 (stable)"
+    zig: "0.13.0"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "agent_harness_bench"
+  description: |
+    Full agent harness benchmark: lane spawn, tool registration, tool dispatch,
+    hook execution, session-type handoffs, hole creation/diff/merge, brigade fiber projection.
+  lanes: 8
+  tools_per_lane: 20
+  hooks_per_lane: 10
+  handoffs_per_run: 1000
+  holes_per_run: 100
+  brigade_fibers: 8
+  iterations: 100
+  warmup: 10
+  seed: 42
+  lane_config:
+    - id: "builder"
+      tools: 20
+      hooks: 10
+      brigade_radius: 0.5
+    - id: "contributor"
+      tools: 15
+      hooks: 8
+      brigade_radius: 0.3
+    - id: "reviewer"
+      tools: 10
+      hooks: 5
+      brigade_radius: 0.2
+    - id: "external"
+      tools: 0
+      hooks: 2
+      brigade_radius: 0.0
+
+# ── Baseline (Rust) ───────────────────────────────────────────────────────
+baseline:
+  language: "Rust 1.82.0"
+  async_runtime: "tokio 1.38"
+  dispatch:
+    mechanism: "dyn Trait + async-trait"
+    tool_registry: "HashMap<ToolId, Box<dyn Tool>>"
+    hook_registry: "Vec<Box<dyn Hook>>"
+  session_types:
+    mechanism: "Typestate pattern (PhantomData<State>)"
+    verification: "Compile-time via type system"
+  allowlist_enforcement:
+    mechanism: "Const generics + trait bounds on LaneConfig"
+    verification: "Compile-time (missing tool = compile error)"
+  brigade:
+    mechanism: "Weight fiber projection via parallel transport (C06.12)"
+    verification: "Invariant: ⊗ᵢ P_{γᵢ}(W|Uᵢ) ≅ W"
+  memory:
+    allocator: "jemallocator"
+    pools: "Per-lane arena for tool/hook allocations"
+  build:
+    system: "Cargo"
+    time_target_seconds: 60
+  binary_size_target_mb: 50
+
+# ── Treatment (Zig) ───────────────────────────────────────────────────────
+treatment:
+  language: "Zig 0.13.0"
+  async_runtime: "Zig std async (event loop)"
+  dispatch:
+    mechanism: "Comptime interfaces (@typeInfo + switch)"
+    tool_registry: "Comptime-generated dispatch table"
+    hook_registry: "Comptime-generated hook chain"
+  session_types:
+    mechanism: "Comptime protocol verification"
+    verification: "Comptime (protocol mismatch = compile error)"
+  allowlist_enforcement:
+    mechanism: "Comptime enum + switch on lane config"
+    verification: "Comptime (missing tool = compile error)"
+  brigade:
+    mechanism: "Comptime fiber projection (experimental)"
+    verification: "Manual (Zig comptime limited for this)"
+  memory:
+    allocator: "Zig GeneralPurposeAllocator"
+    pools: "Per-lane arena (manual)"
+  build:
+    system: "Zig build.zig"
+    time_target_seconds: 45
+  binary_size_target_mb: 30
+
+# ── Judge (Pass/Fail Predicate) ───────────────────────────────────────────
+judge:
+  primary:
+    - metric: "lane_spawn_latency_ratio"
+      threshold: "<= 2.0"
+      description: "Rust lane spawn (µs) / Zig lane spawn (µs) ≤ 2.0"
+    - metric: "tool_dispatch_overhead_ratio"
+      threshold: "<= 1.5"
+      description: "Rust tool dispatch (ns) / Zig tool dispatch (ns) ≤ 1.5"
+  secondary:
+    - metric: "compile_time_allowlist_enforcement"
+      threshold: "PASS_BOTH"
+      description: "Both languages enforce allowlist at compile-time (0 runtime cost)"
+    - metric: "handoff_protocol_verification"
+      threshold: "PASS_BOTH"
+      description: "Session-type handoffs verified at compile-time in both"
+    - metric: "binary_size_ratio"
+      threshold: "<= 1.2"
+      description: "Rust binary / Zig binary ≤ 1.2"
+    - metric: "hook_execution_overhead_ratio"
+      threshold: "<= 1.5"
+      description: "Rust hook chain / Zig hook chain ≤ 1.5"
+    - metric: "hole_lifecycle_latency_ratio"
+      threshold: "<= 2.0"
+      description: "Rust hole create/diff/merge / Zig equivalent ≤ 2.0"
+
+# ── Effect Size Plan ──────────────────────────────────────────────────────
+effect_size_plan:
+  lane_spawn_latency:
+    type: "Cohen's d"
+    method: "bootstrap"
+    samples: 10000
+    meaningful_threshold: 0.5
+  tool_dispatch:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.3
+  binary_size:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.2
+  hook_execution:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.3
+  hole_lifecycle:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.5
+
+# ── Statistical Design ────────────────────────────────────────────────────
+statistical_design:
+  alpha: 0.05
+  power: 0.80
+  effect_size_assumed: 0.5 # Cohen's d
+  alpha_spending:
+    method: "Lan-DeMets"
+    rho: 2
+  interim_analyses: 4
+  futility_threshold: 0.2
+  sample_size_per_group: 50
+
+# ── Null Handling (Pre-Stated) ────────────────────────────────────────────
+null_handling:
+  if_treatment_wins_or_ties:
+    interpretation: "Zig viable for agent harness; Rust not necessary"
+    action: "FW-A6 result → OPTIONAL for Rust; proceed to FW-A14 (full stack) with Zig harness"
+    design_decision: "Consolidate to Zig for harness; eliminate Rust boundary"
+  if_inconclusive:
+    interpretation: "Insufficient evidence; Zig comptime async maturity unproven"
+    action: "Extend sample size; test hybrid (Rust orchestration + Zig hot paths via FFI)"
+    design_decision: "Defer framework lock; run FW-A6-retry"
+  if_baseline_wins_clear:
+    interpretation: "Rust trait system + async-trait necessary for harness ergonomics"
+    action: "Record as VERIFIED necessity; Rust REQUIRED for agent harness"
+    design_decision: "Lock Rust for agent harness; Zig relegated to kernels (if FW-A2 passes)"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+pre_registration_hash: "sha256:a184506628c760d0055ab78057cec1d9953a10bc8e4d5d277d172a804b5b261d"
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md"
+  traceability:
+    - "C07 Memory/State Management"
+    - "C14 Assembly/Build"
+    - "C25 Hole Substrate"
+    - "C27 Workflows/Task Graph"
+    - "C28 Skill Registry/Hooks"
+    - "C29 Tool Registry/Code Intel"
+    - "C30 Multi-Agent Lanes"
+    - "C34 Agent Lanes/Personas"
+    - "C08 Framework Requirements (F1-F11, NF1-NF8)"
+  gates:
+    - "Gate 3 (Agent Harness Qualification)"
+    - "Gate 4 (Integration)"
+    - "Gate 6 (Chaos/Recovery)"
+    - "Gate 7 (Compliance)"
+
+required_artifacts:
+  - "ablation_results/FW-A6/raw_data.json"
+  - "ablation_results/FW-A6/analysis.ipynb"
+  - "ablation_results/FW-A6/claim.json"
+  - "ablation_results/FW-A6/failure.json"
+  - "ablation_results/FW-A6/build_log.txt"
+  - "ablation_results/FW-A6/receipt.json"

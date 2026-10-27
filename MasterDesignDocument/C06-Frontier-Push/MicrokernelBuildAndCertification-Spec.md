@@ -1,91 +1,198 @@
-# Microkernel Build & Certification — Cross-Platform (macOS / Linux / Windows) + Cloudflare
+# Microkernel Build & Certification Spec — Kuramoto/TPE Evolution (PATCH-03 line)
 
-**Date.** 2026-10-27. **Author.** Muse. **Status.** PROPOSED build + cert spec. **Parent.** HyperbolicMicrokernelPlugin-Spec (Level-1 fused / Level-2 fanned), TorodialPhasePositionalEncoder-Spec, TwisterPhPE MATH FREEZE, VaultMapDreamstateFormalization.
-**Scope.** How every microkernel builds, proves itself, and ships on four targets: Apple Silicon macOS (Metal + AMX), Linux (CUDA-capable + CPU), Windows (CPU + DirectML-optional), Cloudflare Workers (WASM, CPU-only, no GPU). The steward's rule: **no platform dependence to function; at runtime, probe the system and use only kernels that work there.**
-**Standards.** Documentation-standards (labels); research-evidence; C03.3 (no vault file modified; this spec constrains future code).
+Date: 2026-10-27. Machine: M5 Pro, macOS 27.0.1, Rust 1.99.0, Metal 32023.921.
+Steward directive: build on the laptop (not Zed sandbox), verify each kernel against the Rust oracle, iterate until the math stops giving gains.
 
----
+## 1. What was built (vault paths, monster-hybrid-server repo)
 
-## 0. Decision (math, not preference — same rule as the level split)
+| Artifact | Path in vault | Status 2026-10-27 |
+|---|---|---|
+| GPU kernel (mean-field, fused K) | `core_lm/src/kuramoto_meanfield.metal` | CERTIFIED (gate green 6/6) |
+| CPU oracle (all-pairs, CORDIC) | `core_lm/src/lock.rs::kuramoto_step_cpu` | reference, unchanged |
+| CPU mean-field (Euler reduction) | `core_lm/src/geometry/torus.rs::kuramoto_resultant_step` | PASS (<=1 LSB vs all-pairs, n=4..1024) |
+| Gate test | `core_lm/tests/patch03_metal_verify.rs` | GREEN: circular <= 4 LSB + sectors bit-exact @ n=16/64/256 |
+| CPU bench | `core_lm/benches/kuramoto_opt.rs` | mean-field 14.9x–6627x vs all-pairs (n=16–2560) |
+| GPU bench | `core_lm/benches/kuramoto_gpu.rs` | 0.0x @n=16 (dispatch-bound) → 243x @n=2560 vs all-pairs |
+| Retired reference | `core_lm/src/sin_lut_4096.inc` | retained for reference only; kernel takes no LUT dependency |
 
-Two candidate strategies: (A) single portable implementation everywhere (pure Rust, no accelerators); (B) per-platform accelerated kernels behind a runtime capability probe with automatic fallback. Decided by the same dependency analysis used for the level split:
+## 2. Measured numbers (VERIFIED this pass, no projection)
 
-- The vault ALREADY implements (B) in miniature: `ops.rs::matvec` → AMX on macOS (`#[cfg(target_os)]` + runtime row/col guard) → 8-way unrolled SIMD fallback; `lock.rs::kuramoto_step_cpu` labeled explicitly "(for testing; Metal does the real work)"; Metal kernels carry CPU oracles (`metal_quant.rs` test compares Metal output vs dequantized CPU reference, PASS < 1e-4). The codebase's revealed preference — measured, not asserted — is oracle + accelerator + harness.
-- (A) discards the measured 9361×-class advantage (toroidal O(D) state vs O(N·D) KV) that the benchmark report documents, and the AMX dispatch the tree already paid for. Uniformity would be preference for symmetry, not math: the workload is data-parallel reductions + fixed-point trig, which is exactly what accelerators exist for.
-- **Frozen: (B).** One Rust oracle per kernel (ALWAYS compiled, every platform — the determinism anchor); zero or more accelerator backends per kernel (Metal / CUDA / DirectML / WASM-SIMD / AMX / NEON / AVX2 / scalar); a runtime probe selects at load; the harness certifies every (kernel × backend) pair independently.
+### 2a. CPU oracle chain (release bench, `kuramoto_opt`)
 
-## 1. Capability probe (the steward's "gauge what system they are on")
-
-At startup (and on backend failure — see §4), exactly one probe runs per accelerator class. Probe ≠ benchmark: it answers "does this work here," not "how fast."
-
-| Class | Probe | Pass criterion | On fail |
+| n | all-pairs | mean-field | speedup |
 |---|---|---|---|
-| Metal (macOS Apple Silicon) | Compile embedded MSL → run `q4_gemv` 16×64 golden → compare vs oracle | max abs err < 1e-4 (existing gate) | Disable Metal backends; log receipt |
-| AMX (macOS) | `accelerate_matvec_f32` on 64×64 golden vs scalar | bit-exact (same instruction path, deterministic) | Scalar fallback (already in `ops.rs`) |
-| CUDA (Linux/Windows+NVIDIA) | `cudaDriverGetVersion` + PTX JIT of kernel → golden vs oracle | abs/rel err < backend tolerance (preregistered per kernel) | Disable CUDA backends |
-| DirectML (Windows, optional) | DML device create + dispatch golden | Same tolerance gate | CPU backends only |
-| WASM-SIMD (Cloudflare) | `wasm-feature-detect-simd` at load | Feature-present | Scalar WASM (always present) |
-| CPU SIMD (all) | `std::is_x86_feature_detected!` / arm `neon` / `std::arch` | Dispatch widest available | Scalar unrolled (always present) |
+| 16 | 6.0 us | 0.4 us | 14.9x |
+| 64 | 100.8 us | 0.6 us | 167.9x |
+| 256 | 1565.2 us | 2.4 us | 666.0x |
+| 1024 | 25093.9 us | 9.2 us | 2712.9x |
+| 2560 | 154416.2 us | 23.3 us | 6627.3x |
 
-Probe results are receipted (`backend_probe_receipt`: platform, backend, golden hash, pass/fail, timestamp) and pinned into the build receipt (ADR-23). A backend that was never probed PASS on THIS machine never dispatches — no hopeful dispatch, ever.
+### 2b. GPU kernel (release bench, `kuramoto_gpu`, 200 dispatches, incl. dispatch)
 
-## 2. Backend matrix (what builds where)
+| n | gpu/step | cpu mean-field | cpu all-pairs | gpu vs all-pairs |
+|---|---|---|---|---|
+| 16 | 213.1 us | 0.2 us | 5.8 us | 0.0x (dispatch-bound) |
+| 64 | 248.8 us | 0.7 us | 99.5 us | 0.4x |
+| 256 | 264.8 us | 2.5 us | 1572.6 us | 5.9x |
+| 1024 | 396.6 us | 9.8 us | 24882.7 us | 62.7x |
+| 2560 | 653.8 us | 23.2 us | 159113.3 us | 243.4x |
 
-| Kernel (Level) | Rust oracle (all) | Metal (macOS) | CUDA (Linux/Win) | CPU-SIMD (all) | WASM (CF) |
-|---|---|---|---|---|---|
-| `tpe.evolve` (Fused L1) | `torus.rs::evolve_vector` — REQUIRED | `kuramoto_tile.metal` EXTENDED (unwrapped accounting + radius/rapidity; current kernel covers the step only) | NEW PTX (from same MSL logic via shared codegen — §6) | NEON/AVX2 fixed-point Kuramoto loop | Scalar (CF path; bounded n) |
-| `tpe.coherence` (Fanned L2) | `map_phase_coherence` + radial variant — REQUIRED | NEW MSL (pairwise, embarrassingly parallel) | NEW PTX (same codegen) | SIMD cos kernel | Scalar |
-| `fterm.geo` (L2) | `hyp_distance` / inner product — REQUIRED | NEW MSL (arcosh + cosh-dist) | NEW PTX | SIMD | Scalar |
-| `fterm.wigner` (L2) | `transport_frame_hop` math — REQUIRED | CPU-first (SO(3) small-matrix; Metal iff profiled hot) | CPU-first | CPU | CPU |
-| `fterm.epistemic/token` (L2) | scalar formulas — REQUIRED | CPU (never GPU — control-flow-free but launch-dominated) | CPU | CPU | CPU |
-| `fterm.compliance` (L2) | `OverlapPolicyMatrix` — REQUIRED | **CPU ONLY, all platforms** (policy is branchy audit logic; GPU placement forbidden by design) | CPU | CPU | CPU |
-| `attn.linear` (L2) | Katharopoulos recurrent state — REQUIRED | NEW MSL (recurrent scan) | NEW PTX | SIMD scan | Scalar scan |
-| `gemv.q{4,5,6}` (L2) | `metal_quant.rs` CPU ref — REQUIRED | EXISTING (`quant_gemv*.metal`, verified < 1e-4) | NEW PTX (quantized GEMV is the highest-value CUDA port) | AMX/NEON/AVX2 | Scalar (quantized) |
+Reading: the GPU kernel loses below n=256 (dispatch ~200+ us dominates a sub-us CPU step) and wins above it, reaching 243x at n=2560. The crossover is dispatch, not math — batch K steps per launch (fused path, k_steps) to amortize.
 
-"Fused" note: Level-1 `tpe.evolve` stays ONE kernel per platform (the math forbids splitting — spec §0). Cross-platform parity means each backend implements the WHOLE evolution, verified against the same oracle.
+### 2c. Gate (debug test, `patch03_metal_verify`, 6 consecutive greens 2026-10-27)
 
-## 3. Single-source codegen (how "same microkernel" stays same across Metal/CUDA)
+- Circular divergence <= 4 LSB @ n=16/64/256 (hists: [5,7,3,1] / [18,32,12,1,1] / [113,94,43,5,1]).
+- 12-sector lock invariants bit-exact 16/16, 64/64, 256/256.
 
-New MSL is authored once in a restricted subset (no Metal-only intrinsics in shared paths; `thread_position_in_grid` ↔ `blockIdx*blockDim+threadIdx` mapping table frozen in the spec appendix). CUDA PTX is generated from the same logical source, not hand-rewritten: shared algorithm text + per-target emitter. The emitter itself is tested (emit-then-verify: PTX output for golden kernels must match checked-in reference PTX byte-for-byte, else the emitter changed behavior). This is what makes "different implementations of the same microkernel" certifiable rather than hopeful: N implementations, ONE oracle, pairwise receipted.
+## 3. Proven irreducibles (the math stopped giving gains HERE — 5 rounds)
 
-## 4. Runtime selection + degradation (no platform dependence to function)
+1. **Mantissa theorem**: fp32 has a 24-bit mantissa; phase is 31 bits. ANY float trig path has a ~64–128 LSB floor vs the integer oracle. Retired the `float(theta)` cast path.
+2. **Compiler contraction**: Kahan/Neumaier/Knuth-2Sum all compiled to bit-identical naive (V1==V2==V3) WITH contraction. `#pragma clang fp contract(off)` (file scope) restores them.
+3. **LUT quantization**: 12-bit LUT = ~12,000 LSB residual. Retired; cospi/sinpi path (terms <= 0.5ulp) dominates it.
+4. **fp32-term floor**: per-term trig <= 0.5ulp is the irreducible residual (Metal has no double). Sum over n terms + chain maps to <= 4 LSB circular at n<=256. No accumulation scheme beats it (fixed-point accumulation PROVEN exact — the floor is the terms).
+5. **Metric artifact**: linear wrapping_sub reported 4294967299 @n=256 on wrapped state; circular truth is 4. Gate uses circular distance + sector agreement.
 
-```
-select_backend(kernel):
-  for b in [preferred ordered by probe]:
-    if probe_receipt[b].pass and b.enabled_in_manifest: return b
-  return scalar_oracle  // ALWAYS exists, ALWAYS certified (it IS the spec)
-on_backend_failure(b, kernel, error):
-  quarantine (b, kernel) for session; emit receipt; fall back to next backend
-  if all backends quarantined: scalar_oracle (function preserved, speed degraded)
-```
+## 4. Technique ledger (each VERIFIED by probe before adoption)
 
-Degradation is a RECEIPTED event, not a silent slowdown: every fallback emits `backend_degraded(kernel, from, to, reason)`. The agent-facing contract never changes (same inputs, same outputs within tolerance); only latency changes. Kill-switch analogue: `--force-backend=scalar` reproduces any run deterministically on any machine (C03.5 replay across heterogeneous hardware — the cross-hardware replication story for C09.4).
+- hi/lo integer-exact phase split (`>>12` arithmetic + `lo = t-(hi<<12)`; the `(int)(t<<20)>>20` formulation was WRONG for 9/16 thetas — sign bug, caught by probe).
+- cospi/sinpi with EXACT argument (hp = hi/524288, |hi|<=2^20) + ang_lo first-order correction.
+- Fixed-point Q32 accumulation + split-K (re-quant at O(1) scale) + Newton-refined reciprocal.
+- Dekker-2Prod tail (e_hi == 0 PROVEN — tail exact, residual is term trig).
+- rint (half-even) final conversion.
+- sincos argument-order trap documented (returns sin, writes cos — burned twice).
 
-## 5. Cloudflare deployment (CF = fourth target, most constrained)
+## 5. Open (NOT certified — next in goal order)
 
-- CF Workers runs WASM: scalar + WASM-SIMD backends ONLY. No Metal/CUDA/AMX. The oracle IS the production path there (with SIMD where probed).
-- Model implication: CF serves the orchestration + retrieval + carve path (stateless, cacheable); heavy kernels (GEMV, evolution at scale) stay on Mac/Linux/Windows endpoints. The plugin manifest marks each backend `edge_eligible: bool` — ineligible backends are compile-excluded from the WASM build, not runtime-disabled (smaller binary, no dead code).
-- Download story (Mac/Linux/Windows): one installer per OS ships ALL backends for that OS compiled in (Metal+AMX macOS; CUDA+AVX2 Linux/Windows; scalar everywhere). First launch probes, pins the working set, receipt goes to the local ledger. No network needed post-install (local-only core loop, C01 constraint honored).
+- `tpe.evolve` full (unwrapped+radius/rapidity) and `tpe.coherence` GPU kernels.
+- Cross-platform backend probing (Metal/CUDA/W shoreshim + CPU fallback) per cross-platform design.
+- Fused-K amortization bench (k_steps >> 1) to move the GPU crossover below n=256.
+- A39 harness (agent-level capability claim) — still preregistered, untouched by this pass.
 
-## 6. Certification ladder per (kernel × backend)
+## 6. Corrections appended (not silently rewritten)
 
-1. Oracle exists, deterministic, seeded (REQUIRED for all).
-2. Golden test: backend output vs oracle within preregistered tolerance (1e-4 class for GEMV; per-kernel tables for TPE/attention — TPE spec §5 gates 11–15).
-3. Fuzz: 10k randomized inputs, zero violations (NaN, non-finite, OOB write).
-4. Cross-backend agreement: every enabled backend pair agrees within 2× tolerance on goldens (catches emitter divergence).
-5. Perf gate: backend must beat scalar-oracle on latency at equal tolerance on the fixed workload, else ships DISABLED for that backend (the steward's falsifier, per-backend).
-6. Receipt: `(kernel, backend, oracle_hash, msl/ptx_hash, tolerance, golden_hash, probe_receipt, date)` → build receipt (ADR-23) + claims register.
+- 2026-10-27: gate tolerance history 2 -> 3 -> 4 LSB. Each change followed a PROVEN floor (never relaxed to pass — relaxed to DOCUMENT, with the sector-agreement assertion added as the load-bearing check).
+- 2026-10-27: emulator (Python fp32 replica) DIVERGED from GPU by 53M LSB on one run — replica bug, not kernel bug. Debug-the-kernel-directly rule adopted (dump intermediates via probe kernels, never trust replicas).
+- 2026-10-27: `>>19` vs `>>20` factor-2 phase error; `(int)(t<<20)>>20` sign bug (9/16 thetas); sincos arg-order (2x); `double` in Metal (unsupported); `long long` in Metal (unsupported). All caught by compile or probe, none shipped.
 
-## 7. Register entries (append — owning agent; none applied here)
+## 7. Next-kernel analysis (2026-10-27, steward goal order: tpe.evolve full, tpe.coherence)
 
-1. Preregister per-kernel tolerance tables + golden corpora (C09.9) before any new MSL ships.
-2. Extend `kuramoto_tile.metal` to full `tpe.evolve` (unwrapped + radius/rapidity) OR split kernel with receipted boundary — decide by profiling, record the decision.
-3. Shared MSL→PTX emitter + checked-in reference PTX for golden kernels.
-4. `edge_eligible` manifest flags + WASM build that excludes ineligible backends at compile time.
-5. First-launch probe + pin flow for Mac/Linux/Windows installers; `--force-backend=scalar` replay flag.
-6. Per-(kernel×backend) receipts in the build receipt; degraded-dispatch telemetry (counts only).
+Per-pair op census of `TorPhaseEncoder::evolve` (torus.rs:102): ~15 Q32_31 fixed-point ops
+(integer-exact on Metal `long`, including the 256-entry fixed LUT-interp sin — portable
+as a tiny Metal constant array) + ~10 f64 ops (2x sqrt, div, from_f64 for the amplitude
+channel). The amplitude channel is the ONLY non-bit-exact part (Metal has no double;
+f32 sqrt/div ~1ulp each, random-walk over pairs — softmax-irrelevant but not bitwise).
 
-## What was NOT checked
+Decision (dependency analysis, no preference): build the TPE phase kernel FIRST with
+bit-exact phases (fixed-point path, LUT ported) + f32 amplitude, certified phase-bitwise
++ amplitude-tolerance — BEFORE the coherence weights (25 f64 transcendentals/pair,
+certified relatively 1e-6, attention-irrelevant precision). Rationale: phases are the
+chain everything else hangs off (psi -> phi -> shell -> coherence); an inexact phase
+kernel poisons all downstream certs, while coherence can NEVER be bitwise (f64 ln_1p /
+powf) so it must be last. Cross-platform shim + fused-K amortization ride along.
 
-Full `metal/mod.rs` (869 lines) audit; `glimmer_kernels.metal` numerics; `optiq.rs` dequant paths; WASM build existence; DirectML API surface; NVIDIA driver-version matrix; installer/packaging work (out of scope — C10/C14 own it).
+## 8. TPE phase kernel (2026-10-27 — CERTIFIED, gate green 5/5 + compile-clean)
+
+Kernel: `core_lm/src/tpe_phase.metal::tpe_evolve_fused` — GPU port of
+`TorPhaseEncoder::evolve` (torus.rs:102). Gate: `core_lm/tests/tpe_phase_verify.rs`.
+
+Measured (VERIFIED, M5 Pro, this pass):
+
+| config | dtf | dts | dpsi | damp |
+|---|---|---|---|---|
+| n=16 k=1 | 0 | 0 | 0 | 7.5e-9 |
+| n=16 k=8 | 0 | 0 | 0 | 6.0e-8 |
+| n=64 k=4 | 0 | 0 | 0 | 3.0e-8 |
+| n=256 k=2 | 0 | 0 | 0 | 1.5e-8 |
+
+- Phases BITWISE (all-integer Q32.31 path incl. 256-entry fixed LUT-interp port).
+- Amplitude within 6e-8 (f64 CPU vs f32 GPU fold; gate tolerance 1e-5, >150x headroom).
+- Range proof: every product fits i64 (k*sin <= 2^60, frac*delta <= 2^53, psi via
+  shift); plain arithmetic == saturating for runs < 1e6 steps (14 orders headroom).
+
+Correction appended (not silently rewritten): first bring-up diverged 114762320 LSB
+because the port used TPE_LUT_STEP = 52666253 (a hand-division error; correct
+TWO_PI/256 = 13492913325/256 = 52706692). The error ratio dtf/dts = 2.0 exactly
+pointed at the sin path; a Metal-vs-Rust idx probe isolated it to the STEP constant
+(GPU idx 0 vs CPU idx 255 on negative diffs). Fixed, then phases went bitwise first try.
+Lesson: port EVERY constant by evaluating the CPU expression, never by hand arithmetic.
+
+## 9. Fusion round (2026-10-27 — TPE CERTIFIED fused; Kuramoto frozen-resultant DOCUMENTED)
+
+TPE step-major fusion (`tpe_phase.metal`, drives step-major `df[s*n+id]`):
+single-launch k-step trajectories, gate green with phases BITWISE at
+n=16/k=8, n=64/k=4, n=256/k=2 (damp <= 6e-8 throughout). TRUE fusion was free
+here — no cross-thread dep in the step (dependency analysis, not preference).
+
+Kuramoto fused loop: MEASURED 48M LSB circular @k=8 (sectors 13/16). Root cause:
+threads re-read step-0 global theta every step (no mid-dispatch visibility), so
+k_steps>1 = K repeats of the frozen step-0 resultant (explicit Euler with frozen
+coupling — a valid but DIFFERENT integrator, uncertified vs the oracle).
+Documented on the kernel; k_steps=1 path stays CERTIFIED. TRUE fusion needs a
+threadgroup-barrier v2 (resultant is global) — queued behind the coherence kernel
+in dependency order (coherence weights are per-pair like TPE drives: no cross-thread
+dep, so the coherence kernel fuses the same free way TPE did).
+
+Correction appended: the TPE test initially looped k_steps=1 launches (which never
+exercised the kernel's k-loop); the single-fused-launch form now covers it.
+
+## 10. Backend probe (2026-10-27 — CERTIFIED, gate green + warm-dispatch bound)
+
+Module: `core_lm/src/backend.rs` (wired as `pub mod backend`). Gate:
+`core_lm/tests/backend_probe.rs`. `detect()` returns Metal on M-series macOS,
+CudaShim on Linux, WasmShim on wasm32, Cpu otherwise — explicit, receipt-logged,
+never silent (`assert_no_silent_fallback` fails the run on a quiet CPU fallback).
+
+Measured (VERIFIED, M5 Pro): cold call 217–235ms (MSL JIT compile), warm call
+447–660us (dispatch + readback). The 189ms compile-per-call was caught by the
+receipt log itself and fixed with a `OnceLock<(Device, ComputePipelineState)>`
+cache — same persistent-resource lesson as the metal_quant MTLBuffer cache.
+Warm bound asserted in-gate (< 5000us).
+
+Correction appended: the two-call cache test initially compared the oracle
+(one step from theta0) against the TWICE-stepped probe state (failed at 4 LSB
+bound by construction, not by kernel error). Isolated call #2 to a fresh clone.
+
+## 11. Coherence kernel (2026-10-27 — CERTIFIED d<=128, gate green 3/3)
+
+Kernel: `core_lm/src/tpe_coherence.metal::tpe_coherence_fused` — port of
+`TorPhaseEncoder::evolve_vector` (torus.rs:168). Grid: one thread per token,
+sequential pair fold (matches the consumer `step_and_readout`, which calls it
+per token). Gate: `core_lm/tests/tpe_coherence_verify.rs`.
+
+Measured (VERIFIED, M5 Pro):
+
+| config | traj rel err (worst-lane) | bound |
+|---|---|---|
+| d=64 batch=4 | 2.33e-5 | 1e-4 |
+| d=128 batch=8 | 7.35e-5 | 1e-4 |
+
+- Rapidity/cumrot ~1e-7 (pure accumulates). h3/raw carry the trig floor.
+- Certified scope d<=128: the f32-ha trig floor grows with d (ha O(5*d/2));
+  d=256 measured 1.82e-4 — needs integer-pre-reduction as a separate cert.
+
+Corrections appended (the honest log of a wrong turn):
+1. h3 double-normalization: kernel normalized raw[0..2] by their own norm AFTER
+   the CPU had already normalized them (rel ~1.0). Probe proved it: gpu raw[0..2]
+   == cpu h3 to 4 decimals. Removed the second normalization.
+2. Integer-pre-reduction + Cody-Waite detour: built a full Dekker/Cody-Waite ha
+   path (reduction PROVEN dcos<=6e-6) while the live divergence never moved —
+   proof the bug was downstream (#1), not trig. Reverted to naive f32 ha with
+   the floor documented. Lesson: move only what the probe convicts.
+3. Reciprocal typo (0.2575117758 vs 0.2575181127) + ab=5520 pathological frac
+   (.49996, 1 ulp from .5): real issues found during the detour, fixed with
+   remainder-guarded quotient — but moot after the revert; recorded for the
+   d=256 cert when it comes.
+4. s2 = sh/(2*ch2) division-by-near-zero: real hazard, fixed with direct
+   sincos(ha*0.5) (ha O(1) post-reduction) — kept, since the naive path uses it.
+
+Research ingest (same pass, steward-ordered RESEARCH FIRST):
+- `papers/2511.17826` (TBIK): tree-invariant reductions across TP sizes; the
+  threadgroup-barrier v2 for Kuramoto fusion IS a TBIK intra-device tree.
+  Column-vs-row-parallel analysis dictates where determinism gates belong.
+- `papers/2602.00182` (EigenAI): three deterministic-kernel invariants (§6.5)
+  cited in all three gate headers; receipt schema (arch/seed/req/out hashes)
+  implemented in `backend.rs`. Manifest lines appended (no duplicates).
+- CUDA-Rust brief: tile = portable unit; Metal is the local verification of
+  tile semantics (can't execute PTX/cubin on Mac); registry pattern
+  (name→impl per substrate) is the next layer after the dispatcher; toolchain
+  disagreement flagged, nothing pinned.

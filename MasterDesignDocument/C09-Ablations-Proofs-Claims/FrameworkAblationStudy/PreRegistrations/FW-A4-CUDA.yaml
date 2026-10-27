@@ -1,0 +1,197 @@
+# Pre-Registration: FW-A4-CUDA — Inference Engine ACFT (CUDA Rust vs C++)
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-A4-CUDA.hash
+# C09 Ablation Framework — Framework Selection Study
+
+ablation_id: "FW-A4-CUDA"
+title: "Inference Engine ACFT: CUDA Rust (cutile-rs Tile + cuda-oxide SIMT) vs C++ (coroutines, folly)"
+hypothesis: |
+  CUDA Rust ACFT inference engine achieves target decode tok/s + TTFT at ≤1.1x memory
+  vs C++ coroutine-based implementation, using cutile-rs Tile kernels for dense ops
+  and cuda-oxide SIMT for sparse/warp ops, with shared runtime interop.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  primary:
+    name: "Linux + NVIDIA GPU (H100 / B200 / RTX 5090)"
+    gpu: "NVIDIA H100 (sm_90) / B200 (sm_100) / RTX 5090 (sm_120)"
+    cuda: "12.x / 13.3"
+    rustc: "stable 1.89+ (cutile) + nightly (cuda-oxide)"
+  replica:
+    name: "Linux + NVIDIA GPU (different arch)"
+  mac_validation:
+    name: "MacBook Pro M3 Max (Metal validation)"
+    note: "Design on Mac; deploy to NVIDIA; cannot run CUDA locally"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "acft_inference_bench_cuda"
+  description: |
+    Full ACFT inference path on NVIDIA: TwisterAttention + hyperbolic retrieval +
+    n-gram draft + verification + prefix cache + scheduler.
+    Dense tensor ops (GEMM, attention) → cutile-rs Tile kernels.
+    Sparse/warp ops (hyperbolic VP-tree, Picard) → cuda-oxide SIMT kernels.
+  model: "Qwen3.8-27B-Uncensored-OrcaRouter-4bit (safetensors)"
+  context_len: 131072
+  batch_size: 16
+  prompts: 100
+  prompt_len: 10000
+  gen_len: 512
+  acft_enabled: true
+  hyperbolic_cache: true
+  iterations: 50
+  warmup: 5
+  seed: 42
+
+# ── Baseline (C++) ────────────────────────────────────────────────────────
+baseline:
+  language: "C++20"
+  async_runtime: "folly coro + folly::Executor"
+  inference:
+    engine: "ACFT (port of Rust implementation)"
+    attention: "TwisterAttention (port)"
+    scheduler: "ILP scheduler (port) + folly::CPUThreadPoolExecutor"
+    prefix_cache: "Radix prefix cache (port) + hyperbolic coords"
+    draft: "n-gram lookahead trie (port)"
+  kernels:
+    backend: "Hand-rolled PTX + cuBLAS + CUTLASS for Tensor Cores"
+    dispatch: "Direct function calls"
+  memory:
+    allocator: "cudaMallocAsync"
+    kv_cache: "Nested hyperbolic KV (H³×T²) in device memory"
+    budget_gb: 27.5
+  cancellation:
+    mechanism: "folly::CancellationToken + RAII guards"
+  build:
+    system: "CMake 3.28 + Ninja + nvcc"
+    time_target_seconds: 120
+  binary_size_target_mb: 40
+
+# ── Treatment (CUDA Rust) ─────────────────────────────────────────────────
+treatment:
+  language: "Rust (cutile-rs Tile + cuda-oxide SIMT)"
+  async_runtime: "tokio 1.38 + cuda-async (shared stream)"
+  inference:
+    engine: "ACFT (Rust implementation from FW-A4 baseline)"
+    attention:
+      dense: "cutile-rs Tile kernels (GEMM, fused attention tiles)"
+      sparse: "cuda-oxide SIMT kernels (VP-tree knn, hyperbolic distance)"
+    scheduler: "ILP scheduler (Rust) + cuda-async stream"
+    prefix_cache: "Radix prefix cache (Rust) + hyperbolic coords"
+    draft: "n-gram lookahead trie (Rust)"
+  kernels:
+    dense_backend: "cutile-rs (Tile IR JIT → cubin per arch)"
+    sparse_backend: "cuda-oxide (AOT PTX via cargo oxide)"
+    dispatch: "Shared runtime: cuda-bindings + cuda-core + cuda-async (same stream)"
+    interop: "cutile Tensors ↔ cuda-oxide DisjointSlice on same buffer"
+  memory:
+    allocator: "cuda-core allocators"
+    kv_cache: "Nested hyperbolic KV (H³×T²) in device memory"
+    budget_gb: 27.5
+  cancellation:
+    mechanism: "tokio cancellation tokens + cuda-async stream drop"
+  build:
+    system: "cargo + cargo oxide"
+    time_target_seconds: 180
+  binary_size_target_mb: 50
+
+# ── Judge (Pass/Fail Predicate) ───────────────────────────────────────────
+judge:
+  primary:
+    - metric: "decode_tok_s_ratio"
+      threshold: ">= 0.95"
+      description: "CUDA Rust decode tok/s / C++ decode tok/s ≥ 0.95 (parity)"
+    - metric: "ttft_ms_ratio"
+      threshold: "<= 1.05"
+      description: "CUDA Rust TTFT / C++ TTFT ≤ 1.05"
+    - metric: "peak_memory_ratio"
+      threshold: "<= 1.05"
+      description: "CUDA Rust peak memory / C++ peak memory ≤ 1.05"
+  secondary:
+    - metric: "tile_simt_interop_correctness"
+      threshold: "PASS"
+      description: "cutile Tile + cuda-oxide SIMT kernels on same stream, shared buffers"
+    - metric: "cancellation_latency_ms"
+      threshold: "<= 10"
+      description: "Request cancellation → stop < 10ms"
+    - metric: "backpressure_correctness"
+      threshold: "PASS"
+      description: "Admission control + memory backpressure works (no OOM)"
+    - metric: "autotune_per_arch"
+      threshold: "PASS"
+      description: "Tile IR JIT autotune produces optimal cubin per sm_90/sm_100/sm_120"
+
+# ── Effect Size Plan ──────────────────────────────────────────────────────
+effect_size_plan:
+  decode_throughput:
+    type: "Cohen's d"
+    method: "bootstrap"
+    samples: 10000
+    meaningful_threshold: 0.3
+  ttft:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.1
+  peak_memory:
+    type: "percent_change"
+    method: "percentile_bootstrap"
+    samples: 10000
+    meaningful_threshold: 5
+
+# ── Statistical Design ────────────────────────────────────────────────────
+statistical_design:
+  alpha: 0.05
+  power: 0.80
+  effect_size_assumed: 0.3
+  alpha_spending:
+    method: "Lan-DeMets"
+    rho: 2
+  interim_analyses: 4
+  futility_threshold: 0.2
+  sample_size_per_group: 30
+
+# ── Null Handling (Pre-Stated) ────────────────────────────────────────────
+null_handling:
+  if_treatment_wins_or_ties:
+    interpretation: "CUDA Rust achieves ACFT parity; C++ not necessary for NVIDIA inference"
+    action: "FW-A4-CUDA result → OPTIONAL for C++ on NVIDIA; CUDA Rust viable for inference"
+    design_decision: "Consolidate to CUDA Rust for NVIDIA inference; Rust+Metal for Apple Silicon"
+  if_inconclusive:
+    interpretation: "CUDA Rust early-stage; tokio + cutile + cuda-oxide integration immature"
+    action: "Record as INFERRED; test hybrid (Rust orchestration + C++ kernels via FFI)"
+    design_decision: "Defer framework lock; run FW-A4-CUDA-retry"
+  if_baseline_wins_clear:
+    interpretation: "C++ coroutines + folly + hand-rolled PTX necessary for NVIDIA inference"
+    action: "Record as VERIFIED necessity; C++ REQUIRED for NVIDIA inference"
+    design_decision: "Lock C++ for NVIDIA inference; CUDA Rust for future re-evaluation"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md"
+  traceability:
+    - "C12 Server Inference Engine (C12.1-C12.8)"
+    - "C05 Atlas/Hyperbolic KV (kernel integration)"
+    - "C08 Framework Requirements (NF1, NF4, NF9-11)"
+    - "C09 Ablations (A1, A4, A31-A35)"
+    - "CUDA Rust research: cutile-rs + cuda-oxide shared runtime"
+  gates:
+    - "Gate 3 (Inference Engine Qualification - NVIDIA)"
+    - "Gate 4 (Integration)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-A4-CUDA/raw_data.json"
+  - "ablation_results/FW-A4-CUDA/analysis.ipynb"
+  - "ablation_results/FW-A4-CUDA/claim.json"
+  - "ablation_results/FW-A4-CUDA/failure.json"
+  - "ablation_results/FW-A4-CUDA/throughput_qwen36_cuda.json"
+  - "ablation_results/FW-A4-CUDA/ttft_qwen36_cuda.json"
+  - "ablation_results/FW-A4-CUDA/build_log.txt"
+  - "ablation_results/FW-A4-CUDA/receipt.json"

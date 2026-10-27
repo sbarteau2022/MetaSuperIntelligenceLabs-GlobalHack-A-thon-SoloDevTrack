@@ -1,0 +1,82 @@
+{
+  "alignment": {
+    "decision": "B_throwaway_preingest",
+    "signed": "2026-10-27",
+    "signed_on_instruction": "Stewart, 2026-10-27 14:01 CDT: 'MAKE THE BEST DECISION FOR SIGN A/B'",
+    "rationale": [
+      "A (vault trajectories) requires trajectory extraction + verification that has not been done; signing A would commit the run to an unbuilt extraction step.",
+      "Using the persistent vault for both arms risks cross-task leakage: warm-up already crystallized task trajectories into the map in prior runs, which is the contamination that made the last run uninformative.",
+      "B gives both arms an identical starting map, so the comparison is paired and clean, and the step was already agreed as allowed, with deletion post-proof.",
+      "B is replicable: a second machine copies the same throwaway map hash, whereas A would require reproducing a mutable persistent vault state."
+    ],
+    "options_considered": {
+      "A_vault_trajectories": "Corpus prompts are trajectories already in the persistent vault (live_brain / global_active_mind). PRO: tasks are vault-grounded by construction. CON: requires trajectory extraction + verification that has not been done; using the persistent vault for both arms risks cross-task leakage (warm-up crystallizes task trajectories into the persistent vault).",
+      "B_throwaway_preingest_RECOMMENDED": "Both arms start from the SAME throwaway map copy. Task trajectories (or the corpus prompts' continuations, if available) are pre-ingested/distilled into that copy only, identically for both arms. The throwaway copy is deleted post-proof. PRO: paired comparison is clean (identical starting map), persistent vault is never contaminated, and the step was already agreed as allowed. CON: pre-ingest must be identical for both arms and recorded (map hash before/after pre-ingest); any difference invalidates pairing."
+    },
+    "fallback_status": "RECOMMENDED_NOT_SIGNED: fallback_counts_as_fail, awaiting Stewart sign-off"
+  },
+  "amendment_id": "CS-ABLATION-01-AMEND-A39",
+  "amends": "PRE-REGISTRATION-CS-ABLATION-01.json (filed 2026-10-26, hash dbdad04a9b55c8ca98c0e24c4de31a72c04513eecf2c13f3911e50cc5a4d9b00)",
+  "cold_start_and_replication": {
+    "cold_start": "Fresh copy of the throwaway map, no warm-up (--no-warmup), no prior session history, crystallize_to_parent=false, vault/map hash recorded before and after the run. Warm-up executions, if any are ever used for debugging, carry warm_up=true and are excluded from every metric.",
+    "post_proof_deletion": "If alignment option B is chosen, the throwaway map copy is deleted after the proof run (record hash + deletion timestamp in the report). The persistent vault is never deleted by this procedure.",
+    "second_machine": "Replication package = frozen corpus + hash, runner binary hash, preregistration amendment hash, throwaway map hash before/after, run script (replicate_a39.sh), and the full run file. The second machine is NOT named in this file because no second machine was verified from the Mac in this session (Tailscale not installed on the Mac; the only other copy found is reference-monster-hybrid-server-2026-10-26 on the same Mac, which is not a second machine). Replication is claimed only when a named second machine produces a run file with the same corpus hash and the same judge version."
+  },
+  "corpus": {
+    "candidate": "corpus_a39_candidate_v1.json, 48 tasks (16 per domain), sha256 1add5f405ba6d168070fbbf32195b9eb3556a28974f3df0610d823160822aedd",
+    "old_corpus": "corpus_manifest.json (6 tasks) is NOT used for A39 and is NOT overwritten by these files. The running 1:37pm control run uses it; leave it alone until that run finishes.",
+    "promotion": "probe_corpus.py: counted iff >=1 arm passes the preregistered judge on coherent decoded text in a probe on a vault copy. Counted set must be >=40 to run A39; otherwise expand and re-probe. The frozen corpus (corpus_a39_frozen_v1.json + sha256) is the only corpus the A39 run may use.",
+    "status": "CANDIDATE_NOT_FROZEN"
+  },
+  "fallback_policy": {
+    "code_fact": "SubAgentTaskReceipt.fallback_to_parent is already set in continuous_active_mind.rs (~line 2791-2805): on 'superposition fail-closed' only, the carved execution is abandoned and the task re-executes on the parent/base map. The old runner ignored this flag and judged the fallback output as if it were a carved output.",
+    "decision": "PENDING_STEWART_SIGNOFF",
+    "options": {
+      "fallback_counts_as_fail_RECOMMENDED": "A fallback task can never count as a treatment pass, even if its decoded text passes the judge. Primary pass = judge pass AND NOT fallback. Fallback tasks are reported separately as fallback_rate per arm, and are included in J2-J5 averages with the flag visible. Rationale: fallback output is base-map output, not carved-view evidence; counting it as a pass attributes base-map performance to the treatment.",
+      "fallback_counts_as_pass": "A fallback task counts as a pass if its decoded text passes the judge. Rationale: the system as a whole served the task. REJECTED by recommendation because it makes the treatment arm indistinguishable from control on every fallback task."
+    },
+    "recommended": "fallback_counts_as_fail_RECOMMENDED"
+  },
+  "instrumentation": {
+    "fields_NOT_invented": [
+      "tool_call_count: this transformer has no external tool calls; the countable analogues are gate calls/rejections and backtracks, named as such. No field is zero-filled to pretend a tool metric exists.",
+      "discrete VRAM peak: see J5 reinterpretation above."
+    ],
+    "fields_added_to_receipt": [
+      "attempt_count",
+      "backtrack_count",
+      "prompt_op_count",
+      "generated_token_count",
+      "generated_op_count",
+      "gate_rejection_count (wired or marked unavailable)",
+      "peak_rss_bytes_sampled (Option, ps RSS)",
+      "metal_bytes_saved (Option, existing kernel telemetry)",
+      "warm_up (bool, excluded from analysis)",
+      "fallback_to_parent (already present, now counted)"
+    ],
+    "see": "runner_receipt_patch.md"
+  },
+  "j_definitions": {
+    "J1_primary_pass_rate": "Paired task pass rate per arm, judge = canonical judge (judge_rust.rs, deterministic-judge-1.0), preregistered per task. Threshold as filed: delta >= +10 pp, p < 0.01, bootstrap 10k resamples. A task counts as a pass ONLY if judge verdict = pass AND fallback_to_parent = false (see fallback_policy). Errors count in the denominator.",
+    "J2_retries": "Mean genuine retry count per task = (attempt_count - 1) + backtrack_count, where attempt_count = 1 normally, 2 when fallback re-executes. superposition_interventions is reported separately and is NOT retries. Threshold as filed: delta <= -30%. Gate rejections (TrajectoryMatchGate rejections + BoundaryHandoffGate escalations) are reported as a separate secondary count IF the gate counters are wired (see runner_receipt_patch.md); if not wired, J2 is retries only and the gate count is marked unavailable, never zero-filled.",
+    "J3_token_efficiency": "Mean generated_token_count per task = expanded_tokens.len() (true token count). The old proxy emitted_ops.len() is reported as generated_op_count and must not be used as tokens. Threshold as filed: delta <= -25%.",
+    "J4_latency": "Mean wall-time latency_ms per task, end-to-end, measured run only (warm-up excluded). Threshold as filed: delta <= -20%.",
+    "J5_peak_memory": "REINTERPRETED, honestly: on unified Metal there is no separate discrete-VRAM counter. J5 = peak sampled process RSS (ps RSS, KB, sampled at task start/end by the runner, std-only) plus, separately, metal kernel telemetry bytes_saved_from_heap_alloc where available. The two numbers are never conflated, and neither is called 'VRAM peak' in the report. Threshold as filed: delta <= -15% on peak RSS. If the RSS sampler is not wired, J5 is marked unavailable, not estimated.",
+    "J6_necessity_and_replication": "As filed: necessity gate BF01 > 10 at any interim + cross-hardware replication (M3_Max + M2_Ultra, or the second machine actually used, named in the report). A claim requires BOTH; a single-machine pass is not J6.",
+    "note": "No J1-J6 list was found in the filed preregistration or Claims_Register on the Mac. The mapping below is inferred from the filed metrics (primary + 4 secondary + cross-hardware necessity). If Stewart's J-list differs, correct this mapping before signing; do not silently rename metrics."
+  },
+  "judge": {
+    "python_mirror": "~/workspace/deterministic-judge/judge.py (tested 29/29)",
+    "rule": "The judge must be part of the runner/receipt. Every run row carries judge_version, judge_mode, judge_verdict, decoded_sha256, canonical_sha256 (normalized mode), check results, and the FULL decoded_output_text (not a 200-char snippet). analyze_a39.py re-judges from the run file alone and must agree with the stored verdict; any mismatch is reported, not hidden.",
+    "rust_module": "judge_rust.rs (std only, place at orchestrator/src/judge.rs)",
+    "version": "deterministic-judge-1.0"
+  },
+  "note": "This amendment is NOT a preregistration until Stewart signs it. A preregistration written by the assistant alone carries no weight. Sign-off is by the options in the delivery message: alignment choice + fallback choice. Once signed, freeze this file with sha256 and append its hash to Claims_Register. No field below may be changed after signing without a new amendment version.",
+  "signatures": {
+    "principal_investigator": "Stewart Barteau (alignment decision, via 2026-10-27 instruction)",
+    "date": "2026-10-27",
+    "note": "Fallback policy is NOT signed by this decision; only alignment A/B is signed."
+  },
+  "status": "ALIGNMENT_SIGNED_2026-10-27_FALLBACK_PENDING",
+  "why_amended": "The filed corpus (200 tasks, manifest_hash TO_BE_COMPUTED) was never built: corpus_manifest.json on disk holds 6 tasks. The filed judge (deterministic_parser_exact_match_or_rubric) was never built: the runner used lowercase substring contains. The filed metrics assumed counters (token count via tokenizer, gate rejections, metal VRAM) that the receipt does not carry. Runs since filing (0/24 both arms, 0/6 fail-closed) are uninformative, not evidence for or against the treatment. This amendment replaces the unbuilt parts with built, checkable parts, and leaves the filed hypothesis, arms, thresholds and alpha-spending unchanged."
+}

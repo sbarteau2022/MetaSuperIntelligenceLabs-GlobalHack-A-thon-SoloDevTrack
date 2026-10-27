@@ -1,0 +1,195 @@
+# Pre-Registration: FW-A3 — Hyperbolic KV Kernels (C++ vs Swift Metal)
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-A3.hash
+# C09 Ablation Framework — Framework Selection Study
+
+ablation_id: "FW-A3"
+title: "Hyperbolic KV Kernels: C++ (hand-rolled SIMD) vs Swift (MetalPerformanceShaders)"
+hypothesis: |
+  Swift MPS graph optimization achieves parity with hand-rolled C++ kernels
+  for VP-tree + Lorentz ops + Picard reduction on H³×T²/Γ₁₂.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  primary:
+    name: "MacBook Pro M3 Max"
+    cpu: "Apple M3 Max (16-core)"
+    gpu: "Apple M3 Max (40-core GPU)"
+    memory_gb: 36
+    os: "macOS 15.0 (Sequoia)"
+    clang: "17.0.0"
+    swift: "5.10"
+    xcode: "16.0"
+  replica:
+    name: "Mac Studio M2 Ultra"
+    cpu: "Apple M2 Ultra (24-core)"
+    gpu: "Apple M2 Ultra (76-core GPU)"
+    memory_gb: 96
+    os: "macOS 15.0 (Sequoia)"
+    clang: "17.0.0"
+    swift: "5.10"
+    xcode: "16.0"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "hyperbolic_kv_bench"
+  description: "Same as FW-A1 workload for direct comparison"
+  vectors: 1_000_000
+  dimensions:
+    h3: 3
+    t2: 2
+  fixed_point: "Q32.31 with i128 accumulator for Minkowski products"
+  operations:
+    - name: "insert"
+      count: 1_000_000
+    - name: "knn_search"
+      count: 100_000
+      k: 32
+    - name: "evict"
+      count: 100_000
+    - name: "picard_reduce"
+      count: 10_000
+  iterations: 1000
+  warmup_iterations: 100
+  seed: 42
+
+# ── Baseline (C++) ────────────────────────────────────────────────────────
+baseline:
+  language: "C++20"
+  compiler: "clang-17"
+  flags: "-O3 -march=native -ffast-math -flto=thin"
+  simd:
+    backend: "Hand-rolled NEON/AVX2 intrinsics"
+  memory:
+    allocator: "jemalloc"
+    ipc: "mmap + atomic refcount"
+  kernel_fusion:
+    enabled: true
+    rules: "Same 3 rules as FW-A1"
+  build:
+    system: "CMake 3.28 + Ninja"
+    time_target_seconds: 120
+
+# ── Treatment (Swift) ─────────────────────────────────────────────────────
+treatment:
+  language: "Swift 5.10"
+  metal:
+    backend: "MetalPerformanceShaders (MPS) + MPSGraph"
+    operations:
+      - "MPSMatrixMultiplication for Minkowski dot"
+      - "MPSArccosh for arcosh"
+      - "MPSGraph for VP-tree distance (custom)"
+      - "Custom Metal shader for Picard reduction (MPS has no equivalent)"
+    graph_optimization: "MPSGraph automatic fusion + constant folding"
+  memory:
+    allocator: "Swift allocator (malloc)"
+    ipc: "mmap via Darwin.mmap + atomic refcount (via ManagedBuffer)"
+    cache: "MPSNDArray for VP-tree nodes + KV slices"
+  kernel_fusion:
+    enabled: true
+    mechanism: "MPSGraph automatic fusion + manual MPSGraph override"
+    verification: "MPSGraph debug description + GPU capture"
+  build:
+    system: "SwiftPM + Xcode"
+    time_target_seconds: 60
+  binary_size_target_mb: 12
+
+# ── Judge (Pass/Fail Predicate) ───────────────────────────────────────────
+judge:
+  primary:
+    - metric: "throughput_ratio"
+      threshold: ">= 0.85"
+      description: "Swift throughput / C++ throughput ≥ 0.85 (near-parity)"
+    - metric: "peak_memory_ratio"
+      threshold: "<= 1.15"
+      description: "Swift peak memory / C++ peak memory ≤ 1.15"
+  secondary:
+    - metric: "gpu_utilization"
+      threshold: ">= 0.7"
+      description: "GPU utilization during kernel execution ≥ 70%"
+    - metric: "mps_graph_fusion_rate"
+      threshold: ">= 0.8"
+      description: "MPSGraph fuses ≥80% of eligible ops"
+    - metric: "compile_time_ratio"
+      threshold: "<= 0.5"
+      description: "Swift build time / C++ build time ≤ 0.5"
+    - metric: "picard_reduction_performance"
+      threshold: ">= 0.5"
+      description: "Swift custom shader / C++ Picard ≥ 0.5x"
+
+# ── Effect Size Plan ──────────────────────────────────────────────────────
+effect_size_plan:
+  throughput:
+    type: "Cohen's d"
+    method: "bootstrap"
+    samples: 10000
+    meaningful_threshold: 0.5
+  peak_memory:
+    type: "percent_change"
+    method: "percentile_bootstrap"
+    samples: 10000
+    meaningful_threshold: 15
+  gpu_util:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.2
+  compile_time:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.5
+
+# ── Statistical Design ────────────────────────────────────────────────────
+statistical_design:
+  alpha: 0.05
+  power: 0.80
+  effect_size_assumed: 0.5
+  alpha_spending:
+    method: "Lan-DeMets"
+    rho: 2
+  interim_analyses: 4
+  futility_threshold: 0.2
+  sample_size_per_group: 30
+
+# ── Null Handling (Pre-Stated) ────────────────────────────────────────────
+null_handling:
+  if_treatment_wins_or_ties:
+    interpretation: "Swift MPS achieves kernel parity; C++ not necessary for kernels"
+    action: "FW-A3 result → OPTIONAL for C++; Swift viable for kernels"
+    design_decision: "Consolidate to Swift for kernels; eliminate C++ boundary"
+  if_inconclusive:
+    interpretation: "MPS lacks VP-tree/Picard equivalents; C++ still necessary for custom geometry"
+    action: "Record as INFERRED; test hybrid (Swift MPS for BLAS + C++ for custom kernels)"
+    design_decision: "Defer framework lock; run FW-A3-retry with better MPSGraph custom ops"
+  if_baseline_wins_clear:
+    interpretation: "Custom geometry kernels (VP-tree, Picard) require hand-rolled SIMD/Metal; MPS insufficient"
+    action: "Record as VERIFIED necessity; C++ REQUIRED for kernels"
+    design_decision: "Lock C++ for kernels; Swift relegated to frontend (if FW-A11 passes)"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md"
+  traceability:
+    - "C05 Atlas/Hyperbolic KV (kernels)"
+    - "C12 Server Inference Engine (kernel logic)"
+    - "C08 Framework Requirements (NF1, NF4, NF5)"
+    - "C09 Ablations (A1, A31-A35)"
+  gates:
+    - "Gate 3 (Kernel Qualification)"
+    - "Gate 4 (Integration)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-A3/raw_data.json"
+  - "ablation_results/FW-A3/analysis.ipynb"
+  - "ablation_results/FW-A3/claim.json"
+  - "ablation_results/FW-A3/failure.json"
+  - "ablation_results/FW-A3/build_log.txt"
+  - "ablation_results/FW-A3/metal_gpu_trace.gputrace"
+  - "ablation_results/FW-A3/receipt.json"

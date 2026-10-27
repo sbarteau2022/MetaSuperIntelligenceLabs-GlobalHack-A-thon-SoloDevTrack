@@ -1,0 +1,201 @@
+# Pre-Registration: FW-A4 — Inference Engine ACFT (Rust vs C++)
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-A4.hash
+# C09 Ablation Framework — Framework Selection Study
+
+ablation_id: "FW-A4"
+title: "Inference Engine ACFT: Rust (tokio, async-trait) vs C++ (coroutines, folly)"
+hypothesis: |
+  Rust ACFT inference engine achieves target decode tok/s + TTFT at ≤1.1x memory
+  vs C++ coroutine-based implementation with equivalent kernel calls.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  primary:
+    name: "MacBook Pro M3 Max"
+    cpu: "Apple M3 Max (16-core)"
+    gpu: "Apple M3 Max (40-core GPU)"
+    memory_gb: 36
+    os: "macOS 15.0 (Sequoia)"
+    rustc: "1.82.0"
+    clang: "17.0.0"
+    mlx: "0.21.0"
+  replica:
+    name: "Mac Studio M2 Ultra"
+    cpu: "Apple M2 Ultra (24-core)"
+    gpu: "Apple M2 Ultra (76-core GPU)"
+    memory_gb: 96
+    os: "macOS 15.0 (Sequoia)"
+    rustc: "1.82.0"
+    clang: "17.0.0"
+    mlx: "0.21.0"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "acft_inference_bench"
+  description: |
+    Full ACFT inference path: TwisterAttention + hyperbolic retrieval +
+    n-gram draft + verification + prefix cache + scheduler.
+  model: "Qwen3.8-27B-Uncensored-OrcaRouter-MLX-4bit"
+  context_len: 131072
+  batch_size: 16
+  prompts: 100
+  prompt_len: 10000
+  gen_len: 512
+  acft_enabled: true
+  hyperbolic_cache: true
+  iterations: 50
+  warmup: 5
+  seed: 42
+
+# ── Baseline (Rust) ───────────────────────────────────────────────────────
+baseline:
+  language: "Rust 1.82.0"
+  async_runtime: "tokio 1.38"
+  inference:
+    engine: "ACFT (Active Inferencing Transformer)"
+    attention: "TwisterAttention (hyperbolic retrieval)"
+    scheduler: "ILP scheduler (C12.2) + continuous batching"
+    prefix_cache: "Radix prefix cache (C12.5) + hyperbolic coords"
+    draft: "n-gram lookahead trie (ngram_lookahead.rs)"
+  kernels:
+    backend: "MLX Metal + custom C++ kernels (from FW-A1 winner)"
+    dispatch: "FFI via cxx-rs"
+  memory:
+    allocator: "jemallocator"
+    kv_cache: "Nested hyperbolic KV (H³×T²) in mmap"
+    budget_gb: 27.5
+  cancellation:
+    mechanism: "tokio cancellation tokens + drop guards"
+  build:
+    system: "Cargo"
+    time_target_seconds: 180
+  binary_size_target_mb: 50
+
+# ── Treatment (C++) ───────────────────────────────────────────────────────
+treatment:
+  language: "C++20"
+  async_runtime: "folly coro + folly::Executor"
+  inference:
+    engine: "ACFT (port of Rust implementation)"
+    attention: "TwisterAttention (port)"
+    scheduler: "ILP scheduler (port) + folly::CPUThreadPoolExecutor"
+    prefix_cache: "Radix prefix cache (port) + hyperbolic coords"
+    draft: "n-gram lookahead trie (port)"
+  kernels:
+    backend: "Same C++ kernels as baseline (direct call, no FFI)"
+    dispatch: "Direct function calls"
+  memory:
+    allocator: "jemalloc"
+    kv_cache: "Nested hyperbolic KV (H³×T²) in mmap"
+    budget_gb: 27.5
+  cancellation:
+    mechanism: "folly::CancellationToken + RAII guards"
+  build:
+    system: "CMake 3.28 + Ninja"
+    time_target_seconds: 120
+  binary_size_target_mb: 40
+
+# ── Judge (Pass/Fail Predicate) ───────────────────────────────────────────
+judge:
+  primary:
+    - metric: "decode_tok_s_ratio"
+      threshold: ">= 0.95"
+      description: "Rust decode tok/s / C++ decode tok/s ≥ 0.95 (parity)"
+    - metric: "ttft_ms_ratio"
+      threshold: "<= 1.05"
+      description: "Rust TTFT / C++ TTFT ≤ 1.05"
+    - metric: "peak_memory_ratio"
+      threshold: "<= 1.05"
+      description: "Rust peak memory / C++ peak memory ≤ 1.05"
+  secondary:
+    - metric: "cancellation_latency_ms"
+      threshold: "<= 10"
+      description: "Request cancellation → stop < 10ms (both)"
+    - metric: "backpressure_correctness"
+      threshold: "PASS"
+      description: "Admission control + memory backpressure works (no OOM)"
+    - metric: "scheduler_fairness"
+      threshold: "PASS"
+      description: "No starvation; depth-aware scheduling verified"
+    - metric: "prefix_cache_hit_rate"
+      threshold: ">= 0.7"
+      description: "Prefix cache hit rate ≥ 70% (both)"
+
+# ── Effect Size Plan ──────────────────────────────────────────────────────
+effect_size_plan:
+  decode_throughput:
+    type: "Cohen's d"
+    method: "bootstrap"
+    samples: 10000
+    meaningful_threshold: 0.3
+  ttft:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.1
+  peak_memory:
+    type: "percent_change"
+    method: "percentile_bootstrap"
+    samples: 10000
+    meaningful_threshold: 5
+  cancellation:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 2.0
+
+# ── Statistical Design ────────────────────────────────────────────────────
+statistical_design:
+  alpha: 0.05
+  power: 0.80
+  effect_size_assumed: 0.3
+  alpha_spending:
+    method: "Lan-DeMets"
+    rho: 2
+  interim_analyses: 4
+  futility_threshold: 0.2
+  sample_size_per_group: 30
+
+# ── Null Handling (Pre-Stated) ────────────────────────────────────────────
+null_handling:
+  if_treatment_wins_or_ties:
+    interpretation: "C++ coroutines achieve ACFT parity; Rust not necessary for inference engine"
+    action: "FW-A4 result → OPTIONAL for Rust; C++ viable for inference"
+    design_decision: "Consolidate to C++ for inference; single C++ stack for kernels+inference"
+  if_inconclusive:
+    interpretation: "Rust async-trait + tokio maturity vs C++ coroutines + folly tradeoffs unclear"
+    action: "Record as INFERRED; test hybrid (Rust orchestration + C++ hot paths)"
+    design_decision: "Defer framework lock; run FW-A4-retry with larger N"
+  if_baseline_wins_clear:
+    interpretation: "Rust async ecosystem + tokio + MLX integration necessary for ACFT ergonomics"
+    action: "Record as VERIFIED necessity; Rust REQUIRED for inference engine"
+    design_decision: "Lock Rust for inference; C++ for kernels only"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md"
+  traceability:
+    - "C12 Server Inference Engine (C12.1-C12.8)"
+    - "C05 Atlas/Hyperbolic KV (kernel integration)"
+    - "C08 Framework Requirements (NF1, NF4, NF9-11)"
+    - "C09 Ablations (A1, A4, A31-A35)"
+  gates:
+    - "Gate 3 (Inference Engine Qualification)"
+    - "Gate 4 (Integration)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-A4/raw_data.json"
+  - "ablation_results/FW-A4/analysis.ipynb"
+  - "ablation_results/FW-A4/claim.json"
+  - "ablation_results/FW-A4/failure.json"
+  - "ablation_results/FW-A4/throughput_qwen36.json"
+  - "ablation_results/FW-A4/ttft_qwen36.json"
+  - "ablation_results/FW-A4/build_log.txt"
+  - "ablation_results/FW-A4/receipt.json"

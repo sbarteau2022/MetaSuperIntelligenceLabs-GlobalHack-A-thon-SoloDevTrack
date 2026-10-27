@@ -1,0 +1,147 @@
+# Pre-Registration: FW-NEC-FFI-RG — Necessity Test: Rust→Go WASM RPC Boundary
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-NEC-FFI-RG.hash
+# C09 Ablation Framework — Necessity Testing (C13.1 / C09.5 / Rule FW-4)
+
+ablation_id: "FW-NEC-FFI-RG"
+title: "Necessity Test: Rust→Go WASM RPC Boundary (Local Backend → Cloudflare Workers)"
+hypothesis: |
+  The Rust→Go WASM RPC boundary is NECESSARY because:
+  1. Go Workers (from FW-NEC-WORKERS) are necessary for Cloudflare deployment
+  2. Rust backend (from FW-NEC-HARNESS + FW-NEC-FRONTEND) is necessary for local
+  3. Custom binary RPC (<100µs) is acceptable vs consolidation cost
+  4. Consolidation to single language for both local + Workers fails FW-A14/FW-A15
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  local:
+    name: "MacBook Pro M3 Max"
+    memory_gb: 36
+  cloud:
+    name: "Cloudflare Workers (Production Edge)"
+  replica:
+    name: "Mac Studio M2 Ultra + Cloudflare Staging"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "rpc_boundary_bench"
+  description: |
+    Measure RPC overhead for local backend → Cloudflare Workers calls.
+    Operations: DO method calls, KV operations, AI streaming.
+  operations:
+    - name: "do_rpc_call"
+      count: 100_000
+      description: "Rust local → Go WASM DO RPC (custom binary protocol)"
+    - name: "kv_rpc_call"
+      count: 1_000_000
+      description: "Rust local → Go WASM KV RPC"
+    - name: "ai_stream_rpc"
+      count: 10_000
+      description: "Rust local → Go WASM AI streaming RPC"
+    - name: "consolidated_local_only"
+      count: 100_000
+      description: "Rust-only: local DO (no RPC, in-process)"
+    - metric: "consolidated_workers_only"
+      count: 100_000
+      description: "Go-only: Workers DO (no RPC, native)"
+  iterations: 50
+  seed: 42
+
+# ── Comparison ────────────────────────────────────────────────────────────
+comparison:
+  baseline:
+    name: "Current multi-lang with custom binary RPC"
+    boundaries:
+      - "Rust backend → Go WASM Workers: Custom binary RPC over HTTP/2"
+      - "Protocol: Custom mmap-compatible binary (no JSON)"
+      - "Target: <100µs RPC latency"
+    overhead_targets:
+      - "do_rpc_latency_us: < 100"
+      - "kv_rpc_latency_us: < 50"
+      - "ai_stream_ttft_ms: < 100"
+    source: "Current implementation (FW-A12 baseline)"
+  treatment:
+    name: "Consolidated single-language (no RPC boundary)"
+    scenarios:
+      - "Rust-only: workers-rs for Workers + Rust local (FW-A14)"
+      - "Go-only: Go for local backend + Go Workers (not tested, would need Go harness)"
+      - "Zig-only: Zig for both (FW-A15)"
+    selection: |
+      Best consolidated stack from FW-A14 (Rust-only) and FW-A15 (Zig-only)
+      If both FAIL: RPC boundary is NECESSARY by construction
+
+# ── Bayesian Design ───────────────────────────────────────────────────────
+bayesian_design:
+  prior:
+    h0_probability: 0.5
+    h1_probability: 0.5
+  likelihood:
+    model: "Composite: RPC_overhead + consolidation_failure_probability + deployment_flexibility"
+    rpc_overhead_cost: "100µs/call × call_frequency → e2e latency impact"
+    consolidation_failure: "P(consolidation_fails) from FW-A14/FW-A15"
+    deployment_flexibility: "Value of independent local/cloud deployments"
+  decision_rule:
+    bf01_threshold_required: 10
+    bf01_threshold_optional: 0.1
+    bf01_inconclusive: "0.1 ≤ BF₀₁ ≤ 10"
+
+# ── Judge (Bayesian Decision) ─────────────────────────────────────────────
+judge:
+  primary:
+    metric: "bayes_factor_bf01"
+    threshold_required: "> 10"
+    threshold_optional: "< 0.1"
+    description: "BF₀₁ evidence for Rust→Go WASM RPC necessity"
+  secondary:
+    - metric: "do_rpc_latency_us"
+      threshold: "<= 100"
+      description: "RPC latency ≤ 100µs (current target)"
+    - metric: "kv_rpc_latency_us"
+      threshold: "<= 50"
+      description: "KV RPC latency ≤ 50µs"
+    - metric: "consolidation_alternative_fails"
+      threshold: "TRUE"
+      description: "Both FW-A14 and FW-A15 FAIL"
+
+# ── Null Handling ─────────────────────────────────────────────────────────
+null_handling:
+  if_bf01_gt_10:
+    interpretation: "STRONG EVIDENCE: Rust→Go WASM RPC NECESSARY (consolidation fails, overhead acceptable)"
+    action: "Claim C09-FW-NEC-FFI-RG → VERIFIED; RPC boundary REQUIRED"
+    design_decision: "Lock Rust→Go WASM custom binary RPC; optimize protocol"
+  if_bf01_lt_0_1:
+    interpretation: "STRONG EVIDENCE: Rust→Go WASM RPC NOT NECESSARY"
+    action: "Claim C09-FW-NEC-FFI-RG → VERIFIED; RPC boundary OPTIONAL"
+    design_decision: "Consolidate to single language (winner of FW-A14/FW-A15)"
+  if_inconclusive:
+    interpretation: "INSUFFICIENT EVIDENCE; depends on FW-A14/FW-A15 + workers-rs maturity"
+    action: "Claim C09-FW-NEC-FFI-RG → INFERRED; wait for integration results"
+    design_decision: "Defer until FW-A14/FW-A15 complete + workers-rs 1.0"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md (Rule FW-4, FW-11)"
+  traceability:
+    - "C10 Deployment Strategy (P6 multi-endpoint)"
+    - "C04 Architecture Topology (Model Serving, Integration)"
+    - "C12 Server Inference Engine"
+    - "C13 Testing Necessity"
+  gates:
+    - "Gate 3 (Worker)"
+    - "Gate 4 (Integration - necessity)"
+    - "Gate 7 (Chaos/Recovery)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-NEC-FFI-RG/raw_data.json"
+  - "ablation_results/FW-NEC-FFI-RG/analysis.ipynb"
+  - "ablation_results/FW-NEC-FFI-RG/claim.json"
+  - "ablation_results/FW-NEC-FFI-RG/bayes_factor_calculation.json"
+  - "ablation_results/FW-NEC-FFI-RG/receipt.json"

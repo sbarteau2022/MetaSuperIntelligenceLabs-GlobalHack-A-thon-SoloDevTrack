@@ -1,0 +1,134 @@
+# Pre-Registration: FW-NEC-WORKERS — Necessity Test: Go Cloudflare Workers
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-NEC-WORKERS.hash
+# C09 Ablation Framework — Necessity Testing (C13.1 / C09.5)
+
+ablation_id: "FW-NEC-WORKERS"
+title: "Necessity Test: Go Cloudflare Workers (Go WASM vs best alternative from FW-A12/A13)"
+hypothesis: |
+  Go WASM (tinygo) is NECESSARY for Cloudflare Workers deployment.
+  Removal (Rust WASM or TypeScript Workers) causes regression in cold start,
+  memory footprint, CPU/req, and/or DO/KV/AI binding maturity.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  primary:
+    name: "Cloudflare Workers (Production Edge)"
+  local_sim:
+    name: "workerd local"
+  replica:
+    name: "Cloudflare Workers (Staging)"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "cf_workers_bench"
+  description: "Same as FW-A12 workload"
+  durable_objects: 4
+  kv_ops: 100000
+  ai_calls: 1000
+  concurrency: 100
+  iterations: 30
+
+# ── Comparison ────────────────────────────────────────────────────────────
+comparison:
+  baseline:
+    name: "Go WASM Workers (FW-A12 baseline)"
+    language: "Go 1.23 → WASM (tinygo 0.32)"
+    bindings:
+      - "DO: Native Go DO bindings (mature)"
+      - "KV: Native KV bindings"
+      - "AI: Native workers-ai bindings"
+    binary_size_kb: 200
+    cold_start_ms: 2
+    memory_mb: 10
+    source: "FW-A12 baseline implementation"
+  treatment:
+    name: "Best alternative from FW-A12 (Rust WASM) / FW-A13 (TypeScript)"
+    selection: |
+      Winner of FW-A12 (workers-rs) vs FW-A13 (workers-ts)
+      Criteria:
+        1. Cold start p99 ≤ 5ms (2.5x Go baseline max)
+        2. Memory p99 ≤ 15MB (1.5x Go baseline max)
+        3. CPU/req p99 ≤ 10ms (2x Go baseline max)
+        4. DO/KV/AI binding maturity (feature parity ≥ 80%)
+        5. Binary size ≤ 500KB
+    language: "TBD from FW-A12/FW-A13 results"
+
+# ── Bayesian Design ───────────────────────────────────────────────────────
+bayesian_design:
+  prior:
+    h0_probability: 0.5
+    h1_probability: 0.5
+  likelihood:
+    model: "Multivariate: cold_start + memory + cpu + binding_parity + binary_size"
+    cold_start_weight: 2.0  # Cold start is critical for Workers
+    binding_parity_weight: 1.5  # Feature parity required for deployment
+  decision_rule:
+    bf01_threshold_required: 10
+    bf01_threshold_optional: 0.1
+    bf01_inconclusive: "0.1 ≤ BF₀₁ ≤ 10"
+
+# ── Judge (Bayesian Decision) ─────────────────────────────────────────────
+judge:
+  primary:
+    metric: "bayes_factor_bf01"
+    threshold_required: "> 10"
+    threshold_optional: "< 0.1"
+    description: "BF₀₁ evidence for Go Workers necessity"
+  secondary:
+    - metric: "cold_start_p99_ms"
+      threshold: "<= 5"
+      description: "Treatment cold start ≤ 5ms p99"
+    - metric: "memory_p99_mb"
+      threshold: "<= 15"
+      description: "Treatment memory ≤ 15MB p99"
+    - metric: "do_kv_ai_parity"
+      threshold: ">= 0.8"
+      description: "DO/KV/AI feature parity ≥ 80%"
+    - metric: "binary_size_kb"
+      threshold: "<= 500"
+      description: "Binary ≤ 500KB"
+
+# ── Null Handling ─────────────────────────────────────────────────────────
+null_handling:
+  if_bf01_gt_10:
+    interpretation: "STRONG EVIDENCE: Go WASM NECESSARY for Workers (cold start + bindings)"
+    action: "Claim C09-FW-NEC-WORKERS → VERIFIED; Go REQUIRED for Workers"
+    design_decision: "Lock Go for Cloudflare Workers deployment"
+  if_bf01_lt_0_1:
+    interpretation: "STRONG EVIDENCE: Go WASM NOT NECESSARY"
+    action: "Claim C09-FW-NEC-WORKERS → VERIFIED; Go OPTIONAL for Workers"
+    design_decision: "Consolidate to best alternative (Rust WASM or TypeScript)"
+  if_inconclusive:
+    interpretation: "INSUFFICIENT EVIDENCE; workers-rs bindings incomplete"
+    action: "Claim C09-FW-NEC-WORKERS → INFERRED; more data needed"
+    design_decision: "Defer framework lock; re-evaluate at workers-rs 1.0"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md (Rule FW-4, FW-11)"
+  traceability:
+    - "C10 Deployment Strategy (P6)"
+    - "C04 Architecture Topology (Model Serving, Integration)"
+    - "C12 Server Inference Engine"
+    - "C13 Testing Necessity"
+  gates:
+    - "Gate 3 (Worker)"
+    - "Gate 4 (Integration - necessity)"
+    - "Gate 7 (Chaos/Recovery)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-NEC-WORKERS/raw_data.json"
+  - "ablation_results/FW-NEC-WORKERS/analysis.ipynb"
+  - "ablation_results/FW-NEC-WORKERS/claim.json"
+  - "ablation_results/FW-NEC-WORKERS/bayes_factor_calculation.json"
+  - "ablation_results/FW-NEC-WORKERS/wrangler_deploy_log.txt"
+  - "ablation_results/FW-NEC-WORKERS/receipt.json"

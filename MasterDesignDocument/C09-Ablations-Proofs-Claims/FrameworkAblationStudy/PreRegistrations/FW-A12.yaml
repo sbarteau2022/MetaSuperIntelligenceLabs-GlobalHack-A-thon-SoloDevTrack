@@ -1,0 +1,210 @@
+# Pre-Registration: FW-A12 — Cloudflare Workers (Go WASM vs Rust WASM)
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-A12.hash
+# C09 Ablation Framework — Framework Selection Study
+
+ablation_id: "FW-A12"
+title: "Cloudflare Workers: Go WASM (tinygo) vs Rust WASM (workers-rs) on Durable Objects"
+hypothesis: |
+  Go WASM achieves ≤2ms cold start, ≤10MB memory, ≤5ms CPU/req on Durable Objects
+  with KV + AI bindings, with binary size ≤200KB.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  primary:
+    name: "Cloudflare Workers (Production Edge)"
+    runtime: "workerd (V8 isolates)"
+    locations: ["SJC", "LAX", "ORD", "IAD", "LHR", "FRA", "SIN", "SYD"]
+  local_sim:
+    name: "workerd local"
+    version: "1.2024.10.0"
+    note: "For development/debugging only; not for performance claims"
+  replica:
+    name: "Cloudflare Workers (Staging)"
+    note: "Independent deployment for replication"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "cf_workers_bench"
+  description: |
+    Full Cloudflare Workers benchmark: Durable Object RPC, KV operations,
+    Workers AI calls, concurrent request handling, cold/warm start.
+  durable_objects:
+    classes: 4
+      - "SessionDO" (agent session state)
+      - "AtlasDO" (hyperbolic KV cache shard)
+      - "LaneDO" (lane orchestration)
+      - "HoleDO" (hole substrate)
+    methods_per_class: 8
+    rpc_calls_per_test: 10000
+  kv:
+    operations: 100000
+    read_write_ratio: 4:1
+    key_size_bytes: 64
+    value_size_bytes: 1024
+  ai:
+    calls: 1000
+    model: "@cf/qwen/qwen3-8b"
+    streaming: true
+  concurrency:
+    max_concurrent: 100
+    ramp_up_seconds: 30
+    duration_seconds: 300
+  cold_start:
+    measurements: 1000
+    trigger: "New isolate + DO constructor"
+
+# ── Baseline (Go WASM) ────────────────────────────────────────────────────
+baseline:
+  language: "Go 1.23 → WASM (tinygo 0.32)"
+  compile_flags: "-opt=2 -scheduler=asyncify -target=wasi"
+  runtime: "workerd (V8 isolate + WASM)"
+  do_bindings: "Native Go DO bindings (go.durableobjects)"
+  kv_bindings: "workers KV binding (native)"
+  ai_bindings: "workers-ai binding (native)"
+  binary_size_target_kb: 200
+  memory_limit_mb: 128
+  cpu_limit_ms_per_req: 50
+  features:
+    - "DO alarm API"
+    - "DO storage API"
+    - "DO RPC (native)"
+    - "KV list/put/get/delete"
+    - "AI streaming response"
+
+# ── Treatment (Rust WASM) ─────────────────────────────────────────────────
+treatment:
+  language: "Rust 1.82.0 → WASM (wasm32-unknown-unknown)"
+  compile_flags: "-C opt-level=z -C lto=yes -C panic=abort"
+  runtime: "workerd (V8 isolate + WASM)"
+  do_bindings: "workers-rs DO bindings (experimental)"
+  kv_bindings: "workers-rs KV bindings (experimental)"
+  ai_bindings: "workers-rs AI bindings (experimental)"
+  binary_size_target_kb: 500
+  memory_limit_mb: 128
+  cpu_limit_ms_per_req: 50
+  features:
+    - "DO alarm API (partial)"
+    - "DO storage API (partial)"
+    - "DO RPC (partial)"
+    - "KV list/put/get/delete (partial)"
+    - "AI streaming response (partial)"
+
+# ── Judge (Pass/Fail Predicate) ───────────────────────────────────────────
+judge:
+  primary:
+    - metric: "cold_start_ms_p99"
+      threshold: "<= 2"
+      description: "Cold start (new isolate + DO construct) p99 ≤ 2ms"
+    - metric: "memory_mb_p99"
+      threshold: "<= 10"
+      description: "Memory usage p99 ≤ 10MB"
+    - metric: "cpu_ms_per_req_p99"
+      threshold: "<= 5"
+      description: "CPU time per request p99 ≤ 5ms"
+  secondary:
+    - metric: "binary_size_kb"
+      threshold: "<= 200"
+      description: "WASM binary ≤ 200KB (Go) / ≤ 500KB (Rust)"
+    - metric: "do_rpc_latency_ms_p99"
+      threshold: "<= 1"
+      description: "DO RPC round-trip p99 ≤ 1ms"
+    - metric: "kv_ops_per_sec"
+      threshold: ">= 50000"
+      description: "KV operations/sec ≥ 50k"
+    - metric: "ai_stream_ttft_ms_p99"
+      threshold: "<= 100"
+      description: "AI streaming TTFT p99 ≤ 100ms"
+    - metric: "build_time_seconds"
+      threshold: "<= 60"
+      description: "WASM build ≤ 60 seconds"
+    - metric: "concurrent_100_success_rate"
+      threshold: ">= 0.99"
+      description: "100 concurrent requests success rate ≥ 99%"
+
+# ── Effect Size Plan ──────────────────────────────────────────────────────
+effect_size_plan:
+  cold_start:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 2.0
+  memory:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.5
+  cpu:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.5
+  binary_size:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 2.0
+  do_rpc:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.5
+  kv_throughput:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.2
+
+# ── Statistical Design ────────────────────────────────────────────────────
+statistical_design:
+  alpha: 0.05
+  power: 0.80
+  effect_size_assumed: 0.8
+  alpha_spending:
+    method: "Lan-DeMets"
+    rho: 2
+  interim_analyses: 4
+  futility_threshold: 0.2
+  sample_size_per_group: 30 # Independent deployments
+
+# ── Null Handling (Pre-Stated) ────────────────────────────────────────────
+null_handling:
+  if_treatment_wins_or_ties:
+    interpretation: "Rust WASM viable for Cloudflare Workers; Go not necessary"
+    action: "FW-A12 result → OPTIONAL for Go; proceed to FW-A14 with Rust WASM workers"
+    design_decision: "Consolidate to Rust WASM; eliminate Go boundary"
+    caveat: "Requires workers-rs DO/KV/AI bindings production-ready; currently INFERRED"
+  if_inconclusive:
+    interpretation: "Rust WASM Workers bindings incomplete; Go currently only viable path"
+    action: "Record as INFERRED; Go REQUIRED for now; re-evaluate when workers-rs 1.0"
+    design_decision: "Lock Go for Workers; Rust for local backend only"
+  if_baseline_wins_clear:
+    interpretation: "Go WASM (tinygo) necessary for Workers cold start + DO ergonomics"
+    action: "Record as VERIFIED necessity; Go REQUIRED for Cloudflare Workers"
+    design_decision: "Lock Go for Workers; no change"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+pre_registration_hash: "sha256:246fcff3c1e0e1a25e4a26c8a5a79a5d57fa22d2c6def83fe072e2a01392d5ff"
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md"
+  traceability:
+    - "C10 Deployment Strategy (P6: multi-endpoint)"
+    - "C04 Architecture Topology (Model Serving Layer, Integration Layer)"
+    - "C12 Server Inference Engine (scheduler, kernels)"
+    - "C18 API Contracts/Transport"
+    - "C21 Performance Budgets"
+    - "C08 Framework Requirements (NF1, NF4, NF7)"
+  gates:
+    - "Gate 3 (Worker Qualification)"
+    - "Gate 4 (Integration)"
+    - "Gate 7 (Chaos/Recovery)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-A12/raw_data.json"
+  - "ablation_results/FW-A12/analysis.ipynb"
+  - "ablation_results/FW-A12/claim.json"
+  - "ablation_results/FW-A12/failure.json"
+  - "ablation_results/FW-A12/build_log.txt"
+  - "ablation_results/FW-A12/wrangler_deploy_log.txt"
+  - "ablation_results/FW-A12/receipt.json"

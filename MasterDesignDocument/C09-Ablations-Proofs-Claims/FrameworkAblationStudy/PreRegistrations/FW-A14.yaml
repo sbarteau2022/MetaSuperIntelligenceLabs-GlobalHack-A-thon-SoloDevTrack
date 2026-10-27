@@ -1,0 +1,203 @@
+# Pre-Registration: FW-A14 — Full Stack Integration (Multi-lang vs Rust-only)
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-A14.hash
+# C09 Ablation Framework — Framework Selection Study
+
+ablation_id: "FW-A14"
+title: "Full Stack: Multi-lang (Rust+C+++TS+Go) vs Rust-only (WASM frontend, WASM workers)"
+hypothesis: |
+  Multi-lang stack Pareto-dominates Rust-only on end-to-end metrics:
+  tab-open → agent response, total binary size, build time, cross-lang FFI overhead.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  primary:
+    name: "MacBook Pro M3 Max"
+    cpu: "Apple M3 Max (16-core)"
+    gpu: "Apple M3 Max (40-core GPU)"
+    memory_gb: 36
+    os: "macOS 15.0 (Sequoia)"
+    rustc: "1.82.0"
+    clang: "17.0.0"
+    node: "20.17.0"
+    go: "1.23.0"
+    zig: "0.13.0"
+    swift: "5.10"
+  cloud:
+    name: "Cloudflare Workers (Production)"
+  replica:
+    name: "Mac Studio M2 Ultra"
+    cpu: "Apple M2 Ultra (24-core)"
+    gpu: "Apple M2 Ultra (76-core GPU)"
+    memory_gb: 96
+    os: "macOS 15.0 (Sequoia)"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "full_stack_e2e_bench"
+  description: |
+    End-to-end: file tab open → memory injection → agent harness →
+    inference engine → hyperbolic KV → response → UI update.
+  scenario: "Code generation task (builder lane)"
+  steps:
+    - "Tab open + memory injection (<100ms)"
+    - "Agent spawn + tool registration (<10ms)"
+    - "Tool dispatch (fs.read, code.query) (<5ms)"
+    - "Inference request → ACFT → TwisterAttention → response"
+    - "Hyperbolic KV retrieval (VP-tree knn) (<1ms)"
+    - "Response stream → UI update"
+  iterations: 50
+  warmup: 5
+  seed: 42
+
+# ── Baseline (Multi-lang) ─────────────────────────────────────────────────
+baseline:
+  name: "Rust + C++ + TypeScript + Go"
+  components:
+    kernels: "C++ (FW-A1 winner)"
+    inference: "Rust (FW-A4 winner)"
+    harness: "Rust (FW-A6 winner)"
+    serialization: "Custom mmap (FW-A8 winner) or FlatBuffers"
+    frontend: "TypeScript (FW-A10 winner)"
+    workers: "Go WASM (FW-A12 winner)"
+  boundaries:
+    - "Rust ↔ C++: cxx-rs / bindgen (kernels)"
+    - "Rust ↔ C++: mmap shared memory (serialization)"
+    - "Rust → Go WASM: Custom binary RPC (workers)"
+    - "TS ↔ Rust: Tauri IPC / HTTP + Cap'n Proto"
+    - "Go WASM ↔ DO: Native DO RPC"
+  build:
+    system: "Cargo + CMake + npm + Go + custom orchestrator"
+    time_target_seconds: 300
+  binary_sizes:
+    backend_rust_mb: 50
+    kernels_cpp_mb: 10
+    frontend_ts_gz_kb: 170
+    workers_go_kb: 200
+    total_deploy_mb: 80
+
+# ── Treatment (Rust-only) ─────────────────────────────────────────────────
+treatment:
+  name: "Rust-only (WASM frontend + WASM workers)"
+  components:
+    kernels: "Rust MLX (FW-A1 treatment)"
+    inference: "Rust (same)"
+    harness: "Rust (same)"
+    serialization: "FlatBuffers/Cap'n Proto (FW-A8/9 treatment)"
+    frontend: "Leptos + wasm-codemirror (FW-A10 treatment)"
+    workers: "workers-rs (FW-A12 treatment)"
+  boundaries:
+    - "Rust → WASM frontend: wasm-bindgen + wasm-pack"
+    - "Rust → WASM workers: workers-rs"
+    - "No C++, no Go, no TypeScript"
+  build:
+    system: "Cargo + wasm-pack + trunk + workers-rs"
+    time_target_seconds: 600  # WASM builds slower
+  binary_sizes:
+    backend_rust_mb: 50
+    kernels_rust_mb: 15
+    frontend_wasm_gz_kb: 500
+    workers_wasm_kb: 500
+    total_deploy_mb: 100
+
+# ── Judge (Pass/Fail Predicate) ───────────────────────────────────────────
+judge:
+  primary:
+    - metric: "e2e_latency_ms_ratio"
+      threshold: "<= 1.2"
+      description: "Rust-only e2e latency / Multi-lang e2e latency ≤ 1.2x"
+    - metric: "total_binary_ratio"
+      threshold: "<= 1.5"
+      description: "Rust-only total deploy size / Multi-lang total deploy size ≤ 1.5x"
+    - metric: "build_time_ratio"
+      threshold: "<= 2.0"
+      description: "Rust-only build time / Multi-lang build time ≤ 2.0x"
+  secondary:
+    - metric: "ffi_overhead_elimination"
+      threshold: "PASS"
+      description: "No cross-lang FFI in Rust-only (verified)"
+    - metric: "frontend_parity"
+      threshold: ">= 0.85"
+      description: "Rust/WASM frontend feature parity ≥ 85%"
+    - metric: "workers_parity"
+      threshold: ">= 0.8"
+      description: "Rust/WASM workers feature parity ≥ 80%"
+    - metric: "dev_velocity_ratio"
+      threshold: "<= 1.5"
+      description: "Rust-only dev velocity / Multi-lang dev velocity ≤ 1.5x"
+
+# ── Effect Size Plan ──────────────────────────────────────────────────────
+effect_size_plan:
+  e2e_latency:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.15
+  binary_size:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.3
+  build_time:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.5
+  frontend_parity:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.2
+
+# ── Statistical Design ────────────────────────────────────────────────────
+statistical_design:
+  alpha: 0.05
+  power: 0.80
+  effect_size_assumed: 0.5
+  alpha_spending:
+    method: "Lan-DeMets"
+    rho: 2
+  interim_analyses: 4
+  futility_threshold: 0.2
+  sample_size_per_group: 30
+
+# ── Null Handling ─────────────────────────────────────────────────────────
+null_handling:
+  if_treatment_wins_or_ties:
+    interpretation: "Rust-only achieves parity; multi-lang not necessary"
+    action: "FW-A14 → Multi-lang OPTIONAL; Rust-only viable"
+    design_decision: "Consolidate to Rust-only; eliminate C++/TS/Go boundaries"
+  if_inconclusive:
+    interpretation: "Rust/WASM frontend + workers immature; multi-lang still necessary"
+    action: "Record INFERRED; multi-lang REQUIRED for now"
+    design_decision: "Lock multi-lang stack"
+  if_baseline_wins_clear:
+    interpretation: "Multi-lang Pareto-optimal; each language owns irreducible domain"
+    action: "Record VERIFIED necessity; Multi-lang REQUIRED"
+    design_decision: "Lock multi-lang stack"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md"
+  traceability:
+    - "C04 Architecture Topology (all layers)"
+    - "C08 Framework Requirements (all)"
+    - "C09 Ablations (all)"
+    - "C10 Deployment Strategy"
+  gates:
+    - "Gate 4 (Integration)"
+    - "Gate 5 (Observability)"
+    - "Gate 6 (Chaos/Recovery)"
+    - "Gate 7 (Compliance)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-A14/raw_data.json"
+  - "ablation_results/FW-A14/analysis.ipynb"
+  - "ablation_results/FW-A14/claim.json"
+  - "ablation_results/FW-A14/failure.json"
+  - "ablation_results/FW-A14/build_log.txt"
+  - "ablation_results/FW-A14/receipt.json"

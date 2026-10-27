@@ -1,0 +1,137 @@
+# Pre-Registration: FW-NEC-FFI-RC — Necessity Test: Rust↔C++ FFI Boundary
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-NEC-FFI-RC.hash
+# C09 Ablation Framework — Necessity Testing (C13.1 / C09.5 / Rule FW-4)
+
+ablation_id: "FW-NEC-FFI-RC"
+title: "Necessity Test: Rust↔C++ FFI Boundary (Kernels + Serialization)"
+hypothesis: |
+  The Rust↔C++ FFI boundary is NECESSARY because:
+  1. C++ kernels (from FW-NEC-KERNELS) are necessary
+  2. Rust inference/harness (from FW-NEC-HARNESS) are necessary
+  3. The FFI overhead (<50ns/call) is acceptable vs consolidation cost
+  4. Consolidation to single language fails FW-A14 or FW-A15
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  primary:
+    name: "MacBook Pro M3 Max"
+    memory_gb: 36
+  replica:
+    name: "Mac Studio M2 Ultra"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "ffi_overhead_bench"
+  description: |
+    Measure FFI call overhead for kernel dispatch + serialization IPC.
+    Compare: FFI vs inlined (single language) vs mmap zero-copy.
+  operations:
+    - name: "kernel_dispatch_ffi"
+      count: 10_000_000
+      description: "Rust → C++ kernel call via cxx-rs"
+    - name: "kernel_dispatch_inline"
+      count: 10_000_000
+      description: "Rust → Rust kernel (if Rust kernels viable)"
+    - name: "mmap_ipc_read"
+      count: 100_000_000
+      description: "Rust reads C++-written mmap (zero-copy)"
+    - name: "serialization_ffi"
+      count: 1_000_000
+      description: "C++ writer → Rust reader via mmap"
+  iterations: 100
+  seed: 42
+
+# ── Comparison ────────────────────────────────────────────────────────────
+comparison:
+  baseline:
+    name: "Current multi-lang with FFI + mmap"
+    boundaries:
+      - "Rust ↔ C++ kernels: cxx-rs (opaque pointers, C ABI)"
+      - "Rust ↔ C++ serialization: mmap shared memory (zero-copy)"
+    overhead_targets:
+      - "kernel_ffi_ns_per_call: < 50"
+      - "mmap_ipc_ns_per_read: < 5 (pointer cast)"
+    source: "Current implementation"
+  treatment:
+    name: "Consolidated single-language (no FFI)"
+    scenarios:
+      - "Rust-only: Rust kernels (FW-A1 treatment) + Rust inference + Rust harness"
+      - "C++-only: C++ inference (FW-A4 treatment) + C++ harness (not tested) + C++ kernels"
+      - "Zig-only: Zig kernels (FW-A2 treatment) + Zig inference (FW-A5 treatment) + Zig harness (FW-A6 treatment)"
+    selection: |
+      Best consolidated stack from FW-A14 (Rust-only) and FW-A15 (Zig-only)
+      If both FAIL: FFI boundary is NECESSARY by construction
+
+# ── Bayesian Design ───────────────────────────────────────────────────────
+bayesian_design:
+  prior:
+    h0_probability: 0.5
+    h1_probability: 0.5
+  likelihood:
+    model: "Composite: FFI_overhead + consolidation_failure_probability"
+    ffi_overhead_cost: "50ns/call × call_frequency → latency budget impact"
+    consolidation_failure: "P(consolidation_fails) from FW-A14/FW-A15 results"
+  decision_rule:
+    bf01_threshold_required: 10
+    bf01_threshold_optional: 0.1
+    bf01_inconclusive: "0.1 ≤ BF₀₁ ≤ 10"
+
+# ── Judge (Bayesian Decision) ─────────────────────────────────────────────
+judge:
+  primary:
+    metric: "bayes_factor_bf01"
+    threshold_required: "> 10"
+    threshold_optional: "< 0.1"
+    description: "BF₀₁ evidence for Rust↔C++ FFI necessity"
+  secondary:
+    - metric: "kernel_ffi_overhead_ns"
+      threshold: "<= 50"
+      description: "FFI call overhead ≤ 50ns (current target)"
+    - metric: "mmap_ipc_overhead_ns"
+      threshold: "<= 5"
+      description: "mmap IPC overhead ≤ 5ns (zero-copy)"
+    - metric: "consolidation_alternative_fails"
+      threshold: "TRUE"
+      description: "Both FW-A14 and FW-A15 FAIL (consolidation not viable)"
+
+# ── Null Handling ─────────────────────────────────────────────────────────
+null_handling:
+  if_bf01_gt_10:
+    interpretation: "STRONG EVIDENCE: Rust↔C++ FFI NECESSARY (consolidation fails, overhead acceptable)"
+    action: "Claim C09-FW-NEC-FFI-RC → VERIFIED; FFI boundary REQUIRED"
+    design_decision: "Lock Rust↔C++ FFI boundary; optimize cxx-rs + mmap"
+  if_bf01_lt_0_1:
+    interpretation: "STRONG EVIDENCE: Rust↔C++ FFI NOT NECESSARY (consolidation viable)"
+    action: "Claim C09-FW-NEC-FFI-RC → VERIFIED; FFI boundary OPTIONAL"
+    design_decision: "Consolidate to single language (winner of FW-A14/FW-A15)"
+  if_inconclusive:
+    interpretation: "INSUFFICIENT EVIDENCE; depends on FW-A14/FW-A15 outcomes"
+    action: "Claim C09-FW-NEC-FFI-RC → INFERRED; wait for integration results"
+    design_decision: "Defer until FW-A14/FW-A15 complete"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md (Rule FW-4, FW-11)"
+  traceability:
+    - "C05 Atlas/Hyperbolic KV (kernels)"
+    - "C12 Server Inference Engine"
+    - "C09 Ablations (FW-A14, FW-A15)"
+    - "C13 Testing Necessity"
+  gates:
+    - "Gate 4 (Integration - necessity)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-NEC-FFI-RC/raw_data.json"
+  - "ablation_results/FW-NEC-FFI-RC/analysis.ipynb"
+  - "ablation_results/FW-NEC-FFI-RC/claim.json"
+  - "ablation_results/FW-NEC-FFI-RC/bayes_factor_calculation.json"
+  - "ablation_results/FW-NEC-FFI-RC/receipt.json"

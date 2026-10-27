@@ -1,0 +1,176 @@
+# Pre-Registration: FW-A7 — Agent Harness (Rust vs Go)
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-A7.hash
+# C09 Ablation Framework — Framework Selection Study
+
+ablation_id: "FW-A7"
+title: "Agent Harness: Rust (traits, async-trait) vs Go (interfaces, generics, goroutines)"
+hypothesis: |
+  Go agent harness achieves parity with Rust on lane spawn + tool dispatch
+  with ≤1.5x binary size, using Go 1.23 generics + goroutines.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  primary:
+    name: "MacBook Pro M3 Max"
+    cpu: "Apple M3 Max (16-core)"
+    memory_gb: 36
+    os: "macOS 15.0 (Sequoia)"
+    rustc: "1.82.0"
+    go: "1.23.0"
+  replica:
+    name: "Mac Studio M2 Ultra"
+    cpu: "Apple M2 Ultra (24-core)"
+    memory_gb: 96
+    os: "macOS 15.0 (Sequoia)"
+    rustc: "1.82.0"
+    go: "1.23.0"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "agent_harness_bench"
+  description: "Same as FW-A6 workload"
+  lanes: 8
+  tools_per_lane: 20
+  hooks_per_lane: 10
+  handoffs_per_run: 1000
+  holes_per_run: 100
+  iterations: 100
+  warmup: 10
+  seed: 42
+
+# ── Baseline (Rust) ───────────────────────────────────────────────────────
+baseline:
+  language: "Rust 1.82.0"
+  async_runtime: "tokio 1.38"
+  dispatch: "dyn Trait + async-trait"
+  session_types: "Typestate pattern"
+  allowlist: "Const generics + trait bounds"
+  memory:
+    allocator: "jemallocator"
+    pools: "Per-lane arena"
+
+# ── Treatment (Go) ────────────────────────────────────────────────────────
+treatment:
+  language: "Go 1.23.0"
+  async_runtime: "Goroutines + channels"
+  dispatch:
+    mechanism: "Interfaces + generics (Go 1.18+)"
+    tool_registry: "map[ToolId]Tool (interface)"
+    hook_registry: "[]Hook (interface)"
+  session_types:
+    mechanism: "Runtime protocol verification (no compile-time)"
+    verification: "Runtime checks + tests"
+  allowlist_enforcement:
+    mechanism: "Runtime validation (compile-time not possible)"
+    verification: "Tests + lint"
+  memory:
+    allocator: "Go runtime (GC)"
+    pools: "sync.Pool per-lane"
+
+# ── Judge (Pass/Fail Predicate) ───────────────────────────────────────────
+judge:
+  primary:
+    - metric: "lane_spawn_latency_ratio"
+      threshold: "<= 3.0"
+      description: "Rust lane spawn / Go lane spawn ≤ 3.0 (GC overhead acceptable)"
+    - metric: "tool_dispatch_overhead_ratio"
+      threshold: "<= 2.0"
+      description: "Rust tool dispatch / Go tool dispatch ≤ 2.0"
+  secondary:
+    - metric: "compile_time_allowlist_enforcement"
+      threshold: "FAIL_GO"
+      description: "Go CANNOT enforce at compile-time (runtime only)"
+    - metric: "handoff_protocol_verification"
+      threshold: "FAIL_GO"
+      description: "Go CANNOT verify session types at compile-time"
+    - metric: "binary_size_ratio"
+      threshold: "<= 1.5"
+      description: "Rust binary / Go binary ≤ 1.5"
+    - metric: "tail_latency_p99_ratio"
+      threshold: "<= 2.0"
+      description: "Rust p99 / Go p99 ≤ 2.0 (GC pauses)"
+    - metric: "hook_execution_overhead_ratio"
+      threshold: "<= 2.0"
+      description: "Rust hook chain / Go hook chain ≤ 2.0"
+
+# ── Effect Size Plan ──────────────────────────────────────────────────────
+effect_size_plan:
+  lane_spawn_latency:
+    type: "Cohen's d"
+    method: "bootstrap"
+    samples: 10000
+    meaningful_threshold: 0.8
+  tool_dispatch:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.5
+  binary_size:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.5
+  tail_latency:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 2.0
+
+# ── Statistical Design ────────────────────────────────────────────────────
+statistical_design:
+  alpha: 0.05
+  power: 0.80
+  effect_size_assumed: 0.8
+  alpha_spending:
+    method: "Lan-DeMets"
+    rho: 2
+  interim_analyses: 4
+  futility_threshold: 0.2
+  sample_size_per_group: 50
+
+# ── Null Handling ─────────────────────────────────────────────────────────
+null_handling:
+  if_treatment_wins_or_ties:
+    interpretation: "Go achieves harness parity despite no compile-time session types"
+    action: "FW-A7 → OPTIONAL for Rust; Go viable for harness"
+    design_decision: "Consolidate to Go for harness; but compile-time guarantees lost"
+    caveat: "Session type safety + allowlist enforcement become runtime-only"
+  if_inconclusive:
+    interpretation: "Go GC tail latency vs Rust compile-time guarantees tradeoff unclear"
+    action: "Record INFERRED; test hybrid (Rust orchestration + Go workers)"
+    design_decision: "Lock Rust for harness"
+  if_baseline_wins_clear:
+    interpretation: "Rust compile-time session types + allowlist + zero-GC necessary for harness"
+    action: "Record VERIFIED necessity; Rust REQUIRED for agent harness"
+    design_decision: "Lock Rust for harness; Go relegated to Workers only"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md"
+  traceability:
+    - "C07 Memory/State Management"
+    - "C14 Assembly/Build"
+    - "C25 Hole Substrate"
+    - "C27 Workflows/Task Graph"
+    - "C28 Skill Registry/Hooks"
+    - "C29 Tool Registry/Code Intel"
+    - "C30 Multi-Agent Lanes"
+    - "C34 Agent Lanes/Personas"
+  gates:
+    - "Gate 3 (Agent Harness)"
+    - "Gate 4 (Integration)"
+    - "Gate 6 (Chaos/Recovery)"
+    - "Gate 7 (Compliance)"
+
+required_artifacts:
+  - "ablation_results/FW-A7/raw_data.json"
+  - "ablation_results/FW-A7/analysis.ipynb"
+  - "ablation_results/FW-A7/claim.json"
+  - "ablation_results/FW-A7/failure.json"
+  - "ablation_results/FW-A7/build_log.txt"
+  - "ablation_results/FW-A7/receipt.json"

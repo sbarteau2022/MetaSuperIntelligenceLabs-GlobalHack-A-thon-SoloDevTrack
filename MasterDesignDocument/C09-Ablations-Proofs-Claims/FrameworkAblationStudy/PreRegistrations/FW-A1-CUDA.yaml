@@ -1,0 +1,219 @@
+# Pre-Registration: FW-A1-CUDA — Hyperbolic KV Kernels (CUDA Rust cutile-rs vs C++)
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-A1-CUDA.hash
+# C09 Ablation Framework — Framework Selection Study
+#
+# This ablation tests CUDA Rust cutile-rs (Tile track) as the NVIDIA-native
+# implementation of hyperbolic KV kernels, comparing against C++ hand-rolled SIMD.
+# Per the CUDA Rust research (27 Oct 2026): cutile-rs is the recommended Tile track,
+# on crates.io, used in Grout, mistral.rs, Candle; JIT compiles to cubin per NVIDIA arch.
+
+ablation_id: "FW-A1-CUDA"
+title: "Hyperbolic KV Kernels: CUDA Rust cutile-rs (Tile) vs C++ (hand-rolled SIMD, mmap)"
+hypothesis: |
+  CUDA Rust cutile-rs achieves parity with hand-rolled C++ SIMD for VP-tree + Lorentz ops
+  + Picard reduction on H³×T²/Γ₁₂, with stronger compile-time safety (partition ownership)
+  and per-NVIDIA-arch autotuning via Tile IR JIT.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  primary:
+    name: "Linux + NVIDIA GPU (H100 / B200 / RTX 5090)"
+    gpu: "NVIDIA H100 (sm_90) / B200 (sm_100) / RTX 5090 (sm_120)"
+    cuda: "12.x / 13.3"
+    rustc: "stable 1.89+ (cutile-rs requirement)"
+    note: "CUDA does NOT run on Apple Silicon (Mac limit per NVIDIA)"
+  replica:
+    name: "Linux + NVIDIA GPU (different arch)"
+    note: "Cross-arch replication: sm_90 vs sm_100 vs sm_120"
+  mac_validation:
+    name: "MacBook Pro M3 Max (Metal validation only)"
+    note: "Design tile kernels on Mac; verify semantics on Metal; cannot execute PTX/cubin locally"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "hyperbolic_kv_bench_cuda"
+  description: |
+    Mixed insert/knn_search/evict/picard_reduce workload on H³×T² manifold
+    with Whitehead 12-vertex structure (Picard fundamental domain Γ₁₂).
+    Implemented as cutile-rs Tile kernels + cuda-oxide SIMT fallback for Picard.
+  vectors: 1_000_000
+  dimensions:
+    h3: 3  # Lorentz coordinates (x0, x1, x2, x3) with x0 > 0
+    t2: 2  # Toroidal phase (θ_f, θ_s)
+  fixed_point: "Q32.31 with i128 accumulator for Minkowski products"
+  operations:
+    - name: "insert"
+      count: 1_000_000
+      kernel: "cutile-rs Tile (partition = grid)"
+    - name: "knn_search"
+      count: 100_000
+      k: 32
+      kernel: "cutile-rs Tile (VP-tree distance)"
+    - name: "evict"
+      count: 100_000
+      kernel: "cutile-rs Tile (geometric eviction: max x0 unpinned)"
+    - name: "picard_reduce"
+      count: 10_000
+      kernel: "cuda-oxide SIMT (warp reductions, custom Matrix units)"
+      note: "Picard reduction requires warp/cluster ops not in Tile IR"
+  iterations: 1000
+  warmup_iterations: 100
+  seed: 42
+
+# ── Baseline (C++) ────────────────────────────────────────────────────────
+baseline:
+  language: "C++20"
+  compiler: "clang-17 / nvcc"
+  flags: "-O3 -arch=sm_90 -ffast-math -flto=thin"
+  simd:
+    backend: "Hand-rolled PTX / inline PTX for Tensor Cores"
+    operations: ["Minkowski dot", "arcosh", "VP-tree distance", "Picard matrix ops"]
+  memory:
+    allocator: "cudaMallocAsync / cudaMallocManaged"
+    ipc: "CUDA IPC (mmap equivalent) + atomic refcount"
+    cache: "VP-tree nodes in device memory, KV slices adjacent"
+  kernel_fusion:
+    enabled: true
+    rules: "Same 3 rules as FW-A1 (Lorentz+VP-tree, TwisterAttention, n-gram)"
+    verification: "Manual PTX inspection"
+  build:
+    system: "CMake 3.28 + Ninja + nvcc"
+    time_target_seconds: 120
+  binary_size_target_mb: 10
+
+# ── Treatment (CUDA Rust: cutile-rs + cuda-oxide) ─────────────────────────
+treatment:
+  language: "Rust (cutile-rs Tile + cuda-oxide SIMT)"
+  tracks:
+    - name: "cutile-rs (Tile track — REACH FOR FIRST)"
+      crate: "cutile (crates.io, stable Rust 1.89+)"
+      runtime: "cuda-bindings + cuda-core + cuda-async"
+      compilation: "JIT at first launch: Rust AST → Tile IR → cubin per arch"
+      safety: "Partition ownership (exclusive output sub-tensor per tile)"
+      used_in: ["Grout (Qwen3 engine)", "mistral.rs", "Candle MoE kernels"]
+      kernel_style: "Tensor ops on tiles, no thread/block/warp vocabulary"
+      examples: ["hello_world", "saxpy", "async_gemm", "cutile-kernels crate"]
+      status: "Further along — still early-stage, not production-ready"
+    - name: "cuda-oxide (SIMT track — ESCAPE HATCH)"
+      crate: "cuda-oxide (custom rustc backend, nightly)"
+      runtime: "cuda-bindings + cuda-core + cuda-async (SAME as cutile)"
+      compilation: "AOT: Rust MIR → Pliron IR → LLVM IR → PTX"
+      safety: "DisjointSlice + typed thread index + #[launch_contract]"
+      kernel_style: "Explicit thread/block/warp/cluster/TMA/shared memory"
+      shared_memory: "Currently REQUIRES unsafe (NVIDIA: 'active work')"
+      toolchain: "cargo oxide (pinned stable 1.99.1 or nightly-2026-04-03)"
+      status: "Early alpha — assess, do not ship on it"
+  memory:
+    allocator: "cuda-core allocators"
+    ipc: "CUDA IPC + atomic refcount (same shared runtime)"
+    cache: "cutile Tensors in device memory"
+  kernel_fusion:
+    enabled: true
+    mechanism: "Tile IR automatic fusion + cuda-oxide manual fusion for escape hatches"
+    verification: "Tile IR debug + PTX capture"
+  build:
+    system: "cargo + cargo oxide (for SIMT kernels)"
+    time_target_seconds: 180
+  binary_size_target_mb: 15
+
+# ── Judge (Pass/Fail Predicate) ───────────────────────────────────────────
+judge:
+  primary:
+    - metric: "throughput_ratio"
+      threshold: ">= 0.95"
+      description: "CUDA Rust throughput / C++ throughput ≥ 0.95 (parity)"
+    - metric: "peak_memory_ratio"
+      threshold: "<= 1.05"
+      description: "CUDA Rust peak memory / C++ peak memory ≤ 1.05"
+  secondary:
+    - metric: "compile_time_ratio"
+      threshold: "<= 1.5"
+      description: "CUDA Rust build time / C++ build time ≤ 1.5"
+    - metric: "tile_ir_autotune_correctness"
+      threshold: "PASS"
+      description: "JIT autotune produces correct results across sm_90/sm_100/sm_120"
+    - metric: "partition_safety_verification"
+      threshold: "PASS"
+      description: "cutile partition ownership rejects aliasing at compile-time"
+    - metric: "simt_escape_hatch_functional"
+      threshold: "PASS"
+      description: "cuda-oxide Picard reduction kernel functional with warp reductions"
+    - metric: "shared_runtime_interop"
+      threshold: "PASS"
+      description: "cutile Tile kernels + cuda-oxide SIMT kernels interoperate on same stream"
+
+# ── Effect Size Plan ──────────────────────────────────────────────────────
+effect_size_plan:
+  throughput:
+    type: "Cohen's d"
+    method: "bootstrap"
+    samples: 10000
+    meaningful_threshold: 0.3
+  peak_memory:
+    type: "percent_change"
+    method: "percentile_bootstrap"
+    samples: 10000
+    meaningful_threshold: 5
+  autotune_portability:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.2
+
+# ── Statistical Design ────────────────────────────────────────────────────
+statistical_design:
+  alpha: 0.05
+  power: 0.80
+  effect_size_assumed: 0.3
+  alpha_spending:
+    method: "Lan-DeMets"
+    rho: 2
+  interim_analyses: 4
+  futility_threshold: 0.2
+  sample_size_per_group: 30
+
+# ── Null Handling (Pre-Stated) ────────────────────────────────────────────
+null_handling:
+  if_treatment_wins_or_ties:
+    interpretation: "CUDA Rust cutile-rs achieves kernel parity with C++; C++ not necessary for NVIDIA kernels"
+    action: "FW-A1-CUDA result → OPTIONAL for C++ on NVIDIA; CUDA Rust viable for kernels"
+    design_decision: "Consolidate to CUDA Rust for NVIDIA kernels; Metal for Apple Silicon (separate ablation)"
+    cross_vendor_note: "This covers NVIDIA only; Metal ablation (FW-A3) covers Apple Silicon"
+  if_inconclusive:
+    interpretation: "cutile-rs early-stage; C++ still necessary for production NVIDIA kernels"
+    action: "Record as INFERRED; test hybrid (cutile-rs for dense + cuda-oxide for sparse)"
+    design_decision: "Defer framework lock; run FW-A1-CUDA-retry with newer cutile-rs"
+  if_baseline_wins_clear:
+    interpretation: "Hand-rolled C++ PTX + SIMD maturity necessary for NVIDIA kernels"
+    action: "Record as VERIFIED necessity; C++ REQUIRED for NVIDIA kernels"
+    design_decision: "Lock C++ for NVIDIA kernels; CUDA Rust for future re-evaluation"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md"
+  traceability:
+    - "C05 Atlas/Hyperbolic KV (kernels)"
+    - "C12 Server Inference Engine (kernel logic)"
+    - "C08 Framework Requirements (NF1, NF4, NF5)"
+    - "C09 Ablations (A1, A31-A35)"
+    - "CUDA Rust research (27 Oct 2026): cutile-rs Tile track, cuda-oxide SIMT track"
+  gates:
+    - "Gate 3 (Kernel Qualification - NVIDIA)"
+    - "Gate 4 (Integration)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-A1-CUDA/raw_data.json"
+  - "ablation_results/FW-A1-CUDA/analysis.ipynb"
+  - "ablation_results/FW-A1-CUDA/claim.json"
+  - "ablation_results/FW-A1-CUDA/failure.json"
+  - "ablation_results/FW-A1-CUDA/build_log.txt"
+  - "ablation_results/FW-A1-CUDA/ncu_log.txt"
+  - "ablation_results/FW-A1-CUDA/receipt.json"

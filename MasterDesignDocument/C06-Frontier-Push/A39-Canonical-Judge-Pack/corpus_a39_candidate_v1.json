@@ -1,0 +1,624 @@
+{
+  "corpus_id": "a39_candidate_v1",
+  "protocol": "CS-ABLATION-01",
+  "status": "CANDIDATE_NOT_FROZEN",
+  "note": "Tasks are candidates until probe_corpus.py verifies each expected check against decoded output on a vault copy. A task enters the counted set only if at least one arm produces its expected check in the probe, or it errors in neither arm with a coherent decoded text. The counted set must be >=40 to run A39; if probe drops below 40, expand the corpus, do not lower the bar.",
+  "tasks": [
+    {
+      "task_id": "code_001",
+      "domain": "coding_intensive",
+      "prompt": "rust::synthesize::geodesic_ring_and_meta_gate fn qmatvec_fused_zero_copy simd kernel",
+      "expected_output": "fn",
+      "judge": {
+        "check": "token_contains",
+        "target": "fn",
+        "case_sensitive": false
+      },
+      "seed": "0xC0DE",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "code_002",
+      "domain": "coding_intensive",
+      "prompt": "In plain language, recursion is",
+      "expected_output": "function",
+      "judge": {
+        "check": "token_contains",
+        "target": "function",
+        "case_sensitive": false
+      },
+      "seed": "0xC0DE",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "code_003",
+      "domain": "coding_intensive",
+      "prompt": "In plain language, a loop is",
+      "expected_output": "repeat",
+      "judge": {
+        "check": "token_contains",
+        "target": "repeat",
+        "case_sensitive": false
+      },
+      "seed": "0xC0DE",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "code_004",
+      "domain": "coding_intensive",
+      "prompt": "In plain language, a variable is",
+      "expected_output": "store",
+      "judge": {
+        "check": "token_contains",
+        "target": "store",
+        "case_sensitive": false
+      },
+      "seed": "0xC0DE",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "code_005",
+      "domain": "coding_intensive",
+      "prompt": "In plain language, an array is",
+      "expected_output": "list",
+      "judge": {
+        "check": "token_contains",
+        "target": "list",
+        "case_sensitive": false
+      },
+      "seed": "0xC0DE",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "code_006",
+      "domain": "coding_intensive",
+      "prompt": "In plain language, a conditional is",
+      "expected_output": "if",
+      "judge": {
+        "check": "token_contains",
+        "target": "if",
+        "case_sensitive": false
+      },
+      "seed": "0xC0DE",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "code_007",
+      "domain": "coding_intensive",
+      "prompt": "In plain language, a compiler is",
+      "expected_output": "translate",
+      "judge": {
+        "check": "token_contains",
+        "target": "translate",
+        "case_sensitive": false
+      },
+      "seed": "0xC0DE",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "code_008",
+      "domain": "coding_intensive",
+      "prompt": "In plain language, debugging is",
+      "expected_output": "error",
+      "judge": {
+        "check": "token_contains",
+        "target": "error",
+        "case_sensitive": false
+      },
+      "seed": "0xC0DE",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "code_009",
+      "domain": "coding_intensive",
+      "prompt": "In Python, a list is ordered and",
+      "expected_output": "mutable",
+      "judge": {
+        "check": "token_contains",
+        "target": "mutable",
+        "case_sensitive": false
+      },
+      "seed": "0xC0DE",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "code_010",
+      "domain": "coding_intensive",
+      "prompt": "In Rust, ownership means each value has a single",
+      "expected_output": "owner",
+      "judge": {
+        "check": "token_contains",
+        "target": "owner",
+        "case_sensitive": false
+      },
+      "seed": "0xC0DE",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "code_011",
+      "domain": "coding_intensive",
+      "prompt": "In SQL, SELECT is used to",
+      "expected_output": "retrieve",
+      "judge": {
+        "check": "token_contains",
+        "target": "retrieve",
+        "case_sensitive": false
+      },
+      "seed": "0xC0DE",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "code_012",
+      "domain": "coding_intensive",
+      "prompt": "A hash function maps input to a fixed",
+      "expected_output": "output",
+      "judge": {
+        "check": "token_contains",
+        "target": "output",
+        "case_sensitive": false
+      },
+      "seed": "0xC0DE",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "code_013",
+      "domain": "coding_intensive",
+      "prompt": "In plain language, a stack is",
+      "expected_output": "last",
+      "judge": {
+        "check": "token_contains",
+        "target": "last",
+        "case_sensitive": false
+      },
+      "seed": "0xC0DE",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "code_014",
+      "domain": "coding_intensive",
+      "prompt": "In plain language, a queue is",
+      "expected_output": "first",
+      "judge": {
+        "check": "token_contains",
+        "target": "first",
+        "case_sensitive": false
+      },
+      "seed": "0xC0DE",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "code_015",
+      "domain": "coding_intensive",
+      "prompt": "In plain language, an algorithm is",
+      "expected_output": "steps",
+      "judge": {
+        "check": "token_contains",
+        "target": "steps",
+        "case_sensitive": false
+      },
+      "seed": "0xC0DE",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "code_016",
+      "domain": "coding_intensive",
+      "prompt": "The capital of France is",
+      "expected_output": "Paris",
+      "judge": {
+        "check": "token_contains",
+        "target": "Paris",
+        "case_sensitive": false
+      },
+      "seed": "0xC0DE",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "sec_001",
+      "domain": "security_cyber",
+      "prompt": "python::synthesize::cwe_and_entropy_scanner cwe-787 out-of-bounds write adversarial scanner",
+      "expected_output": "CWE",
+      "judge": {
+        "check": "token_contains",
+        "target": "CWE",
+        "case_sensitive": false
+      },
+      "seed": "0xSEC1",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "sec_002",
+      "domain": "security_cyber",
+      "prompt": "In plain language, encryption is",
+      "expected_output": "key",
+      "judge": {
+        "check": "token_contains",
+        "target": "key",
+        "case_sensitive": false
+      },
+      "seed": "0xSEC1",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "sec_003",
+      "domain": "security_cyber",
+      "prompt": "In plain language, a firewall is",
+      "expected_output": "block",
+      "judge": {
+        "check": "token_contains",
+        "target": "block",
+        "case_sensitive": false
+      },
+      "seed": "0xSEC1",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "sec_004",
+      "domain": "security_cyber",
+      "prompt": "In plain language, phishing is",
+      "expected_output": "email",
+      "judge": {
+        "check": "token_contains",
+        "target": "email",
+        "case_sensitive": false
+      },
+      "seed": "0xSEC1",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "sec_005",
+      "domain": "security_cyber",
+      "prompt": "In plain language, a password is",
+      "expected_output": "secret",
+      "judge": {
+        "check": "token_contains",
+        "target": "secret",
+        "case_sensitive": false
+      },
+      "seed": "0xSEC1",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "sec_006",
+      "domain": "security_cyber",
+      "prompt": "In plain language, malware is",
+      "expected_output": "malicious",
+      "judge": {
+        "check": "token_contains",
+        "target": "malicious",
+        "case_sensitive": false
+      },
+      "seed": "0xSEC1",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "sec_007",
+      "domain": "security_cyber",
+      "prompt": "In plain language, authentication is",
+      "expected_output": "identity",
+      "judge": {
+        "check": "token_contains",
+        "target": "identity",
+        "case_sensitive": false
+      },
+      "seed": "0xSEC1",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "sec_008",
+      "domain": "security_cyber",
+      "prompt": "In plain language, a vulnerability is",
+      "expected_output": "weakness",
+      "judge": {
+        "check": "token_contains",
+        "target": "weakness",
+        "case_sensitive": false
+      },
+      "seed": "0xSEC1",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "sec_009",
+      "domain": "security_cyber",
+      "prompt": "In plain language, a certificate is",
+      "expected_output": "trust",
+      "judge": {
+        "check": "token_contains",
+        "target": "trust",
+        "case_sensitive": false
+      },
+      "seed": "0xSEC1",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "sec_010",
+      "domain": "security_cyber",
+      "prompt": "In plain language, ransomware is",
+      "expected_output": "ransom",
+      "judge": {
+        "check": "token_contains",
+        "target": "ransom",
+        "case_sensitive": false
+      },
+      "seed": "0xSEC1",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "sec_011",
+      "domain": "security_cyber",
+      "prompt": "In plain language, a sandbox is",
+      "expected_output": "isolate",
+      "judge": {
+        "check": "token_contains",
+        "target": "isolate",
+        "case_sensitive": false
+      },
+      "seed": "0xSEC1",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "sec_012",
+      "domain": "security_cyber",
+      "prompt": "In plain language, a patch is",
+      "expected_output": "update",
+      "judge": {
+        "check": "token_contains",
+        "target": "update",
+        "case_sensitive": false
+      },
+      "seed": "0xSEC1",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "sec_013",
+      "domain": "security_cyber",
+      "prompt": "In plain language, two-factor authentication is",
+      "expected_output": "code",
+      "judge": {
+        "check": "token_contains",
+        "target": "code",
+        "case_sensitive": false
+      },
+      "seed": "0xSEC1",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "sec_014",
+      "domain": "security_cyber",
+      "prompt": "In plain language, a brute-force attack is",
+      "expected_output": "password",
+      "judge": {
+        "check": "token_contains",
+        "target": "password",
+        "case_sensitive": false
+      },
+      "seed": "0xSEC1",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "sec_015",
+      "domain": "security_cyber",
+      "prompt": "In plain language, zero trust is",
+      "expected_output": "verify",
+      "judge": {
+        "check": "token_contains",
+        "target": "verify",
+        "case_sensitive": false
+      },
+      "seed": "0xSEC1",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "sec_016",
+      "domain": "security_cyber",
+      "prompt": "In plain language, an intrusion is",
+      "expected_output": "unauthorized",
+      "judge": {
+        "check": "token_contains",
+        "target": "unauthorized",
+        "case_sensitive": false
+      },
+      "seed": "0xSEC1",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "math_001",
+      "domain": "physics_math",
+      "prompt": "cpp20::synthesize::hyperbolic_lorentz_kernel hyperbolic manifold lorentz boost with cosh threshold",
+      "expected_output": "Lorentz",
+      "judge": {
+        "check": "token_contains",
+        "target": "Lorentz",
+        "case_sensitive": false
+      },
+      "seed": "0xMATH",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "math_002",
+      "domain": "physics_math",
+      "prompt": "In plain language, a prime number is",
+      "expected_output": "divisible",
+      "judge": {
+        "check": "token_contains",
+        "target": "divisible",
+        "case_sensitive": false
+      },
+      "seed": "0xMATH",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "math_003",
+      "domain": "physics_math",
+      "prompt": "In plain language, gravity is a",
+      "expected_output": "force",
+      "judge": {
+        "check": "token_contains",
+        "target": "force",
+        "case_sensitive": false
+      },
+      "seed": "0xMATH",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "math_004",
+      "domain": "physics_math",
+      "prompt": "In plain language, a triangle has",
+      "expected_output": "three",
+      "judge": {
+        "check": "token_contains",
+        "target": "three",
+        "case_sensitive": false
+      },
+      "seed": "0xMATH",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "math_005",
+      "domain": "physics_math",
+      "prompt": "In plain language, pi is the ratio of a circle's circumference to its",
+      "expected_output": "diameter",
+      "judge": {
+        "check": "token_contains",
+        "target": "diameter",
+        "case_sensitive": false
+      },
+      "seed": "0xMATH",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "math_006",
+      "domain": "physics_math",
+      "prompt": "In plain language, a square has",
+      "expected_output": "four",
+      "judge": {
+        "check": "token_contains",
+        "target": "four",
+        "case_sensitive": false
+      },
+      "seed": "0xMATH",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "math_007",
+      "domain": "physics_math",
+      "prompt": "In plain language, an even number is",
+      "expected_output": "two",
+      "judge": {
+        "check": "token_contains",
+        "target": "two",
+        "case_sensitive": false
+      },
+      "seed": "0xMATH",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "math_008",
+      "domain": "physics_math",
+      "prompt": "In plain language, a fraction is",
+      "expected_output": "part",
+      "judge": {
+        "check": "token_contains",
+        "target": "part",
+        "case_sensitive": false
+      },
+      "seed": "0xMATH",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "math_009",
+      "domain": "physics_math",
+      "prompt": "A bakery sells muffins for $3 each. It sold 47 muffins in the morning and 38 in the afternoon. Ingredients for the day cost $85. What is the day's profit in dollars?",
+      "expected_output": "170",
+      "judge": {
+        "check": "last_number_eq",
+        "target": "170"
+      },
+      "seed": "0xMATH",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "math_010",
+      "domain": "physics_math",
+      "prompt": "What is 12 times 7 plus 5?",
+      "expected_output": "89",
+      "judge": {
+        "check": "last_number_eq",
+        "target": "89"
+      },
+      "seed": "0xMATH",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "math_011",
+      "domain": "physics_math",
+      "prompt": "What is 100 minus 37?",
+      "expected_output": "63",
+      "judge": {
+        "check": "last_number_eq",
+        "target": "63"
+      },
+      "seed": "0xMATH",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "math_012",
+      "domain": "physics_math",
+      "prompt": "What is 15 times 4?",
+      "expected_output": "60",
+      "judge": {
+        "check": "last_number_eq",
+        "target": "60"
+      },
+      "seed": "0xMATH",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "math_013",
+      "domain": "physics_math",
+      "prompt": "What is 20 plus 30, divided by 5?",
+      "expected_output": "10",
+      "judge": {
+        "check": "last_number_eq",
+        "target": "10"
+      },
+      "seed": "0xMATH",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "math_014",
+      "domain": "physics_math",
+      "prompt": "What is 9 times 9?",
+      "expected_output": "81",
+      "judge": {
+        "check": "last_number_eq",
+        "target": "81"
+      },
+      "seed": "0xMATH",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "math_015",
+      "domain": "physics_math",
+      "prompt": "What is 200 divided by 8?",
+      "expected_output": "25",
+      "judge": {
+        "check": "last_number_eq",
+        "target": "25"
+      },
+      "seed": "0xMATH",
+      "verification_status": "candidate"
+    },
+    {
+      "task_id": "math_016",
+      "domain": "physics_math",
+      "prompt": "What is 7 plus 8 plus 9?",
+      "expected_output": "24",
+      "judge": {
+        "check": "last_number_eq",
+        "target": "24"
+      },
+      "seed": "0xMATH",
+      "verification_status": "candidate"
+    }
+  ]
+}

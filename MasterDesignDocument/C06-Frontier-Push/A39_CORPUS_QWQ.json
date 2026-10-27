@@ -1,0 +1,174 @@
+{
+  "schema": "A39-qwq-v1",
+  "description": "24 qwq reasoning tasks with expected outputs",
+  "tasks": [
+    {
+      "task_id": "A39Q-000",
+      "domain": "physics_math",
+      "prompt": "A bakery sells muffins for $3 each. It sold 47 muffins in the morning and 38 in the afternoon. Ingredients for the day cost $85. What is the day's profit in dollars?",
+      "expected_output": "170",
+      "seed": "0x00000001"
+    },
+    {
+      "task_id": "A39Q-001",
+      "domain": "physics_math",
+      "prompt": "A train travels at 84 km/h for 3.5 hours, then covers another 126 km. How many kilometers did it travel in total?",
+      "expected_output": "420",
+      "seed": "0x00000002"
+    },
+    {
+      "task_id": "A39Q-002",
+      "domain": "physics_math",
+      "prompt": "A tank holds 1200 liters. It drains at 45 liters per minute for 12 minutes, then 260 liters are added. How many liters are in the tank now?",
+      "expected_output": "920",
+      "seed": "0x00000003"
+    },
+    {
+      "task_id": "A39Q-003",
+      "domain": "physics_math",
+      "prompt": "A jacket costs $240. It is discounted by 15%, and then 10% tax is charged on the discounted price. What is the final price in dollars?",
+      "expected_output": "224.4",
+      "seed": "0x00000004"
+    },
+    {
+      "task_id": "A39Q-004",
+      "domain": "physics_math",
+      "prompt": "Six workers can build a wall in 10 days. Assuming all workers work at the same rate, how many days would 8 workers need?",
+      "expected_output": "7.5",
+      "seed": "0x00000005"
+    },
+    {
+      "task_id": "A39Q-005",
+      "domain": "physics_math",
+      "prompt": "What is the next number in the sequence 3, 7, 15, 31, 63?",
+      "expected_output": "127",
+      "seed": "0x00000006"
+    },
+    {
+      "task_id": "A39Q-006",
+      "domain": "physics_math",
+      "prompt": "A rectangle has perimeter 56. Its length is 4 more than its width. What is its area?",
+      "expected_output": "192",
+      "seed": "0x00000007"
+    },
+    {
+      "task_id": "A39Q-007",
+      "domain": "physics_math",
+      "prompt": "Maria already has $270 saved. She saves $45 per week toward a goal of $1035. How many weeks until she reaches her goal?",
+      "expected_output": "17",
+      "seed": "0x00000008"
+    },
+    {
+      "task_id": "A39Q-008",
+      "domain": "physics_math",
+      "prompt": "Three numbers sum to 90. The second is twice the first, and the third is three times the first. What is the third number?",
+      "expected_output": "45",
+      "seed": "0x00000009"
+    },
+    {
+      "task_id": "A39Q-009",
+      "domain": "physics_math",
+      "prompt": "96 students must travel in vans that hold 14 students each. How many vans are needed so every student has a seat?",
+      "expected_output": "7",
+      "seed": "0x0000000a"
+    },
+    {
+      "task_id": "A39Q-010",
+      "domain": "physics_math",
+      "prompt": "A cafe has 2.5 kg of coffee beans. Each cup uses 18 grams. How many full cups can be made?",
+      "expected_output": "138",
+      "seed": "0x0000000b"
+    },
+    {
+      "task_id": "A39Q-011",
+      "domain": "physics_math",
+      "prompt": "How much simple interest is earned on $2000 at 4.5% per year over 3 years, in dollars?",
+      "expected_output": "270",
+      "seed": "0x0000000c"
+    },
+    {
+      "task_id": "A39Q-012",
+      "domain": "physics_math",
+      "prompt": "A book has 320 pages. Tom reads 24 pages per day for 9 days, then finishes the rest at 26 pages per day. How many days did he take in total?",
+      "expected_output": "13",
+      "seed": "0x0000000d"
+    },
+    {
+      "task_id": "A39Q-013",
+      "domain": "physics_math",
+      "prompt": "Red and blue marbles are in the ratio 3:5. There are 72 marbles in total. How many are blue?",
+      "expected_output": "45",
+      "seed": "0x0000000e"
+    },
+    {
+      "task_id": "A39Q-014",
+      "domain": "physics_math",
+      "prompt": "A car travels 150 miles in 2.5 hours. At the same speed, how many hours does it take to travel 210 miles?",
+      "expected_output": "3.5",
+      "seed": "0x0000000f"
+    },
+    {
+      "task_id": "A39Q-015",
+      "domain": "physics_math",
+      "prompt": "Pencils come in packs of 12 costing $4.80 per pack. At the same per-pencil rate, what do 30 pencils cost in dollars?",
+      "expected_output": "12",
+      "seed": "0x00000010"
+    },
+    {
+      "task_id": "A39Q-016",
+      "domain": "physics_math",
+      "prompt": "A 640-liter tank starts with 120 liters and fills at 8 liters per minute. How many minutes until it is full?",
+      "expected_output": "65",
+      "seed": "0x00000011"
+    },
+    {
+      "task_id": "A39Q-017",
+      "domain": "physics_math",
+      "prompt": "A student's scores on three tests are 78, 85, and 92. What score on the fourth test gives an average of exactly 88 across the four tests?",
+      "expected_output": "97",
+      "seed": "0x00000012"
+    },
+    {
+      "task_id": "A39Q-018",
+      "domain": "physics_math",
+      "prompt": "A fence runs along a 96-meter side, with a post every 4 meters including posts at both ends. How many posts are there?",
+      "expected_output": "25",
+      "seed": "0x00000013"
+    },
+    {
+      "task_id": "A39Q-019",
+      "domain": "physics_math",
+      "prompt": "Three liters of a 20% salt solution are mixed with two liters of a 45% salt solution. What is the salt percentage of the mixture?",
+      "expected_output": "30",
+      "seed": "0x00000014"
+    },
+    {
+      "task_id": "A39Q-020",
+      "domain": "physics_math",
+      "prompt": "A father is three times as old as his son. Their ages sum to 52. How old is the father?",
+      "expected_output": "39",
+      "seed": "0x00000015"
+    },
+    {
+      "task_id": "A39Q-021",
+      "domain": "physics_math",
+      "prompt": "A shop buys 250 items at $6 each and sells them at $9.50 each. What is the total profit in dollars?",
+      "expected_output": "875",
+      "seed": "0x00000016"
+    },
+    {
+      "task_id": "A39Q-022",
+      "domain": "physics_math",
+      "prompt": "347 candies are packed into bags of 12. After filling as many bags as possible, how many candies remain?",
+      "expected_output": "11",
+      "seed": "0x00000017"
+    },
+    {
+      "task_id": "A39Q-023",
+      "domain": "physics_math",
+      "prompt": "A town of 12500 people grows by 4% each year. What is the population after 2 years?",
+      "expected_output": "13520",
+      "seed": "0x00000018"
+    }
+  ]
+}

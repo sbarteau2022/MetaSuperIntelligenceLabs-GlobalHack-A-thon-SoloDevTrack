@@ -1,0 +1,191 @@
+# Pre-Registration: FW-A2 — Hyperbolic KV Kernels (C++ vs Zig)
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-A2.hash
+# C09 Ablation Framework — Framework Selection Study
+
+ablation_id: "FW-A2"
+title: "Hyperbolic KV Kernels: C++ (clang, SIMD, mmap) vs Zig (comptime SIMD, allocator)"
+hypothesis: |
+  Zig comptime kernel specialization achieves parity with C++ template metaprogramming
+  for VP-tree + Lorentz ops + Picard reduction on H³×T²/Γ₁₂.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  primary:
+    name: "MacBook Pro M3 Max"
+    cpu: "Apple M3 Max (16-core)"
+    gpu: "Apple M3 Max (40-core GPU)"
+    memory_gb: 36
+    os: "macOS 15.0 (Sequoia)"
+    clang: "17.0.0"
+    zig: "0.13.0"
+  replica:
+    name: "Mac Studio M2 Ultra"
+    cpu: "Apple M2 Ultra (24-core)"
+    gpu: "Apple M2 Ultra (76-core GPU)"
+    memory_gb: 96
+    os: "macOS 15.0 (Sequoia)"
+    clang: "17.0.0"
+    zig: "0.13.0"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "hyperbolic_kv_bench"
+  description: "Same as FW-A1 workload for direct comparison"
+  vectors: 1_000_000
+  dimensions:
+    h3: 3
+    t2: 2
+  fixed_point: "Q32.31 with i128 accumulator for Minkowski products"
+  operations:
+    - name: "insert"
+      count: 1_000_000
+    - name: "knn_search"
+      count: 100_000
+      k: 32
+    - name: "evict"
+      count: 100_000
+    - name: "picard_reduce"
+      count: 10_000
+  iterations: 1000
+  warmup_iterations: 100
+  seed: 42
+
+# ── Baseline (C++) ────────────────────────────────────────────────────────
+baseline:
+  language: "C++20"
+  compiler: "clang-17"
+  flags: "-O3 -march=native -ffast-math -flto=thin"
+  simd:
+    backend: "Hand-rolled NEON/AVX2 intrinsics"
+  memory:
+    allocator: "jemalloc"
+    ipc: "mmap + atomic refcount"
+  kernel_fusion:
+    enabled: true
+    rules: "Same 3 rules as FW-A1"
+  build:
+    system: "CMake 3.28 + Ninja"
+    time_target_seconds: 120
+
+# ── Treatment (Zig) ───────────────────────────────────────────────────────
+treatment:
+  language: "Zig 0.13.0"
+  simd:
+    backend: "Comptime SIMD (@Vector, @reduce, @splat)"
+    operations: ["Minkowski dot", "arcosh", "VP-tree distance", "Picard matrix ops"]
+    specialization: "Comptime kernel generation per operation + fixed-point width"
+  metal:
+    backend: "metal-cpp via Zig C++ interop (experimental) OR custom Metal shaders"
+    note: "Zig Metal story immature; may need C++ shim for GPU kernels"
+  memory:
+    allocator: "Zig GeneralPurposeAllocator (page_allocator fallback)"
+    ipc: "mmap via std.os.mmap + atomic refcount"
+    cache: "VP-tree nodes in mmap region"
+  kernel_fusion:
+    enabled: true
+    mechanism: "Comptime kernel composition + algebraic simplifier (port from C++)"
+    verification: "Comptime verification of fusion rules"
+  build:
+    system: "Zig build.zig"
+    time_target_seconds: 90
+  binary_size_target_mb: 8
+
+# ── Judge (Pass/Fail Predicate) ───────────────────────────────────────────
+judge:
+  primary:
+    - metric: "throughput_ratio"
+      threshold: ">= 0.9"
+      description: "Zig throughput / C++ throughput ≥ 0.9 (parity)"
+    - metric: "peak_memory_ratio"
+      threshold: "<= 1.1"
+      description: "Zig peak memory / C++ peak memory ≤ 1.1"
+  secondary:
+    - metric: "instruction_count_ratio"
+      threshold: "<= 1.1"
+      description: "Zig instructions / C++ instructions ≤ 1.1"
+    - metric: "compile_time_ratio"
+      threshold: "<= 0.8"
+      description: "Zig build time / C++ build time ≤ 0.8"
+    - metric: "kernel_fusion_verification"
+      threshold: "PASS"
+      description: "Comptime verification of all 3 fusion rules"
+    - metric: "comptime_specialization_overhead"
+      threshold: "<= 1.2"
+      description: "Compile time overhead from comptime kernels ≤ 1.2x"
+
+# ── Effect Size Plan ──────────────────────────────────────────────────────
+effect_size_plan:
+  throughput:
+    type: "Cohen's d"
+    method: "bootstrap"
+    samples: 10000
+    meaningful_threshold: 0.5
+  peak_memory:
+    type: "percent_change"
+    method: "percentile_bootstrap"
+    samples: 10000
+    meaningful_threshold: 10
+  instruction_count:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.1
+  compile_time:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.2
+
+# ── Statistical Design ────────────────────────────────────────────────────
+statistical_design:
+  alpha: 0.05
+  power: 0.80
+  effect_size_assumed: 0.5
+  alpha_spending:
+    method: "Lan-DeMets"
+    rho: 2
+  interim_analyses: 4
+  futility_threshold: 0.2
+  sample_size_per_group: 30
+
+# ── Null Handling (Pre-Stated) ────────────────────────────────────────────
+null_handling:
+  if_treatment_wins_or_ties:
+    interpretation: "Zig comptime achieves kernel parity; C++ not necessary for kernels"
+    action: "FW-A2 result → OPTIONAL for C++; Zig viable for kernels"
+    design_decision: "Consolidate to Zig for kernels; eliminate C++ boundary"
+  if_inconclusive:
+    interpretation: "Zig Metal/GPU story immature; C++ still necessary for GPU kernels"
+    action: "Record as INFERRED; test hybrid (Zig CPU kernels + C++ Metal shaders)"
+    design_decision: "Defer framework lock; run FW-A2-retry with better Metal interop"
+  if_baseline_wins_clear:
+    interpretation: "C++ template metaprogramming + SIMD maturity necessary for kernels"
+    action: "Record as VERIFIED necessity; C++ REQUIRED for kernels"
+    design_decision: "Lock C++ for kernels; Zig relegated to harness (if FW-A6 passes)"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md"
+  traceability:
+    - "C05 Atlas/Hyperbolic KV (kernels)"
+    - "C12 Server Inference Engine (kernel logic)"
+    - "C08 Framework Requirements (NF1, NF4, NF5)"
+    - "C09 Ablations (A1, A31-A35)"
+  gates:
+    - "Gate 3 (Kernel Qualification)"
+    - "Gate 4 (Integration)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-A2/raw_data.json"
+  - "ablation_results/FW-A2/analysis.ipynb"
+  - "ablation_results/FW-A2/claim.json"
+  - "ablation_results/FW-A2/failure.json"
+  - "ablation_results/FW-A2/build_log.txt"
+  - "ablation_results/FW-A2/receipt.json"

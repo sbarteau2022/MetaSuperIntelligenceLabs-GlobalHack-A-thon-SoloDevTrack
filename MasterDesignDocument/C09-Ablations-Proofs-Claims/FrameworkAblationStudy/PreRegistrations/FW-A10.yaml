@@ -1,0 +1,247 @@
+# Pre-Registration: FW-A10 — Frontend/IDE (TypeScript vs Rust/WASM)
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-A10.hash
+# C09 Ablation Framework — Framework Selection Study
+
+ablation_id: "FW-A10"
+title: "Frontend/IDE Surfaces: TypeScript (React, Vite, CodeMirror) vs Rust/WASM (Leptos, wasm-codemirror)"
+hypothesis: |
+  TypeScript React frontend achieves ≤170KB gzipped LCP bundle, <100ms tab-open, WCAG 2.1 AA,
+  with HMR <500ms and LSP integration latency <50ms.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  dev:
+    name: "MacBook Pro M3 Max"
+    cpu: "Apple M3 Max (16-core)"
+    memory_gb: 36
+    os: "macOS 15.0 (Sequoia)"
+    node: "20.17.0"
+    rustc: "1.82.0 (stable)"
+    trunk: "0.21.0"
+  target_browsers:
+    - "Chrome 120+"
+    - "Safari 17+"
+    - "Firefox 120+"
+    - "Edge 120+"
+  replica:
+    name: "Mac Studio M2 Ultra"
+    note: "For build time replication only"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "ide_frontend_bench"
+  description: |
+    Full IDE frontend benchmark: route-level chunking, CodeMirror 6 editor,
+    LSP integration (rust-analyzer), panel lazy-loading, a11y compliance.
+  panels: 7
+    - "Dashboard" (critical path)
+    - "Settings"
+    - "Swarm Board"
+    - "Runs"
+    - "Holes"
+    - "Memory"
+    - "Skills"
+  editor:
+    component: "CodeMirror 6"
+    languages: ["rust", "typescript", "toml", "yaml", "markdown"]
+    extensions: ["lint", "autocomplete", "bracket-matching", "search"]
+  lsp:
+    server: "rust-analyzer"
+    protocol: "vscode-languageserver (JSON-RPC over WebSocket)"
+    features: ["hover", "definition", "references", "completion", "diagnostics"]
+  chunking:
+    strategy: "Route-level dynamic import (Vite)"
+    chunks:
+      [
+        "dashboard",
+        "settings",
+        "swarm",
+        "runs",
+        "holes",
+        "memory",
+        "skills",
+        "vendor",
+        "codemirror",
+        "markdown",
+      ]
+  a11y:
+    standard: "WCAG 2.1 AA"
+    tool: "axe-core 4.8 + eslint-plugin-jsx-a11y"
+  dev_workflow:
+    hmr: "Vite HMR (measured cycle time)"
+    task: "Add new panel with LSP integration (measured time)"
+
+# ── Baseline (TypeScript) ─────────────────────────────────────────────────
+baseline:
+  language: "TypeScript 5.4"
+  framework: "React 18.3"
+  build: "Vite 5.4"
+  editor: "CodeMirror 6 (@codemirror/*)"
+  lsp_client: "@vscode/languageserver-client"
+  state: "Zustand / Jotai"
+  routing: "React Router 6 (lazy routes)"
+  styling: "Tailwind CSS 4 (JIT)"
+  a11y:
+    lint: "eslint-plugin-jsx-a11y (error level)"
+    test: "axe-core in CI (headless Chromium)"
+  chunking:
+    method: "Vite dynamic import + manualChunks"
+    critical_path: "dashboard chunk only"
+  build:
+    dev_server: "Vite HMR"
+    production: "vite build (esbuild + rollup)"
+    time_target_seconds: 30
+  bundle_budget:
+    dashboard_gz_kb: 170
+    vendor_gz_kb: 200
+    total_gz_kb: 500
+  tab_open_target_ms: 100
+  hmr_cycle_target_ms: 500
+  lsp_latency_target_ms: 50
+
+# ── Treatment (Rust/WASM) ─────────────────────────────────────────────────
+treatment:
+  language: "Rust 1.82.0 → WASM (wasm32-unknown-unknown)"
+  framework: "Leptos 0.6 (fine-grained reactivity)"
+  build: "Trunk 0.21 (wasm-bindgen + wasm-opt)"
+  editor: "wasm-codemirror (PORT REQUIRED - not production)"
+  lsp_client: "Custom WASM JSON-RPC client"
+  state: "Leptos signals + context"
+  routing: "Leptos Router (lazy routes experimental)"
+  styling: "Tailwind CSS 4 via wasm (JIT not available) → pre-built"
+  a11y:
+    lint: "Manual ARIA + custom test suite"
+    test: "axe-core via wasm (experimental)"
+  chunking:
+    method: "wasm-split (experimental, not stable)"
+    critical_path: "dashboard module"
+  build:
+    dev_server: "Trunk (no HMR for WASM, full reload)"
+    production: "trunk build --release (wasm-opt -Oz)"
+    time_target_seconds: 120
+  bundle_budget:
+    dashboard_gz_kb: 250 # WASM overhead
+    vendor_gz_kb: 100 # No vendor chunk
+    total_gz_kb: 600
+  tab_open_target_ms: 150 # WASM instantiation
+  hmr_cycle_target_ms: 2000 # Full reload
+  lsp_latency_target_ms: 100 # WASM-JS boundary
+
+# ── Judge (Pass/Fail Predicate) ───────────────────────────────────────────
+judge:
+  primary:
+    - metric: "dashboard_bundle_gz_kb"
+      threshold: "<= 170"
+      description: "Critical path bundle ≤ 170KB gzipped"
+    - metric: "tab_open_ms"
+      threshold: "<= 100"
+      description: "Tab open → agent ready < 100ms (C19.1 timing budget)"
+    - metric: "axe_score"
+      threshold: ">= 0.95"
+      description: "axe-core accessibility score ≥ 95%"
+  secondary:
+    - metric: "hmr_cycle_ms"
+      threshold: "<= 500"
+      description: "Hot module replacement cycle < 500ms"
+    - metric: "lsp_integration_latency_ms"
+      threshold: "<= 50"
+      description: "LSP request → response < 50ms"
+    - metric: "dev_velocity_score"
+      threshold: ">= 4.0"
+      description: "Survey (1-5): time to add panel with LSP"
+    - metric: "total_bundle_gz_kb"
+      threshold: "<= 500"
+      description: "Total initial load ≤ 500KB gzipped"
+    - metric: "build_time_seconds"
+      threshold: "<= 60"
+      description: "Production build ≤ 60 seconds"
+
+# ── Effect Size Plan ──────────────────────────────────────────────────────
+effect_size_plan:
+  bundle_size:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.5
+  tab_open_latency:
+    type: "Cohen's d"
+    method: "bootstrap"
+    samples: 10000
+    meaningful_threshold: 0.5
+  a11y_score:
+    type: "risk_difference"
+    method: "wilson"
+    meaningful_threshold: 0.05
+  hmr_cycle:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 2.0
+  lsp_latency:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.5
+  dev_velocity:
+    type: "Cohen's d"
+    method: "bootstrap"
+    samples: 10000
+    meaningful_threshold: 0.5
+
+# ── Statistical Design ────────────────────────────────────────────────────
+statistical_design:
+  alpha: 0.05
+  power: 0.80
+  effect_size_assumed: 0.5
+  alpha_spending:
+    method: "Lan-DeMets"
+    rho: 2
+  interim_analyses: 4
+  futility_threshold: 0.2
+  sample_size_per_group: 30 # Browser runs with deterministic seeds
+
+# ── Null Handling (Pre-Stated) ────────────────────────────────────────────
+null_handling:
+  if_treatment_wins_or_ties:
+    interpretation: "Rust/WASM viable for IDE frontend; TypeScript not necessary"
+    action: "FW-A10 result → OPTIONAL for TypeScript; proceed to FW-A14 with Rust/WASM frontend"
+    design_decision: "Consolidate to Rust/WASM; eliminate TypeScript boundary"
+    caveat: "Requires wasm-codemirror production-ready; currently INFERRED"
+  if_inconclusive:
+    interpretation: "Rust/WASM frontend ecosystem immature (editor, chunking, HMR)"
+    action: "Record as INFERRED; TypeScript REQUIRED for now; re-evaluate at Leptos 1.0 / wasm-codemirror 1.0"
+    design_decision: "Lock TypeScript for frontend; Rust/WASM for compute only"
+  if_baseline_wins_clear:
+    interpretation: "TypeScript + npm ecosystem necessary for production IDE surfaces"
+    action: "Record as VERIFIED necessity; TypeScript REQUIRED for frontend"
+    design_decision: "Lock TypeScript for frontend; no change"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+pre_registration_hash: "sha256:3cc480491feb1299b04e8677756a83a81db0a39a51bee34743f6f84cdf061775"
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md"
+  traceability:
+    - "C19 Frontend/IDE Surfaces (C19.1-C19.9)"
+    - "C04 Architecture Topology (Input Layer, Observability Layer)"
+    - "C18 API Contracts/Transport"
+    - "C21 Performance Budgets"
+    - "C08 Framework Requirements (NF4, NF9-11)"
+  gates:
+    - "Gate 3 (Frontend Qualification)"
+    - "Gate 4 (Integration)"
+    - "Gate 5 (Observability)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-A10/raw_data.json"
+  - "ablation_results/FW-A10/analysis.ipynb"
+  - "ablation_results/FW-A10/claim.json"
+  - "ablation_results/FW-A10/failure.json"
+  - "ablation_results/FW-A10/build_log.txt"
+  - "ablation_results/FW-A10/lighthouse.json"
+  - "ablation_results/FW-A10/axe_report.json"
+  - "ablation_results/FW-A10/receipt.json"

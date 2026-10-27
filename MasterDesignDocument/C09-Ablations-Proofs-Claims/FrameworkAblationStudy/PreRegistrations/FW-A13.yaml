@@ -1,0 +1,175 @@
+# Pre-Registration: FW-A13 — Cloudflare Workers (Go WASM vs TypeScript)
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-A13.hash
+# C09 Ablation Framework — Framework Selection Study
+
+ablation_id: "FW-A13"
+title: "Cloudflare Workers: Go WASM (tinygo) vs TypeScript (workers-ts)"
+hypothesis: |
+  TypeScript Workers achieves parity with Go WASM on DO metrics
+  with better ergonomics, using native TS DO bindings.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  primary:
+    name: "Cloudflare Workers (Production Edge)"
+    runtime: "workerd (V8 isolates)"
+  local_sim:
+    name: "workerd local"
+    version: "1.2024.10.0"
+  replica:
+    name: "Cloudflare Workers (Staging)"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "cf_workers_bench"
+  description: "Same as FW-A12 workload"
+  durable_objects:
+    classes: 4
+    methods_per_class: 8
+    rpc_calls_per_test: 10000
+  kv:
+    operations: 100000
+    read_write_ratio: 4:1
+  ai:
+    calls: 1000
+    model: "@cf/qwen/qwen3-8b"
+    streaming: true
+  concurrency:
+    max_concurrent: 100
+    duration_seconds: 300
+
+# ── Baseline (Go WASM) ────────────────────────────────────────────────────
+baseline:
+  language: "Go 1.23 → WASM (tinygo 0.32)"
+  compile_flags: "-opt=2 -scheduler=asyncify -target=wasi"
+  runtime: "workerd"
+  do_bindings: "Native Go DO bindings"
+  kv_bindings: "workers KV binding"
+  ai_bindings: "workers-ai binding"
+  binary_size_target_kb: 200
+
+# ── Treatment (TypeScript) ────────────────────────────────────────────────
+treatment:
+  language: "TypeScript 5.4 → Workers TS"
+  runtime: "workerd (V8 isolates, native TS)"
+  do_bindings: "workers-ts DO bindings (native)"
+  kv_bindings: "workers-ts KV bindings (native)"
+  ai_bindings: "workers-ts AI bindings (native)"
+  binary_size_target_kb: 500  # JS bundle
+  features:
+    - "DO alarm API (native)"
+    - "DO storage API (native)"
+    - "DO RPC (native)"
+    - "KV list/put/get/delete (native)"
+    - "AI streaming response (native)"
+
+# ── Judge (Pass/Fail Predicate) ───────────────────────────────────────────
+judge:
+  primary:
+    - metric: "cold_start_ms_p99"
+      threshold: "<= 5"
+      description: "TS cold start p99 ≤ 5ms (vs Go 2ms)"
+    - metric: "memory_mb_p99"
+      threshold: "<= 15"
+      description: "TS memory p99 ≤ 15MB (vs Go 10MB)"
+    - metric: "cpu_ms_per_req_p99"
+      threshold: "<= 10"
+      description: "TS CPU p99 ≤ 10ms (vs Go 5ms)"
+  secondary:
+    - metric: "binary_size_kb"
+      threshold: "<= 500"
+      description: "TS bundle ≤ 500KB"
+    - metric: "do_rpc_latency_ms_p99"
+      threshold: "<= 1"
+      description: "DO RPC p99 ≤ 1ms"
+    - metric: "kv_ops_per_sec"
+      threshold: ">= 50000"
+      description: "KV ops/sec ≥ 50k"
+    - metric: "dev_velocity_score"
+      threshold: ">= 4.0"
+      description: "Survey: TS ergonomics vs Go"
+    - metric: "build_time_seconds"
+      threshold: "<= 30"
+      description: "TS build ≤ 30s (vs Go 60s)"
+
+# ── Effect Size Plan ──────────────────────────────────────────────────────
+effect_size_plan:
+  cold_start:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 2.0
+  memory:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.5
+  cpu:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.5
+  binary_size:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 2.0
+  dev_velocity:
+    type: "Cohen's d"
+    method: "bootstrap"
+    samples: 10000
+    meaningful_threshold: 0.5
+
+# ── Statistical Design ────────────────────────────────────────────────────
+statistical_design:
+  alpha: 0.05
+  power: 0.80
+  effect_size_assumed: 0.5
+  alpha_spending:
+    method: "Lan-DeMets"
+    rho: 2
+  interim_analyses: 4
+  futility_threshold: 0.2
+  sample_size_per_group: 30
+
+# ── Null Handling ─────────────────────────────────────────────────────────
+null_handling:
+  if_treatment_wins_or_ties:
+    interpretation: "TypeScript Workers achieves parity with better ergonomics"
+    action: "FW-A13 → OPTIONAL for Go; TypeScript viable for Workers"
+    design_decision: "Consolidate to TypeScript for Workers; eliminate Go boundary"
+    caveat: "Cold start + memory higher; acceptable if ergonomics win"
+  if_inconclusive:
+    interpretation: "TS cold start penalty vs Go ergonomics tradeoff unclear"
+    action: "Record INFERRED; test Rust WASM (FW-A12) as third option"
+    design_decision: "Defer framework lock"
+  if_baseline_wins_clear:
+    interpretation: "Go WASM (tinygo) necessary for Workers cold start + memory"
+    action: "Record VERIFIED necessity; Go REQUIRED for Workers"
+    design_decision: "Lock Go for Workers"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md"
+  traceability:
+    - "C10 Deployment Strategy (P6)"
+    - "C04 Architecture Topology"
+    - "C12 Server Inference Engine"
+  gates:
+    - "Gate 3 (Worker)"
+    - "Gate 4 (Integration)"
+    - "Gate 7 (Chaos/Recovery)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-A13/raw_data.json"
+  - "ablation_results/FW-A13/analysis.ipynb"
+  - "ablation_results/FW-A13/claim.json"
+  - "ablation_results/FW-A13/failure.json"
+  - "ablation_results/FW-A13/build_log.txt"
+  - "ablation_results/FW-A13/wrangler_deploy_log.txt"
+  - "ablation_results/FW-A13/receipt.json"

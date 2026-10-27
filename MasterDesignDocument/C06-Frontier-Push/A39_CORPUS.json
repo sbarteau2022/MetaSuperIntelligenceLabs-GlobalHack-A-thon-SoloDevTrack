@@ -1,0 +1,286 @@
+{
+  "schema": "A39-paired-workload-v1",
+  "description": "Frozen 40-task synthetic workload for map-carving A/B. No canonical expected output; success uses intervention threshold.",
+  "tasks": [
+    {
+      "task_id": "A39-001",
+      "domain": "coding_intensive",
+      "prompt": "Implement a secure function in Rust that validates user input and returns sanitized text.",
+      "expected_output": null,
+      "seed": "00001001"
+    },
+    {
+      "task_id": "A39-002",
+      "domain": "coding_intensive",
+      "prompt": "Refactor a nested loop into iterators and explain the invariant.",
+      "expected_output": null,
+      "seed": "00001002"
+    },
+    {
+      "task_id": "A39-003",
+      "domain": "coding_intensive",
+      "prompt": "Design a bounded cache eviction policy with receipt logging.",
+      "expected_output": null,
+      "seed": "00001003"
+    },
+    {
+      "task_id": "A39-004",
+      "domain": "coding_intensive",
+      "prompt": "Write a unit test for a geometric distance helper.",
+      "expected_output": null,
+      "seed": "00001004"
+    },
+    {
+      "task_id": "A39-005",
+      "domain": "coding_intensive",
+      "prompt": "Optimize a VP-tree query path and report complexity.",
+      "expected_output": null,
+      "seed": "00001005"
+    },
+    {
+      "task_id": "A39-006",
+      "domain": "coding_intensive",
+      "prompt": "Handle a panic safely in a subagent worker loop.",
+      "expected_output": null,
+      "seed": "00001006"
+    },
+    {
+      "task_id": "A39-007",
+      "domain": "coding_intensive",
+      "prompt": "Parse and validate a JSON config with typed errors.",
+      "expected_output": null,
+      "seed": "00001007"
+    },
+    {
+      "task_id": "A39-008",
+      "domain": "coding_intensive",
+      "prompt": "Explain ownership and borrowing in a multi-threaded context.",
+      "expected_output": null,
+      "seed": "00001008"
+    },
+    {
+      "task_id": "A39-009",
+      "domain": "medical_clinical",
+      "prompt": "Summarize contraindications for a fictional drug profile.",
+      "expected_output": null,
+      "seed": "00001009"
+    },
+    {
+      "task_id": "A39-010",
+      "domain": "medical_clinical",
+      "prompt": "Triage symptoms into urgent vs routine using only supplied notes.",
+      "expected_output": null,
+      "seed": "0000100a"
+    },
+    {
+      "task_id": "A39-011",
+      "domain": "medical_clinical",
+      "prompt": "Explain a lab result trend with uncertainty bounds.",
+      "expected_output": null,
+      "seed": "0000100b"
+    },
+    {
+      "task_id": "A39-012",
+      "domain": "medical_clinical",
+      "prompt": "Draft a privacy-safe patient summary with redaction.",
+      "expected_output": null,
+      "seed": "0000100c"
+    },
+    {
+      "task_id": "A39-013",
+      "domain": "medical_clinical",
+      "prompt": "Compare two treatment pathways by evidence grade.",
+      "expected_output": null,
+      "seed": "0000100d"
+    },
+    {
+      "task_id": "A39-014",
+      "domain": "medical_clinical",
+      "prompt": "Identify missing information needed for diagnosis.",
+      "expected_output": null,
+      "seed": "0000100e"
+    },
+    {
+      "task_id": "A39-015",
+      "domain": "medical_clinical",
+      "prompt": "Outline an adverse-event reporting workflow.",
+      "expected_output": null,
+      "seed": "0000100f"
+    },
+    {
+      "task_id": "A39-016",
+      "domain": "medical_clinical",
+      "prompt": "Interpret a risk score and its confidence interval.",
+      "expected_output": null,
+      "seed": "00001010"
+    },
+    {
+      "task_id": "A39-017",
+      "domain": "legal_statutory",
+      "prompt": "Draft a compliance checklist from a fictional policy excerpt.",
+      "expected_output": null,
+      "seed": "00001011"
+    },
+    {
+      "task_id": "A39-018",
+      "domain": "legal_statutory",
+      "prompt": "Identify jurisdiction-specific obligations in a contract clause.",
+      "expected_output": null,
+      "seed": "00001012"
+    },
+    {
+      "task_id": "A39-019",
+      "domain": "legal_statutory",
+      "prompt": "Summarize privacy rights under a synthetic regulation.",
+      "expected_output": null,
+      "seed": "00001013"
+    },
+    {
+      "task_id": "A39-020",
+      "domain": "legal_statutory",
+      "prompt": "Explain audit evidence retention requirements.",
+      "expected_output": null,
+      "seed": "00001014"
+    },
+    {
+      "task_id": "A39-021",
+      "domain": "legal_statutory",
+      "prompt": "Flag ambiguous language and propose precise rewrite.",
+      "expected_output": null,
+      "seed": "00001015"
+    },
+    {
+      "task_id": "A39-022",
+      "domain": "legal_statutory",
+      "prompt": "Compare two liability caps by scenario.",
+      "expected_output": null,
+      "seed": "00001016"
+    },
+    {
+      "task_id": "A39-023",
+      "domain": "legal_statutory",
+      "prompt": "Outline a breach notification timeline.",
+      "expected_output": null,
+      "seed": "00001017"
+    },
+    {
+      "task_id": "A39-024",
+      "domain": "legal_statutory",
+      "prompt": "Describe role-based access obligations.",
+      "expected_output": null,
+      "seed": "00001018"
+    },
+    {
+      "task_id": "A39-025",
+      "domain": "security_cyber",
+      "prompt": "Identify injection risks in a code snippet.",
+      "expected_output": null,
+      "seed": "00001019"
+    },
+    {
+      "task_id": "A39-026",
+      "domain": "security_cyber",
+      "prompt": "Design least-privilege sandbox profile for a tool.",
+      "expected_output": null,
+      "seed": "0000101a"
+    },
+    {
+      "task_id": "A39-027",
+      "domain": "security_cyber",
+      "prompt": "Explain secret rotation strategy under compromise.",
+      "expected_output": null,
+      "seed": "0000101b"
+    },
+    {
+      "task_id": "A39-028",
+      "domain": "security_cyber",
+      "prompt": "Outline circuit breaker policy for a swarm lane.",
+      "expected_output": null,
+      "seed": "0000101c"
+    },
+    {
+      "task_id": "A39-029",
+      "domain": "security_cyber",
+      "prompt": "Classify threats using STRIDE on an API.",
+      "expected_output": null,
+      "seed": "0000101d"
+    },
+    {
+      "task_id": "A39-030",
+      "domain": "security_cyber",
+      "prompt": "Propose Merkle receipt verification for memory.",
+      "expected_output": null,
+      "seed": "0000101e"
+    },
+    {
+      "task_id": "A39-031",
+      "domain": "security_cyber",
+      "prompt": "Review logging for PII leakage.",
+      "expected_output": null,
+      "seed": "0000101f"
+    },
+    {
+      "task_id": "A39-032",
+      "domain": "security_cyber",
+      "prompt": "Design rate limiting with abuse detection.",
+      "expected_output": null,
+      "seed": "00001020"
+    },
+    {
+      "task_id": "A39-033",
+      "domain": "physics_math",
+      "prompt": "Explain cosh distance on the hyperboloid model.",
+      "expected_output": null,
+      "seed": "00001021"
+    },
+    {
+      "task_id": "A39-034",
+      "domain": "physics_math",
+      "prompt": "Derive why VP-tree retrieval is logarithmic under bounded expansion.",
+      "expected_output": null,
+      "seed": "00001022"
+    },
+    {
+      "task_id": "A39-035",
+      "domain": "physics_math",
+      "prompt": "Compute stereographic projection between ball and hyperboloid.",
+      "expected_output": null,
+      "seed": "00001023"
+    },
+    {
+      "task_id": "A39-036",
+      "domain": "physics_math",
+      "prompt": "Describe curvature parameter and depth gating.",
+      "expected_output": null,
+      "seed": "00001024"
+    },
+    {
+      "task_id": "A39-037",
+      "domain": "physics_math",
+      "prompt": "Explain geometric forgetting by radial coordinate.",
+      "expected_output": null,
+      "seed": "00001025"
+    },
+    {
+      "task_id": "A39-038",
+      "domain": "physics_math",
+      "prompt": "Solve a multi-step arithmetic word problem carefully.",
+      "expected_output": null,
+      "seed": "00001026"
+    },
+    {
+      "task_id": "A39-039",
+      "domain": "physics_math",
+      "prompt": "Describe parallel transport along a geodesic.",
+      "expected_output": null,
+      "seed": "00001027"
+    },
+    {
+      "task_id": "A39-040",
+      "domain": "physics_math",
+      "prompt": "Explain holonomy as a consistency check.",
+      "expected_output": null,
+      "seed": "00001028"
+    }
+  ]
+}

@@ -1,0 +1,201 @@
+# Pre-Registration: FW-A11 — Frontend/IDE (TypeScript vs Swift)
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-A11.hash
+# C09 Ablation Framework — Framework Selection Study
+
+ablation_id: "FW-A11"
+title: "Frontend/IDE Surfaces: TypeScript (React, Vite, CodeMirror) vs Swift (SwiftUI, WebKit)"
+hypothesis: |
+  Swift SwiftUI + WebKit achieves parity with TypeScript React on IDE metrics
+  with native integration benefits, using SwiftWASM for web deployment.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  dev:
+    name: "MacBook Pro M3 Max"
+    cpu: "Apple M3 Max (16-core)"
+    memory_gb: 36
+    os: "macOS 15.0 (Sequoia)"
+    swift: "5.10"
+    xcode: "16.0"
+    node: "20.17.0"
+  target:
+    - "macOS 15+ (native)"
+    - "iOS 18+ (native)"
+    - "Web (via SwiftWASM)"
+  replica:
+    name: "Mac Studio M2 Ultra"
+    note: "Build time replication only"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "ide_frontend_bench"
+  description: "Same as FW-A10 workload"
+  panels: 7
+  editor:
+    component: "CodeMirror 6 (TS) vs Custom Swift editor (Swift)"
+    note: "Swift has no CodeMirror equivalent; custom implementation required"
+  lsp:
+    server: "rust-analyzer"
+    protocol: "JSON-RPC over WebSocket (TS) vs Native Swift (Swift)"
+  a11y:
+    standard: "WCAG 2.1 AA"
+    tool: "axe-core (TS) vs SwiftUI built-in + custom (Swift)"
+
+# ── Baseline (TypeScript) ─────────────────────────────────────────────────
+baseline:
+  language: "TypeScript 5.4"
+  framework: "React 18.3 + Vite 5.4"
+  editor: "CodeMirror 6 (@codemirror/*)"
+  lsp_client: "@vscode/languageserver-client"
+  styling: "Tailwind CSS 4 (JIT)"
+  a11y:
+    lint: "eslint-plugin-jsx-a11y"
+    test: "axe-core in CI"
+  chunking: "Route-level dynamic import"
+  build:
+    dev_server: "Vite HMR"
+    production: "vite build"
+    time_target_seconds: 30
+  bundle_budget:
+    dashboard_gz_kb: 170
+    total_gz_kb: 500
+  tab_open_target_ms: 100
+  hmr_cycle_target_ms: 500
+
+# ── Treatment (Swift) ─────────────────────────────────────────────────────
+treatment:
+  language: "Swift 5.10"
+  framework:
+    native: "SwiftUI + AppKit/UIKit"
+    web: "SwiftWASM (wasm32-unknown-wasi) + JavaScriptKit"
+  editor:
+    native: "Custom text editor (NSTextView / UITextView + syntax highlighting)"
+    web: "Custom WASM editor (port of CodeMirror or minimal)"
+  lsp_client:
+    native: "Native Swift JSON-RPC + SourceKit-LSP"
+    web: "JavaScriptKit bridging to TS LSP client"
+  styling:
+    native: "SwiftUI native styling"
+    web: "CSS via JavaScriptKit"
+  a11y:
+    native: "SwiftUI built-in accessibility + custom"
+    web: "axe-core via JavaScriptKit"
+  chunking:
+    native: "N/A (single binary)"
+    web: "SwiftWASM code splitting (experimental)"
+  build:
+    native: "Xcode / SwiftPM"
+    web: "SwiftWASM + wasm-opt"
+    time_target_seconds: 120
+  bundle_budget:
+    native_binary_mb: 50
+    web_wasm_gz_kb: 500
+  tab_open_target_ms: 100 (native) / 200 (web)
+  hmr_cycle_target_ms: 2000 (web, full reload)
+
+# ── Judge (Pass/Fail Predicate) ───────────────────────────────────────────
+judge:
+  primary:
+    - metric: "native_tab_open_ms"
+      threshold: "<= 100"
+      description: "Native tab open ≤ 100ms"
+    - metric: "native_axe_score"
+      threshold: ">= 0.95"
+      description: "Native accessibility score ≥ 95%"
+    - metric: "web_wasm_bundle_gz_kb"
+      threshold: "<= 500"
+      description: "Web WASM bundle ≤ 500KB gzipped"
+    - metric: "web_tab_open_ms"
+      threshold: "<= 200"
+      description: "Web tab open ≤ 200ms"
+  secondary:
+    - metric: "lsp_integration_latency_ms"
+      threshold: "<= 50"
+      description: "LSP request → response ≤ 50ms"
+    - metric: "dev_velocity_score"
+      threshold: ">= 3.5"
+      description: "Survey (1-5): time to add panel with LSP"
+    - metric: "editor_feature_parity"
+      threshold: ">= 0.8"
+      description: "Editor features (lint, autocomplete, brackets) ≥ 80% parity"
+    - metric: "build_time_seconds"
+      threshold: "<= 120"
+      description: "Build ≤ 120 seconds"
+
+# ── Effect Size Plan ──────────────────────────────────────────────────────
+effect_size_plan:
+  bundle_size:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.5
+  tab_open_latency:
+    type: "Cohen's d"
+    method: "bootstrap"
+    samples: 10000
+    meaningful_threshold: 0.5
+  a11y_score:
+    type: "risk_difference"
+    method: "wilson"
+    meaningful_threshold: 0.05
+  editor_parity:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.25
+
+# ── Statistical Design ────────────────────────────────────────────────────
+statistical_design:
+  alpha: 0.05
+  power: 0.80
+  effect_size_assumed: 0.5
+  alpha_spending:
+    method: "Lan-DeMets"
+    rho: 2
+  interim_analyses: 4
+  futility_threshold: 0.2
+  sample_size_per_group: 30
+
+# ── Null Handling ─────────────────────────────────────────────────────────
+null_handling:
+  if_treatment_wins_or_ties:
+    interpretation: "Swift achieves IDE parity with native benefits"
+    action: "FW-A11 → OPTIONAL for TypeScript; Swift viable for frontend"
+    design_decision: "Consolidate to Swift for native; SwiftWASM for web"
+    caveat: "Requires custom editor implementation (no CodeMirror equivalent)"
+  if_inconclusive:
+    interpretation: "Swift editor ecosystem immature; CodeMirror port non-trivial"
+    action: "Record INFERRED; TypeScript REQUIRED for now"
+    design_decision: "Lock TypeScript for frontend; Swift for native companion app only"
+  if_baseline_wins_clear:
+    interpretation: "TypeScript + npm ecosystem necessary for production IDE"
+    action: "Record VERIFIED necessity; TypeScript REQUIRED for frontend"
+    design_decision: "Lock TypeScript for frontend"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md"
+  traceability:
+    - "C19 Frontend/IDE Surfaces"
+    - "C04 Architecture Topology"
+    - "C18 API Contracts/Transport"
+  gates:
+    - "Gate 3 (Frontend)"
+    - "Gate 4 (Integration)"
+    - "Gate 5 (Observability)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-A11/raw_data.json"
+  - "ablation_results/FW-A11/analysis.ipynb"
+  - "ablation_results/FW-A11/claim.json"
+  - "ablation_results/FW-A11/failure.json"
+  - "ablation_results/FW-A11/build_log.txt"
+  - "ablation_results/FW-A11/lighthouse.json"
+  - "ablation_results/FW-A11/receipt.json"

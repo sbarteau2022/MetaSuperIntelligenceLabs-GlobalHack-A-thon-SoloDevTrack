@@ -1,0 +1,137 @@
+# Pre-Registration: FW-NEC-FRONTEND — Necessity Test: TypeScript Frontend
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-NEC-FRONTEND.hash
+# C09 Ablation Framework — Necessity Testing (C13.1 / C09.5)
+
+ablation_id: "FW-NEC-FRONTEND"
+title: "Necessity Test: TypeScript Frontend (TS vs best alternative from FW-A10/A11)"
+hypothesis: |
+  TypeScript frontend (React, Vite, CodeMirror, npm ecosystem) is NECESSARY
+  for production IDE surfaces. Removal (Rust/WASM or Swift) causes regression
+  in editor maturity (CodeMirror), LSP integration, HMR velocity, a11y tooling.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  dev:
+    name: "MacBook Pro M3 Max"
+    memory_gb: 36
+  target_browsers:
+    - "Chrome 120+"
+    - "Safari 17+"
+    - "Firefox 120+"
+  replica:
+    name: "Mac Studio M2 Ultra"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "ide_frontend_bench"
+  description: "Same as FW-A10 workload"
+  panels: 7
+  editor: "CodeMirror 6 + LSP"
+  iterations: 30
+  seed: 42
+
+# ── Comparison ────────────────────────────────────────────────────────────
+comparison:
+  baseline:
+    name: "TypeScript frontend (FW-A10 baseline)"
+    language: "TypeScript 5.4 + React 18 + Vite 5 + CodeMirror 6"
+    ecosystem:
+      - "CodeMirror 6 (production editor)"
+      - "@vscode/languageserver-client (LSP)"
+      - "Vite HMR (<500ms cycle)"
+      - "axe-core + eslint-plugin-jsx-a11y (a11y)"
+      - "Tailwind CSS 4 JIT"
+    source: "FW-A10 baseline implementation"
+  treatment:
+    name: "Best alternative from FW-A10 (Rust/WASM) / FW-A11 (Swift)"
+    selection: |
+      Winner of FW-A10 (Leptos + wasm-codemirror) vs FW-A11 (SwiftUI + custom)
+      Criteria:
+        1. Editor feature parity (lint, autocomplete, brackets) ≥ 85%
+        2. LSP integration latency ≤ 50ms
+        3. HMR/dev cycle ≤ 500ms (or equivalent)
+        4. WCAG 2.1 AA compliance (axe-score ≥ 0.95)
+        5. Bundle size ≤ 170KB gz (critical path)
+    language: "TBD from FW-A10/FW-A11 results"
+
+# ── Bayesian Design ───────────────────────────────────────────────────────
+bayesian_design:
+  prior:
+    h0_probability: 0.5
+    h1_probability: 0.5
+  likelihood:
+    model: "Multivariate: bundle_size + tab_open + a11y + editor_parity + lsp_latency + dev_velocity"
+    editor_parity_weight: 2.0  # Editor maturity is critical
+    a11y_weight: 1.5           # a11y compliance is ship requirement
+  decision_rule:
+    bf01_threshold_required: 10
+    bf01_threshold_optional: 0.1
+    bf01_inconclusive: "0.1 ≤ BF₀₁ ≤ 10"
+
+# ── Judge (Bayesian Decision) ─────────────────────────────────────────────
+judge:
+  primary:
+    metric: "bayes_factor_bf01"
+    threshold_required: "> 10"
+    threshold_optional: "< 0.1"
+    description: "BF₀₁ evidence for TypeScript frontend necessity"
+  secondary:
+    - metric: "editor_feature_parity"
+      threshold: ">= 0.85"
+      description: "Treatment MUST achieve ≥85% CodeMirror feature parity"
+    - metric: "wcag_aa_compliance"
+      threshold: "PASS"
+      description: "Treatment MUST pass WCAG 2.1 AA (axe-score ≥ 0.95)"
+    - metric: "lsp_integration_latency_ms"
+      threshold: "<= 50"
+      description: "LSP latency ≤ 50ms"
+    - metric: "dev_cycle_time_ms"
+      threshold: "<= 1000"
+      description: "Dev cycle (HMR or equivalent) ≤ 1000ms"
+
+# ── Null Handling ─────────────────────────────────────────────────────────
+null_handling:
+  if_bf01_gt_10:
+    interpretation: "STRONG EVIDENCE: TypeScript frontend NECESSARY (ecosystem maturity)"
+    action: "Claim C09-FW-NEC-FRONTEND → VERIFIED; TypeScript REQUIRED for frontend"
+    design_decision: "Lock TypeScript for IDE frontend"
+  if_bf01_lt_0_1:
+    interpretation: "STRONG EVIDENCE: TypeScript frontend NOT NECESSARY"
+    action: "Claim C09-FW-NEC-FRONTEND → VERIFIED; TypeScript OPTIONAL for frontend"
+    design_decision: "Consolidate to best alternative"
+  if_inconclusive:
+    interpretation: "INSUFFICIENT EVIDENCE; Rust/WASM editor immature"
+    action: "Claim C09-FW-NEC-FRONTEND → INFERRED; more data needed"
+    design_decision: "Defer framework lock; re-evaluate at Leptos 1.0 / wasm-codemirror 1.0"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md (Rule FW-4, FW-11)"
+  traceability:
+    - "C19 Frontend/IDE Surfaces"
+    - "C04 Architecture Topology"
+    - "C18 API Contracts"
+    - "C21 Performance Budgets"
+    - "C13 Testing Necessity"
+  gates:
+    - "Gate 3 (Frontend)"
+    - "Gate 4 (Integration - necessity)"
+    - "Gate 5 (Observability)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-NEC-FRONTEND/raw_data.json"
+  - "ablation_results/FW-NEC-FRONTEND/analysis.ipynb"
+  - "ablation_results/FW-NEC-FRONTEND/claim.json"
+  - "ablation_results/FW-NEC-FRONTEND/bayes_factor_calculation.json"
+  - "ablation_results/FW-NEC-FRONTEND/lighthouse.json"
+  - "ablation_results/FW-NEC-FRONTEND/axe_report.json"
+  - "ablation_results/FW-NEC-FRONTEND/receipt.json"

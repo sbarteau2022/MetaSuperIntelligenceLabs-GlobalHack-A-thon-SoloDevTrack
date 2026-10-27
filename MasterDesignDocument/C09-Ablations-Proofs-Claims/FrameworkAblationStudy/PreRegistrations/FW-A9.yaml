@@ -1,0 +1,161 @@
+# Pre-Registration: FW-A9 — Serialization (Custom mmap vs Cap'n Proto)
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-A9.hash
+# C09 Ablation Framework — Framework Selection Study
+
+ablation_id: "FW-A9"
+title: "Serialization/IPC: Custom mmap (Q32.31 fixed-offset) vs Cap'n Proto (Rust)"
+hypothesis: |
+  Cap'n Proto achieves parity with custom mmap on decode latency + memory overhead
+  with better schema evolution, using arena allocation vs mmap.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  primary:
+    name: "MacBook Pro M3 Max"
+    cpu: "Apple M3 Max (16-core)"
+    memory_gb: 36
+    os: "macOS 15.0 (Sequoia)"
+    rustc: "1.82.0"
+  replica:
+    name: "Mac Studio M2 Ultra"
+    cpu: "Apple M2 Ultra (24-core)"
+    memory_gb: 96
+    os: "macOS 15.0 (Sequoia)"
+    rustc: "1.82.0"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "serialization_bench"
+  description: "Same as FW-A8 workload"
+  entries: 1_000_000
+  entry_size_bytes: 2048
+  operations:
+    - name: "encode"
+      count: 1_000_000
+    - name: "decode"
+      count: 1_000_000
+    - name: "arena_read"
+      count: 10_000_000
+    - name: "schema_migrate_v1_to_v2"
+      count: 1000
+  iterations: 100
+  warmup: 10
+  seed: 42
+
+# ── Baseline (Custom mmap) ────────────────────────────────────────────────
+baseline:
+  language: "C++ (writer) + Rust (reader)"
+  format:
+    type: "Custom binary mmap"
+    layout: "Fixed-offset Q32.31 + atomic refcount + version header"
+    zero_copy: true
+  schema_evolution:
+    mechanism: "Explicit migration functions"
+
+# ── Treatment (Cap'n Proto) ───────────────────────────────────────────────
+treatment:
+  language: "Rust (both writer + reader)"
+  format:
+    type: "Cap'n Proto"
+    layout: "Cap'n Proto schema + arena allocation"
+    schema: "Cap'n Proto schema (capnp) with @0, @1... ordinals"
+    zero_copy: true  # Cap'n Proto supports zero-copy via arena
+  writer:
+    language: "Rust (capnp crate)"
+  reader:
+    language: "Rust (capnp crate)"
+  schema_evolution:
+    mechanism: "Cap'n Proto ordinal-based evolution (add fields only)"
+    verification: "Backward/forward compatibility tests"
+
+# ── Judge (Pass/Fail Predicate) ───────────────────────────────────────────
+judge:
+  primary:
+    - metric: "decode_latency_ns_ratio"
+      threshold: "<= 1.3"
+      description: "Cap'n Proto decode / Custom mmap decode ≤ 1.3x"
+    - metric: "memory_overhead_ratio"
+      threshold: "<= 1.15"
+      description: "Cap'n Proto memory / Custom mmap memory ≤ 1.15x"
+  secondary:
+    - metric: "encode_latency_ns_ratio"
+      threshold: "<= 1.5"
+      description: "Cap'n Proto encode / Custom mmap encode ≤ 1.5x"
+    - metric: "arena_allocation_overhead"
+      threshold: "<= 1.2"
+      description: "Arena allocation / mmap allocation ≤ 1.2x"
+    - metric: "schema_evolution_ergonomics"
+      threshold: "PASS"
+      description: "Cap'n Proto ordinal evolution simpler than custom migration"
+    - metric: "zero_copy_fidelity"
+      threshold: "PASS"
+      description: "Zero-copy read verified (arena pointer access)"
+
+# ── Effect Size Plan ──────────────────────────────────────────────────────
+effect_size_plan:
+  decode_latency:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.2
+  memory_overhead:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.1
+  arena_overhead:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.15
+
+# ── Statistical Design ────────────────────────────────────────────────────
+statistical_design:
+  alpha: 0.05
+  power: 0.80
+  effect_size_assumed: 0.4
+  alpha_spending:
+    method: "Lan-DeMets"
+    rho: 2
+  interim_analyses: 4
+  futility_threshold: 0.2
+  sample_size_per_group: 30
+
+# ── Null Handling ─────────────────────────────────────────────────────────
+null_handling:
+  if_treatment_wins_or_ties:
+    interpretation: "Cap'n Proto achieves parity with better schema evolution"
+    action: "FW-A9 → OPTIONAL for custom mmap; Cap'n Proto viable"
+    design_decision: "Consolidate to Cap'n Proto; better ergonomics"
+  if_inconclusive:
+    interpretation: "Arena allocation overhead vs mmap simplicity tradeoff"
+    action: "Record INFERRED; compare FlatBuffers (FW-A8) vs Cap'n Proto"
+    design_decision: "Defer framework lock"
+  if_baseline_wins_clear:
+    interpretation: "Custom mmap + fixed-offset necessary for minimal overhead"
+    action: "Record VERIFIED necessity; Custom mmap REQUIRED"
+    design_decision: "Lock custom mmap"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md"
+  traceability:
+    - "C17 Data Model/Persistence"
+    - "C18 API Contracts/Transport"
+    - "C05 Atlas/Hyperbolic KV"
+  gates:
+    - "Gate 3 (Serialization)"
+    - "Gate 4 (Integration)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-A9/raw_data.json"
+  - "ablation_results/FW-A9/analysis.ipynb"
+  - "ablation_results/FW-A9/claim.json"
+  - "ablation_results/FW-A9/failure.json"
+  - "ablation_results/FW-A9/receipt.json"

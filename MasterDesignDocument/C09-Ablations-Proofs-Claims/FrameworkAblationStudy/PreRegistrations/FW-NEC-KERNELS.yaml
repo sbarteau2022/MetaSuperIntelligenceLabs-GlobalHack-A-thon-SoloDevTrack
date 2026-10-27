@@ -1,0 +1,128 @@
+# Pre-Registration: FW-NEC-KERNELS — Necessity Test: C++ Kernels
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-NEC-KERNELS.hash
+# C09 Ablation Framework — Necessity Testing (C13.1 / C09.5)
+#
+# This ablation tests: Is the C++ kernel boundary NECESSARY?
+# Method: Bayesian model comparison (BF₀₁) per C09.6
+# H₀: C++ kernels are necessary (removal causes regression)
+# H₁: C++ kernels are not necessary (no regression)
+
+ablation_id: "FW-NEC-KERNELS"
+title: "Necessity Test: C++ Hyperbolic Kernels (C++ vs best alternative from FW-A1/A2/A3)"
+hypothesis: |
+  C++ kernels are NECESSARY for hyperbolic KV (VP-tree, Lorentz ops, Picard reduction).
+  Removal (replacement with best alternative) causes statistically significant regression.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  primary:
+    name: "MacBook Pro M3 Max"
+    cpu: "Apple M3 Max (16-core)"
+    gpu: "Apple M3 Max (40-core GPU)"
+    memory_gb: 36
+  replica:
+    name: "Mac Studio M2 Ultra"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "hyperbolic_kv_bench"
+  description: "Same as FW-A1 workload"
+  vectors: 1_000_000
+  dimensions:
+    h3: 3
+    t2: 2
+  operations: ["insert", "knn_search", "evict", "picard_reduce"]
+  iterations: 1000
+  seed: 42
+
+# ── Comparison ────────────────────────────────────────────────────────────
+comparison:
+  baseline:
+    name: "C++ kernels (FW-A1 baseline)"
+    language: "C++20 + clang-17 + hand-rolled SIMD"
+    source: "FW-A1 baseline implementation"
+  treatment:
+    name: "Best alternative from FW-A1/A2/A3"
+    selection: |
+      Winner of FW-A1 (Rust MLX), FW-A2 (Zig), FW-A3 (Swift)
+      If multiple PASS: select highest throughput
+      If all FAIL: C++ is only option → necessity PROVEN
+    language: "TBD from FW-A1/A2/A3 results"
+
+# ── Bayesian Design ───────────────────────────────────────────────────────
+bayesian_design:
+  prior:
+    h0_probability: 0.5  # p(H₀: necessary)
+    h1_probability: 0.5  # p(H₁: not necessary)
+  likelihood:
+    model: "Normal likelihood on throughput ratio (log scale)"
+    baseline_throughput: "From FW-A1 baseline run"
+    treatment_throughput: "From best alternative run"
+    sigma: "Pooled standard deviation from both runs"
+  decision_rule:
+    bf01_threshold_required: 10    # BF₀₁ > 10 → REQUIRED
+    bf01_threshold_optional: 0.1   # BF₀₁ < 0.1 → OPTIONAL
+    bf01_inconclusive: "0.1 ≤ BF₀₁ ≤ 10 → INCONCLUSIVE"
+  effect_size_prior:
+    distribution: "Cauchy(0, 0.707)"  # Default for Bayes factor
+    rationale: "Conservative prior for kernel performance differences"
+
+# ── Judge (Bayesian Decision) ─────────────────────────────────────────────
+judge:
+  primary:
+    metric: "bayes_factor_bf01"
+    threshold_required: "> 10"
+    threshold_optional: "< 0.1"
+    description: "BF₀₁ = p(data|H₀) / p(data|H₁) — evidence for necessity"
+  secondary:
+    - metric: "throughput_regression_percent"
+      threshold: ">= 20"
+      description: "Throughput drop ≥ 20% if C++ removed"
+    - metric: "memory_regression_percent"
+      threshold: ">= 15"
+      description: "Memory increase ≥ 15% if C++ removed"
+    - metric: "instruction_count_regression"
+      threshold: ">= 25"
+      description: "Instruction count increase ≥ 25%"
+
+# ── Null Handling ─────────────────────────────────────────────────────────
+null_handling:
+  if_bf01_gt_10:
+    interpretation: "STRONG EVIDENCE: C++ kernels are NECESSARY"
+    action: "Claim C09-FW-NEC-KERNELS → VERIFIED; C++ REQUIRED for kernels"
+    design_decision: "Lock C++ for kernels; no consolidation"
+  if_bf01_lt_0_1:
+    interpretation: "STRONG EVIDENCE: C++ kernels are NOT NECESSARY"
+    action: "Claim C09-FW-NEC-KERNELS → VERIFIED; C++ OPTIONAL for kernels"
+    design_decision: "Consolidate to best alternative language"
+  if_inconclusive:
+    interpretation: "INSUFFICIENT EVIDENCE either way"
+    action: "Claim C09-FW-NEC-KERNELS → INFERRED; more data needed"
+    design_decision: "Extend sample size; run FW-NEC-KERNELS-retry"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md (Rule FW-4, FW-11)"
+  traceability:
+    - "C05 Atlas/Hyperbolic KV"
+    - "C12 Server Inference Engine"
+    - "C13 Testing Necessity"
+    - "C09 Ablations (C09.5, C09.6)"
+  gates:
+    - "Gate 4 (Integration - necessity gate)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-NEC-KERNELS/raw_data.json"
+  - "ablation_results/FW-NEC-KERNELS/analysis.ipynb"
+  - "ablation_results/FW-NEC-KERNELS/claim.json"
+  - "ablation_results/FW-NEC-KERNELS/bayes_factor_calculation.json"
+  - "ablation_results/FW-NEC-KERNELS/receipt.json"

@@ -44,20 +44,31 @@
 | P2       | A39 harness with confound voiding (AA-10)      | evaluation    | A39 run                          |
 | P2       | Overlap policy audit (AA-11)                   | immune_system | policy review                    |
 
-## 4. What was NOT done
+## 4. What was NOT done (updated 2026-10-27, hardening pass B)
 
-- No A39 execution, no claims flipped to VERIFIED.
-- Cross-silo leak guard and atomic dissolution not yet coded.
+- No A39/A40 efficacy execution on retrained weights; no C06 claims flipped to VERIFIED (A40-RUN-01 Stage 1 is a recorded NULL on the native-map geometry leg — `A40-RunReport-2026-10-27.md`).
+- E6 (horizon-identity debug assert), E8 (λ-starvation telemetry), E9 (A39 confound guard in code) remain open — NOT done this pass.
+- Cross-silo leak guard and atomic dissolution: NOW CODED this pass (see §6); crash-injection test for the transaction path still open.
 - No external literature search; novelty claims remain internal only.
 
-## 5. Verification (this pass)
+## 5. Verification (this pass + pass B)
 
 - `cargo test --manifest-path .../immune_system/implementation/Cargo.toml --lib` → **59 passed, 0 failed** (after edits).
 - Orchestrator tests run after the signature change: **114 passed, 0 failed** (compile risk cleared).
 
 Recommend running orchestrator tests next before declaring hardening complete.
 
+## 6. Hardening pass B — AA-02 calibrated + B-5 transaction (2026-10-27, VERIFIED by test output)
+
+- **Finding B-1 (from pressure test).** The flat `ip <= 10.0` forward-closure guard admitted nearly everything (cosh 10.0 ≈ d ≤ 3.0 — ~3 nats beyond small basins) and ignored `OverlapPolicyMatrix` entirely. Direction right, calibration unprincipled.
+- **Fix B-1 (APPLIED, in monster-hybrid-server tree, NOT in this repo).** `silo.rs::carve_task_view_with_bands` + `specialist_carving.rs::Allocate` forward closures now admit iff `ip(ga, well(role)) <= basin(role) + overlap(primary_role, role)`, where `basin` is the role's `SiloView::base_basin_cosh_radius` (fallback `default_basin_cosh` = 1.22) and overlap comes from policy (minimal-icosahedral 0.08). `policy` threaded through `carve_task_view_with_bands`; legacy `carve_task_view` builds a zero-overlap policy. Flat thresholds forbidden by code comment.
+- **Evidence B-1 (VERIFIED).** New property test `calibrated_guard_admits_in_basin_excludes_antipode`: in-basin atom passes, far-field hyperboloid point (8x spatial scale, renormalized x0) excluded. Note: naive spatial negation is NOT far-field (wells sit near origin, |s|≈0.4 — negated point lands in opposite basin); test uses true far-field. `atoma_immune --lib`: **66 passed, 0 failed**. Orchestrator `--lib`: **114 passed, 0 failed**.
+- **Correction entry (append-only, not a rewrite).** Pre-existing test `subagent_task_carved_view_isolates_silos_and_executes_in_motion` asserted `carved_arc_count >= 2` under the 10.0 regime; under the calibrated guard the recorded 2-arc chain spans a cross-basin gap wider than ~1.30 cosh, so closure correctly retains 1 arc and excludes 1. Expectation updated to `>= 1` with `CORR-AA02-2026-10-27` comment in code. The test still asserts antipode exclusion + 6 silos + nonzero atoms.
+- **Finding B-2 (from C25 doc audit).** The `expected_post = pre_fp XOR hash(ws)` accumulator existed ONLY in `DissolutionTransactionAndTelemetry.md` — the code had NO fingerprint transaction at all (`compile_deposit` returned counts, no pre/post binding). Doc specified a malleable construction; code had nothing.
+- **Fix B-2 (APPLIED).** `DepositCompilationReceipt` gains `pre_fp` + `expected_post = SHA256(pre_fp || canonical_write_set)` (pure-Rust in-tree SHA-256, zero new deps). Canonical encoding: sorted-by-global-id `(id u64 LE || clock u64 LE || lorentz 4x i64 LE || len u64 LE || payload)`. `canonical_vault_image_for_receipt()` (epoch || next_id || clock || per-atom id/clock/coords/payload) binds the pre-image to live vault bytes.
+- **Evidence B-2 (VERIFIED).** New test `sha256_accumulator_resists_xor_aliasing_and_ordering`: order-invariance holds, one-byte change avalanches, duplicate entries do NOT cancel (XOR would give X^X=0). Included in the 66-green run above.
+- **Still open after pass B.** E6, E8, E9 (unchanged); crash-injection test for the transaction path; `Allocate`'s `volumetric_cone_ball_coord` import now unused (warning only, cleanup deferred); second-machine replication (C-A40-08).
+
 ---
 
-_Last updated: 2026-10-27 (hardening partial pass)._
-EOF
+_Last updated: 2026-10-27 (hardening pass B: AA-02 calibrated, B-5 transaction coded, 66+114 green)._

@@ -1,0 +1,168 @@
+# Pre-Registration: FW-A5 — Inference Engine ACFT (Rust vs Zig)
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-A5.hash
+# C09 Ablation Framework — Framework Selection Study
+
+ablation_id: "FW-A5"
+title: "Inference Engine ACFT: Rust (tokio, MLX) vs Zig (async, comptime kernels)"
+hypothesis: |
+  Zig ACFT inference engine achieves parity with Rust on decode tok/s + TTFT
+  with ≤1.1x memory, using comptime kernel specialization.
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  primary:
+    name: "MacBook Pro M3 Max"
+    cpu: "Apple M3 Max (16-core)"
+    gpu: "Apple M3 Max (40-core GPU)"
+    memory_gb: 36
+    os: "macOS 15.0 (Sequoia)"
+    rustc: "1.82.0"
+    zig: "0.13.0"
+  replica:
+    name: "Mac Studio M2 Ultra"
+    cpu: "Apple M2 Ultra (24-core)"
+    gpu: "Apple M2 Ultra (76-core GPU)"
+    memory_gb: 96
+    os: "macOS 15.0 (Sequoia)"
+    rustc: "1.82.0"
+    zig: "0.13.0"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "acft_inference_bench"
+  description: "Same as FW-A4 workload"
+  model: "Qwen3.8-27B-Uncensored-OrcaRouter-MLX-4bit"
+  context_len: 131072
+  batch_size: 16
+  prompts: 100
+  prompt_len: 10000
+  gen_len: 512
+  iterations: 50
+  warmup: 5
+  seed: 42
+
+# ── Baseline (Rust) ───────────────────────────────────────────────────────
+baseline:
+  language: "Rust 1.82.0"
+  async_runtime: "tokio 1.38"
+  inference:
+    engine: "ACFT"
+    attention: "TwisterAttention"
+    scheduler: "ILP + continuous batching"
+    prefix_cache: "Radix + hyperbolic"
+    draft: "n-gram lookahead"
+  kernels:
+    backend: "MLX Metal + C++ kernels (FW-A1 winner)"
+  memory:
+    allocator: "jemallocator"
+    budget_gb: 27.5
+
+# ── Treatment (Zig) ───────────────────────────────────────────────────────
+treatment:
+  language: "Zig 0.13.0"
+  async_runtime: "Zig std async (event loop)"
+  inference:
+    engine: "ACFT (port)"
+    attention: "TwisterAttention (port)"
+    scheduler: "ILP via comptime synthesis + async"
+    prefix_cache: "Radix + hyperbolic (port)"
+    draft: "n-gram lookahead (port)"
+  kernels:
+    backend: "Comptime kernels (FW-A2 winner) + Metal via C++ shim"
+    dispatch: "Direct (no FFI if Zig kernels win)"
+  memory:
+    allocator: "GeneralPurposeAllocator"
+    budget_gb: 27.5
+
+# ── Judge (Pass/Fail Predicate) ───────────────────────────────────────────
+judge:
+  primary:
+    - metric: "decode_tok_s_ratio"
+      threshold: ">= 0.9"
+      description: "Zig decode tok/s / Rust decode tok/s ≥ 0.9"
+    - metric: "ttft_ms_ratio"
+      threshold: "<= 1.1"
+      description: "Zig TTFT / Rust TTFT ≤ 1.1"
+    - metric: "peak_memory_ratio"
+      threshold: "<= 1.1"
+      description: "Zig peak memory / Rust peak memory ≤ 1.1"
+  secondary:
+    - metric: "comptime_scheduler_synthesis"
+      threshold: "PASS"
+      description: "ILP scheduler synthesized at comptime"
+    - metric: "async_cancellation_latency"
+      threshold: "<= 10"
+      description: "Cancellation latency ≤ 10ms"
+    - metric: "build_time_ratio"
+      threshold: "<= 0.8"
+      description: "Zig build / Rust build ≤ 0.8"
+
+# ── Effect Size Plan ──────────────────────────────────────────────────────
+effect_size_plan:
+  decode_throughput:
+    type: "Cohen's d"
+    method: "bootstrap"
+    samples: 10000
+    meaningful_threshold: 0.5
+  ttft:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.15
+  peak_memory:
+    type: "percent_change"
+    method: "percentile_bootstrap"
+    samples: 10000
+    meaningful_threshold: 10
+
+# ── Statistical Design ────────────────────────────────────────────────────
+statistical_design:
+  alpha: 0.05
+  power: 0.80
+  effect_size_assumed: 0.5
+  alpha_spending:
+    method: "Lan-DeMets"
+    rho: 2
+  interim_analyses: 4
+  futility_threshold: 0.2
+  sample_size_per_group: 30
+
+# ── Null Handling ─────────────────────────────────────────────────────────
+null_handling:
+  if_treatment_wins_or_ties:
+    interpretation: "Zig achieves ACFT parity; Rust not necessary for inference"
+    action: "FW-A5 → OPTIONAL for Rust; Zig viable for full inference stack"
+    design_decision: "Consolidate to Zig for inference+kernels"
+  if_inconclusive:
+    interpretation: "Zig async + Metal interop immature; Rust still necessary"
+    action: "Record INFERRED; defer to FW-A5-retry"
+    design_decision: "Lock Rust for inference"
+  if_baseline_wins_clear:
+    interpretation: "Rust tokio + MLX + async-trait necessary for ACFT"
+    action: "Record VERIFIED necessity; Rust REQUIRED"
+    design_decision: "Lock Rust for inference"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md"
+  traceability:
+    - "C12 Server Inference Engine"
+    - "C05 Atlas/Hyperbolic KV"
+  gates:
+    - "Gate 3 (Inference Engine)"
+    - "Gate 4 (Integration)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-A5/raw_data.json"
+  - "ablation_results/FW-A5/analysis.ipynb"
+  - "ablation_results/FW-A5/claim.json"
+  - "ablation_results/FW-A5/failure.json"
+  - "ablation_results/FW-A5/receipt.json"

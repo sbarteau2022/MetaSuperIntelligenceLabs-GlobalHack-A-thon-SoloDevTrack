@@ -1,0 +1,207 @@
+# Pre-Registration: FW-A14-CUDA — Full Stack (Multi-substrate: Rust+Metal+CUDA vs Rust-only)
+#
+# Hash: sha256(this_file) → filed at PreRegistrations/FW-A14-CUDA.hash
+# C09 Ablation Framework — Framework Selection Study
+
+ablation_id: "FW-A14-CUDA"
+title: "Full Stack: Multi-substrate (Rust+Metal+C++/CUDA Rust) vs Rust-only (WASM frontend, WASM workers)"
+hypothesis: |
+  Multi-substrate stack Pareto-dominates Rust-only on end-to-end metrics across
+  Apple Silicon (Metal) + NVIDIA (CUDA Rust) + Cloudflare (Workers), because:
+  - Metal kernels necessary for Apple Silicon (no CUDA on Mac)
+  - CUDA Rust (cutile-rs) necessary for NVIDIA (per FW-A1-CUDA / FW-A4-CUDA)
+  - Rust harness/frontend/workers necessary for orchestration + IDE + deployment
+
+# ── Hardware ──────────────────────────────────────────────────────────────
+hardware:
+  apple_silicon:
+    name: "MacBook Pro M3 Max / Mac Studio M2 Ultra"
+    gpu: "Apple M3 Max (40-core) / M2 Ultra (76-core)"
+    metal: "Metal 3 / MLX"
+    rustc: "1.82.0"
+  nvidia:
+    name: "Linux + NVIDIA GPU (H100 / B200 / RTX 5090)"
+    gpu: "H100 (sm_90) / B200 (sm_100) / RTX 5090 (sm_120)"
+    cuda: "13.3"
+    rustc: "stable 1.89+ (cutile) + nightly (cuda-oxide)"
+  cloud:
+    name: "Cloudflare Workers (Production Edge)"
+    runtime: "workerd (V8 isolates)"
+  replica:
+    name: "Cross-vendor replication (Mac + Linux NVIDIA)"
+
+# ── Workload ──────────────────────────────────────────────────────────────
+workload:
+  name: "full_stack_multi_substrate_e2e_bench"
+  description: |
+    End-to-end across substrates: file tab open → memory injection →
+    agent harness → inference engine → hyperbolic KV → response → UI update.
+    Runs on: Mac (Metal) + Linux (CUDA Rust) + Cloudflare (Workers).
+  scenarios:
+    - "Code generation task (builder lane) on Mac → Metal inference"
+    - "Code generation task (builder lane) on Linux → CUDA Rust inference"
+    - "Remote inference via Cloudflare Workers (Go WASM)"
+  steps:
+    - "Tab open + memory injection (<100ms, all substrates)"
+    - "Agent spawn + tool registration (<10ms)"
+    - "Tool dispatch (fs.read, code.query) (<5ms)"
+    - "Inference request → ACFT → TwisterAttention → response"
+      - Mac: Metal kernels (MLX + custom MSL)
+      - Linux: CUDA Rust (cutile-rs Tile + cuda-oxide SIMT)
+    - "Hyperbolic KV retrieval (VP-tree knn) (<1ms)"
+    - "Response stream → UI update"
+  iterations: 50 per substrate
+  warmup: 5
+  seed: 42
+
+# ── Baseline (Multi-substrate) ────────────────────────────────────────────
+baseline:
+  name: "Rust + Metal (Apple) + CUDA Rust (NVIDIA) + TypeScript (Frontend) + Go WASM (Workers)"
+  substrates:
+    apple_silicon:
+      kernels: "Metal (MLX + custom MSL via Rust)"
+      inference: "Rust + Metal kernels"
+      harness: "Rust"
+    nvidia:
+      kernels: "CUDA Rust (cutile-rs Tile + cuda-oxide SIMT)"
+      inference: "Rust + CUDA Rust kernels"
+      harness: "Rust"
+    frontend:
+      language: "TypeScript (React, Vite, CodeMirror 6)"
+      build: "Vite + Tauri for desktop"
+    workers:
+      language: "Go WASM (tinygo)"
+      runtime: "workerd"
+  boundaries:
+    - "Rust (harness) → Metal kernels: FFI via objc2 / metal-cpp"
+    - "Rust (harness) → CUDA Rust kernels: Same Rust process, cutile-rs/cuda-oxide"
+    - "Rust (local) → Go WASM (Workers): Custom binary RPC over HTTP/2"
+    - "TS (frontend) → Rust (backend): Tauri IPC / HTTP + Cap'n Proto"
+  build:
+    system: "Cargo (Rust) + Vite (TS) + Go (Workers) + cargo oxide (CUDA SIMT)"
+    time_target_seconds: 300
+  binary_sizes:
+    backend_rust_mb: 50
+    metal_kernels_mb: 10
+    cuda_rust_kernels_mb: 15
+    frontend_ts_gz_kb: 170
+    workers_go_kb: 200
+    total_deploy_mb: 80
+
+# ── Treatment (Rust-only) ─────────────────────────────────────────────────
+treatment:
+  name: "Rust-only (WASM frontend + WASM workers + Rust kernels everywhere)"
+  substrates:
+    apple_silicon:
+      kernels: "Rust MLX (no custom MSL)"
+      inference: "Rust + MLX"
+    nvidia:
+      kernels: "Rust MLX (no CUDA Rust)"  # MLX doesn't support NVIDIA
+      inference: "Rust + MLX"  # FAIL: MLX is Apple-only
+    frontend:
+      language: "Rust/WASM (Leptos + wasm-codemirror)"
+    workers:
+      language: "Rust/WASM (workers-rs)"
+  boundaries:
+    - "Rust → WASM frontend: wasm-bindgen + wasm-pack"
+    - "Rust → WASM workers: workers-rs"
+    - "No Metal, no CUDA Rust, no Go, no TypeScript"
+  build:
+    system: "Cargo + wasm-pack + trunk + workers-rs"
+    time_target_seconds: 600
+  binary_sizes:
+    backend_rust_mb: 50
+    kernels_rust_mb: 15
+    frontend_wasm_gz_kb: 500
+    workers_wasm_kb: 500
+    total_deploy_mb: 100
+
+# ── Judge (Pass/Fail Predicate) ───────────────────────────────────────────
+judge:
+  primary:
+    - metric: "e2e_latency_ms_ratio_apple"
+      threshold: "<= 1.2"
+      description: "Rust-only Apple e2e latency / Multi-substrate Apple e2e latency ≤ 1.2x"
+    - metric: "e2e_latency_ms_ratio_nvidia"
+      threshold: "<= 1.2"
+      description: "Rust-only NVIDIA e2e latency / Multi-substrate NVIDIA e2e latency ≤ 1.2x"
+    - metric: "total_binary_ratio"
+      threshold: "<= 1.5"
+      description: "Rust-only total deploy size / Multi-substrate total deploy size ≤ 1.5x"
+    - metric: "build_time_ratio"
+      threshold: "<= 2.0"
+      description: "Rust-only build time / Multi-substrate build time ≤ 2.0x"
+  secondary:
+    - metric: "nvidia_kernel_parity"
+      threshold: "PASS"
+      description: "Rust-only NVIDIA kernels achieve parity (MLX doesn't support NVIDIA → EXPECTED FAIL)"
+    - metric: "frontend_parity"
+      threshold: ">= 0.85"
+      description: "Rust/WASM frontend feature parity ≥ 85%"
+    - metric: "workers_parity"
+      threshold: ">= 0.8"
+      description: "Rust/WASM workers feature parity ≥ 80%"
+    - metric: "dev_velocity_ratio"
+      threshold: "<= 1.5"
+      description: "Rust-only dev velocity / Multi-substrate dev velocity ≤ 1.5x"
+
+# ── Effect Size Plan ──────────────────────────────────────────────────────
+effect_size_plan:
+  e2e_latency:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.15
+  binary_size:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.3
+  build_time:
+    type: "ratio"
+    method: "log_normal"
+    meaningful_threshold: 1.5
+
+# ── Null Handling (Pre-Stated) ────────────────────────────────────────────
+null_handling:
+  if_treatment_wins_or_ties:
+    interpretation: "Rust-only achieves parity across ALL substrates; multi-substrate not necessary"
+    action: "FW-A14-CUDA result → Multi-substrate OPTIONAL; Rust-only viable"
+    design_decision: "Consolidate to Rust-only; but NVIDIA kernels via MLX is IMPOSSIBLE → this outcome is VIRTUALLY IMPOSSIBLE"
+  if_inconclusive:
+    interpretation: "Rust-only fails on NVIDIA (no MLX) but parity elsewhere"
+    action: "Record as INFERRED; multi-substrate REQUIRED for NVIDIA support"
+    design_decision: "Lock multi-substrate: Metal for Apple, CUDA Rust for NVIDIA"
+  if_baseline_wins_clear:
+    interpretation: "Multi-substrate Pareto-optimal; each substrate owns irreducible domain"
+    action: "Record as VERIFIED necessity; Multi-substrate REQUIRED"
+    design_decision: "Lock multi-substrate stack"
+
+# ── Pre-Registration Hash ─────────────────────────────────────────────────
+# pre_registration_hash: "sha256:..."
+
+# ── Metadata ──────────────────────────────────────────────────────────────
+metadata:
+  author: "Framework Ablation Study (C09-FW)"
+  created: "2026-10-27T00:00:00Z"
+  status: "DRAFT"
+  parent_design: "C09-FW FrameworkAblationStudy/Design.md"
+  rules: "C09-FW FrameworkAblationStudy/Rules.md"
+  traceability:
+    - "C04 Architecture Topology (all layers)"
+    - "C08 Framework Requirements (all)"
+    - "C09 Ablations (all)"
+    - "C10 Deployment Strategy"
+    - "CUDA Rust research (cutile-rs + cuda-oxide)"
+  gates:
+    - "Gate 4 (Integration)"
+    - "Gate 5 (Observability)"
+    - "Gate 6 (Chaos/Recovery)"
+    - "Gate 7 (Compliance)"
+    - "Gate 8 (Performance)"
+
+required_artifacts:
+  - "ablation_results/FW-A14-CUDA/raw_data.json"
+  - "ablation_results/FW-A14-CUDA/analysis.ipynb"
+  - "ablation_results/FW-A14-CUDA/claim.json"
+  - "ablation_results/FW-A14-CUDA/failure.json"
+  - "ablation_results/FW-A14-CUDA/build_log.txt"
+  - "ablation_results/FW-A14-CUDA/receipt.json"
