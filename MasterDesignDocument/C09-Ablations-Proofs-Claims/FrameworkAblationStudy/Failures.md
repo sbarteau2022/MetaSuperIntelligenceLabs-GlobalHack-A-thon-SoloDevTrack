@@ -95,3 +95,23 @@ Each entry records a **FAIL** result with full root cause and correction:
 ### Auditor-confirmed (no correction needed)
 - Rust files exist; 16/16 tests rerun-pass (auditor numbers: insert 3.486, k-NN 0.008, evict 0.047, Picard 15094 K ops/s, 74 ms/iter — within noise of reported 3.479/0.008/0.053/15700/72.946 ms); C++ scaffold PROPOSED-only; BM-01 gap honestly recorded; ledger entries present at Successes.md lines 74/84.
 - **What this does not prove** (agreed): no CUDA executed, no PTX, no Tile IR, no cuda-oxide toolchain, no parity vs C++, no FW-A1-CUDA claim. Linux+H100 full-scale run still required — exactly as the ledger says.
+
+## F-A39-RUNNER-02 — Staged/unstaged/untracked tree audit (2026-10-27)
+
+**Scope**: full local git tree `~/Desktop/monster-hybrid-server` — staged (index vs HEAD), unstaged (worktree vs index), untracked. [VERIFIED — `git diff --cached --stat`, `git diff --stat`, `git status --short` outputs above; ends at this machine]
+
+### What the three layers contain
+- **Staged (18 files, +5798/−66)**: design docs + pre-regs (`AdvAudit.md`, `ErrAndImprovements-AA.md`, `CLAIMS_REGISTER_CARVED.md`, `PRE-REGISTRATION-CS-ABLATION-02.json`, …), immune-system carving work (`silo.rs`, `specialist_carving.rs`, `superposition.rs`, …), and a **557-line NEW `orchestrator/src/bin/ablation_runner.rs`** (file does NOT exist in HEAD — `git show HEAD:…` → fatal). The staged runner has **zero** judge fields (`judge_verdict` count = 0, no `mod judge`).
+- **Unstaged (17 files, +1870/−591)**: the reviewed patch lives HERE — the +227 on `ablation_runner.rs` are exactly the canonical-judge integration (`mod judge`, `rss_bytes`, `CorpusJudge`, judge fields, `--no-warmup`/`--vault-copy`, judge-gated success). Plus `core_lm` torus/tokenizer work, `word_problem_derive.rs` (+767/−~590), benchmark report updates, `Cargo.lock` churn.
+- **Untracked (34 entries)**: `judge.rs` itself (!!), `results/` (stale pre-patch control/treatment.jsonl), `corpus_manifest*.json`, GSM8K/HumanEval/LongBench/RULER reports + datasets, `core_lm` Metal shaders + tests, `PRE-REGISTRATION-CS-ABLATION-01.json`, vault backups, `dual_rank_probe.rs`.
+- **Not staged, not committed**: everything I certified in S-A39-RUNNER-01. The certification stands as a **working-tree** review only.
+
+### Correction to S-A39-RUNNER-01 framing
+- **Wrong**: implied the patch was one unit ("patch applied, not committed").
+- **Right**: it is **TWO units in different layers** — (1) a staged 557-line runner (pre-judge baseline, new file, contents not reviewed) + (2) the unstaged +227-line judge integration I did review + (3) untracked `judge.rs` it depends on (`mod judge;` resolves to an untracked file). Anyone committing only the staged layer gets a runner that **does not compile** (references to `judge::` with no `judge.rs` in the index).
+- **Status**: CORRECTED. Commit procedure must be: `git add orchestrator/src/bin/judge.rs` + the unstaged runner hunk together, or the build breaks at the index.
+
+### Risks flagged (no action taken — review only, per instruction)
+1. **Staged-but-unreviewed 557-line runner.** I certified the judge delta, NOT the staged base it applies to. The base is a new file with no HEAD ancestor — no provenance trail to diff against. Recommend a line-read of the staged version before any commit.
+2. **34 untracked files with no disposition.** Benchmark reports/datasets, corpus manifests (incl. a `.bak`), vault backups, `.metal` shaders, `dual_rank_probe.rs` — none tracked, none ignored, none listed in any manifest I saw. At minimum `results/` + `*.bak` + vault backups belong in `.gitignore`; the corpus/reports need a keep-or-delete decision.
+3. **`results/` dir itself is untracked** — the first canonical-schema run file will also be untracked unless the dir is added. Decide now whether run artifacts live in git or out.

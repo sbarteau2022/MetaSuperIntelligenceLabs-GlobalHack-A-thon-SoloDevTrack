@@ -86,3 +86,22 @@ Each entry records a **PASS** result with full context:
 - **Status**: PROPOSED (written, uncompiled on this machine — needs Linux+CUDA+CMake to build) [PROPOSED — files exist, no build log]
 - **What**: `ablation_benchmarks/metal_cpp/` — header-only C++20 VP-tree/Lorentz/Q32.31 in `include/hyperbolic_kv_bench.h`, `main.cpp` workload runner, `picard.cu` warp+batch kernels with `__shfl_down_sync` reductions, `CMakeLists.txt` (sm_90/100/120)
 - **Next**: build + run on Linux+H100 alongside CUDA Rust; NCU profile (`ninja ncu_profile`); write `cpp_raw_data.bin`
+
+## S-A39-RUNNER-01 — Canonical judge patch, working-tree review (2026-10-27)
+
+- **Status**: VERIFIED (reviewed in working tree `~/Desktop/monster-hybrid-server`, uncommitted; `cargo check --bin ablation_runner` 0 errors; `cargo test --bin ablation_runner` 9/9 pass incl. `sha256_known_vector` == `ba7816bf…20015ad`) [VERIFIED — check/test output above; ends at this machine]
+- **What reviewed**: `orchestrator/src/bin/ablation_runner.rs` (+227/-~40) + new `orchestrator/src/bin/judge.rs` (484 lines, `deterministic-judge-1.1`, std-only SHA-256/tokenizer/canonicalize + v1.1 graded judges 0..1000 mP + `terms_hash` comparability guard)
+- **Claims confirmed true**:
+  - Success gate is now judge-canonical: `pass → !fallback_used`, `not_applicable → non-empty`, else false — "non-empty = success" is gone from both arms
+  - Retries fixed: `retries = attempt_count - 1` (control 0, treatment 0/1 by fallback), `superposition_interventions` reported separately — the old 118-was-retries conflation is eliminated in schema
+  - `--no-warmup` skips even the neutral warm-up (learn_enabled=true contamination path closed); `--vault-copy` overrides the hardcoded live vault path; every row carries `vault_path`
+  - Full decoded text + `judge_version/verdict/checks` + `decoded_sha256` in every row → run file re-judges itself
+  - `retries: 1` on `Err` arms changed to 0 with `judge_verdict: error` — honest (an engine error is not a retry)
+  - `gate_rejection_count: None`, `backtrack_count: 0`, `vram_peak_mb: None` left as null/0, NOT faked — matches the "still honestly not done" report
+  - `vram_peak_mb` deprecated in favor of sampled RSS (`/bin/ps`, macOS) with the unified-memory caveat stated in code
+- **Corrections to the report** (minor, none load-bearing):
+  1. "Judge unit tests: 5/5" → **9/9** on rerun (5 original + 4 graded-judge tests: empty/loop/diverse-text/terms-hash). The 5/5 was presumably the pre-v1.1 count.
+  2. `results/control.jsonl` + `treatment.jsonl` in `results/` are **stale pre-patch artifacts** (00:10, old schema, `retries: 1` on fail-closed errors) — NOT the smoke output. The reported smoke run (judge pass, 256 tokens, RSS ~211 MB) has **no run file found** in the tree; re-run to produce the first canonical-schema artifact before analysis.
+  3. `err_receipt` + `JudgeReceipt.version/expected_sha256/canonical_sha256/first_diff/error` fields + `strip_loc`/`judge_normalized` full-receipt path are **dead code in the runner path** (runner stores flattened `judge_checks: Vec<String>`, not `CheckResult`s; `judge_task` maps normalized/exact to pass/fail + detail string). Tested but unwired — fine, but `analyze_a39.py` must parse the flat schema, not the `JudgeReceipt` struct.
+  4. `CorpusTask.seed` field is read from JSON but never used for per-task seeding (task_seed = manifest seed + idx). Harmless but the name misleads.
+- **Certified as**: canonical-judge infrastructure + metric-hygiene patch, ready for a real A39 run. **Not certified as**: an A39 result — no post-patch run file exists yet. The three remaining steps named in the report (frozen corpus, signed fallback, second machine) are agreed as the true blockers.

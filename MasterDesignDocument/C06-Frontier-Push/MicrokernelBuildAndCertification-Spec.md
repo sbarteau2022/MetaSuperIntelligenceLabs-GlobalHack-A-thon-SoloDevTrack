@@ -196,3 +196,70 @@ Research ingest (same pass, steward-ordered RESEARCH FIRST):
   tile semantics (can't execute PTX/cubin on Mac); registry pattern
   (name→impl per substrate) is the next layer after the dispatcher; toolchain
   disagreement flagged, nothing pinned.
+
+## 12. d=256 coherence cert + v2 threadgroup kernel (2026-10-27 — goal work)
+
+### d=256 coherence: CERTIFIED (traj rel 3.03e-5 @d=256, bound 1e-4)
+
+The exact-T integer pre-reduction stands: worst cos err 4.8e-7 @ab<=12800
+(emulation oracle), quotient safety proven (only pathological ab=5520 flips,
+caught by the remainder guard). Measured: 3.2e-6 @d=64, 7.4e-5 @d=128,
+3.03e-5 @d=256 — all green 5/5 runs.
+
+Correction appended (the deepest wrong turn of the pass): with ha reduced by
+q*2pi, `sin(ha/2)` flips sign for odd q — the s2 parity term went O(0.5) wrong
+(h3 rel 1.285) while every trig probe read clean (cos can't see a 2pi branch
+difference). Fixed with the (-1)^q parity correction (q exact int in f32).
+Lesson: when the reduction changes the ANGLE'S BRANCH, every downstream
+function of ha/2 must be branch-corrected, not just ha itself.
+
+Also recorded: f32(2pi) carries 2.4e-7 rounding — T must partition the EXACT
+T (f64 2pi/g64), never f32(2pi)/g32 (8e-4-class ab error at q=3296, diagnosed
+in-oracle before it ever reached silicon).
+
+### Kuramoto v2 (kuramoto_fused_tg.metal): TRUE fused-K, CERTIFIED
+
+- TBIK intra-device tree: per-thread term → threadgroup slots → stride-halving
+  tree with barrier per round → identical resultant for all threads → Dekker tail.
+- Measured: self_max=0 (fused-k EXACTLY equals k sequential v1 launches) at
+  n=16/k=8, 64/8, 256/4. Oracle bounds: 8/10/7 (k-step drift characterization —
+  the oracle itself drifts 8-10 LSB over 8 steps from <=4 single-step inputs;
+  linear, benign, NOT chaos: 1-LSB perturbation probe stays 1 LSB over 8 steps).
+- Gate: `tests/kuramoto_tg_verify.rs` — self-consistency load-bearing (<=4),
+  oracle bound = seq drift, sectors bit-exact. Green 3/3.
+
+### The race the v2 exposed (v1 fixed, all gates re-greened 5/5)
+
+Pressure-testing v2 against sequential v1 at n=256 found the v1 kernel is
+NONDETERMINISTIC across launches (2848-56991 LSB run-to-run): threads write
+theta[id] at different times while others loop over theta[j] — a load/store
+race that single-launch certification never caught (one launch = one write
+epoch; sequential launches skew). Fixed with a threadgroup snapshot + barrier
+for n<=256 (all certified configs); n>256 documents launch-skew sensitivity.
+The fix REQUIRED single-threadgroup dispatch (tg=n): the gate had launched
+tg=1 (16 groups of 1), under which the snapshot reads garbage slots — the
+gate dispatch, benches, and backend.rs probe are now single-group for n<=256.
+Correction: the failure presented as "sectors 14/16" — a dispatch-shape bug,
+not a numerics bug. Always check the launch geometry before the math.
+
+### Pressure-test record (this pass, all VERIFIED)
+
+- 5 consecutive full runs: patch03 + tg + tpe_phase + coherence + backend = 5/5 green.
+- Full core_lm suite: 33 lib + all integration targets, 0 failed (re-run below).
+- Determinism: d=256 coherence traj_rel identical to 4 decimals across 5 runs;
+  v2 self_max=0 three runs straight (bit-exact fusion, not tolerance luck).
+
+## 13. Fused-K amortization numbers (2026-10-27, M5 Pro, release bench)
+
+`kuramoto_fusedk` (k=8): one v2 launch vs 8 sequential v1 launches.
+
+| n | fused (1 launch) | sequential (8 launches) | amortization |
+|---|---|---|---|
+| 16 | 187.3 us | 1509.2 us | 8.06x |
+| 64 | 220.7 us | 1894.0 us | 8.58x |
+| 256 | 226.5 us | 2111.9 us | 9.33x |
+
+The fused launch costs ~1 dispatch (~200us) regardless of k — amortization is
+8-9.3x at k=8 and grows linearly with k. The GPU crossover vs CPU (dispatch-bound
+below n=256) is unchanged per-step, but fused-K moves the crossover in
+trajectory-terms: an 8-step trajectory at n=64 costs one dispatch instead of eight.

@@ -1,0 +1,44 @@
+# Distillation — Audit (Varying Models → Single Memory Space)
+
+**Date.** 2026-10-27 (revised same-day after adversarial pressure test — corrections are entries, original findings preserved below). **Scope.** Design docs: `MasterDesignDocument/C06-Frontier-Push/ReasoningDistillationMapCarving.md`, `HowWeTurnModelDistillationToRawCapability.md`, `MethodAndMathSideBySide.md`, `OptimalDistillationDensity.md`. Code: `monster-hybrid-server/immune_system/implementation/src/distill_engine.rs` (read-only audit, C03.3: no vault file modified). **Status.** AUDITED, PRESSURE-TESTED, corrected findings below.
+
+## What was found
+
+- **Two-pillar engine.** `OpenWeightsDistillationEngine` exposes Pillar 1 `distill_static_weight_modes` (weight mode spectra → carved atoms) and Pillar 2 `distill_reasoning_chain` (multi-step trajectories → 0/1/2-cells). REPORTED (read from source).
+- **Frozen weights invariant.** Teacher weights are `FrozenBaseWeights`; weights are never mutated. VERIFIED by doc (`OptimalDistillationDensity.md`: model never disassembled).
+- **Knowledge minted.** Each static mode yields one atom via `keep_and_carve_with_origin` with a `WeightDistillationReceipt` (modes_scanned, atoms_minted, role_distribution, mean_retained_energy). VERIFIED shape.
+- **Compile break (SUPERSEDED 2026-10-27 — see correction C-AUD-0 below).** ~~`atoma_immune` does not currently build (`distill_engine.rs:290,659` and `map_native.rs:1019,1359,1411,1655`); signature drift between `well()`/`classify_icosahedral_well`. REPORTED by prior ruling. Therefore **no current test receipt** can be admitted for the distillation suite (stale last-green only).~~
+
+## Findings / corrections (proposed)
+
+1. **Stride sampling wastes budget.** Pillar 1 iterates `mode_idx in 0..max_modes` with `chunk_idx = (mode_idx * stride) % total_chunks` (uniform stride). Under a fixed atom budget, picking modes by **descending spectral retained energy** (greedy top-k) yields higher mean retained energy per minted atom. Estimated gain: [PROPOSED — unmeasured; must be ablation-tested].
+2. **Novelty gate not visible in the read path (REFUTED AS WRITTEN 2026-10-27 — see C-AUD-2).** ~~`distill_live_step_novel_only` exists, but `distill_static_weight_modes` does not call a novelty check before minting. Add `projector` novelty filter (repeated modes collapse into existing wells) to avoid swamp. PROPOSED.~~
+3. **MGS orthogonality.** `C05.12`/carving methodology: tangent slots must be MGS-orthogonalized (ε=0.08). Verify the projector applies MGS; if not, add. PROPOSED (verify against code).
+4. **Receipted judge gate.** Every minted atom must carry a judge pass; currently the receipt is emitted but not gated on a judge. PROPOSED invariant to enforce.
+5. **Determinism (MOOT 2026-10-27 — see C-AUD-5).** ~~Mode ordering must be deterministic for reproducibility; stride sampling is deterministic but top-k must be stable-tied. PROPOSED.~~
+
+## Knowledge-instilled improvement (proposal)
+
+Increase "knowledge instilled per minted atom" by (a) greedy top-k by retained energy, (b) novelty gate, (c) MGS orthogonalization, (d) judge gate. Each is an independent ablation arm; none changes frozen weights.
+
+## What was NOT checked
+
+- Full read of `projector` and `keep_and_carve_with_origin` (not audited this pass).
+- Build of `atoma_immune` (known broken); no tests run.
+- No measurement of retained-energy distributions on a real teacher checkpoint.
+
+## Pressure-test corrections (2026-10-27, VERIFIED by independent probe — read-only, scratch in `/tmp/distill_probe`)
+
+- **C-AUD-0 (original finding WITHDRAWN).** `atoma_immune --lib` builds clean TODAY (`cargo check --lib` zero errors) and the full suite is green: **66 lib + 114 orchestrator passed, 0 failed** (hardening pass B, `ErrAndImprovements-AA.md` §6). The compile-break claim was stale at audit time. Consequence: distillation-suite test receipts are admissible NOW; staleness caveat lifted.
+- **C-AUD-2 (finding 2 REFUTED as written, REPLACED).** Pillar 1 mints via `keep_and_carve_with_origin` (`distill_engine.rs:300-306`), which delegates to `keep_and_carve_novel_only` (`silo.rs:1308-1316`) — spatial-bucket + Lorentz-inner-product coalescence IS in the Pillar 1 path. Surviving sub-finding: `with_origin` discards the novelty boolean (`.0` at `silo.rs:1315`) and `minted += 1` is unconditional (`distill_engine.rs:312`) — coalesced repeats inflate `knowledge_atoms_minted` and are indistinguishable from novel atoms in the receipt. The concern (no novelty _accounting_) stands; the mechanism claim does not.
+- **C-AUD-5 (finding 5 MOOT).** Pillar 1 is pure index arithmetic (`:242,248,250`), no RNG in file, carve path uses `BTreeMap` throughout, existing top-k sorts are stable-tied (`:575-579` + stable `sort_by`). Keep as invariant, not a fix.
+- **CONFIRMED with numbers.** Finding 1 direction: stride mean 0.0204 vs greedy top-k 0.0741 (+0.0537, 3.63×) on Zipf-1000/chunks-64 simulation (magnitude PROPOSED — real spectral skew unmeasured). Findings 3 (zero MGS mentions in `refraction.rs`; only engine call site `:1736` is the safetensors path, not Pillar 1) and 4 (zero `judge` references in `distill_engine.rs`/`refraction.rs`; Pillar 1 has no entropy sieve either — Pillar-2-only) CONFIRMED.
+- **New doc-side defects found and FIXED this pass.** (i) Template JSON had a 4-byte `and ` trailer — validator crashed on its own template (FIXED, now valid). (ii) Validator accepted empty roster, contradicting §4 hold point — now rejects `models == []` (VERIFIED: exit 1). (iii) Validator traceback on malformed JSON — now clean `invalid JSON` error (VERIFIED). (iv) `CONVERSION_MATH.md §3` validity condition (`Σ receipt_ok == atoms_minted`) references nonexistent receipt fields — see §7 below. (v) α units undeclared; `p_useful` unmeasurable without the missing judge gate — see §7.
+
+## 7. Open calibration (revised — was §5)
+
+- α (conversion coefficient) — measure via A/B (held-out). **Units must be declared first:** dimensionless iff Cap is a normalized score, else capability-points per (coverage × energy). BLOCKS calibration, not docs.
+- p_useful — measure via judge coverage report. **BLOCKED on finding 4** (no judge in mint path → currently unmeasurable).
+- δ (novelty threshold) — sweep in ablation.
+- B_map budget — from C21.
+- **Validity condition REWRITTEN (was §3 `Σ receipt_ok == atoms_minted`).** `WeightDistillationReceipt` (`distill_engine.rs:66-73`) has no `receipt_ok`, no per-atom receipts, no sha chain — and Pillar 1 cannot reject (`minted += 1` unconditional), so the old condition was vacuous. Interim gate until per-atom receipting lands: `knowledge_atoms_minted == modes_scanned AND role_distribution sums to minted` (structural sanity, both computable TODAY) — receipt fields exist, check is falsifiable. Full `receipt_ok` gating returns when finding 4 (judge) is fixed.

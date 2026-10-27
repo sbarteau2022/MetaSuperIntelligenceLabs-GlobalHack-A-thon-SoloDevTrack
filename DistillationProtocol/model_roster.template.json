@@ -1,0 +1,12 @@
+{
+  "models": [
+    {
+      "name": "EXAMPLE-TEACHER",
+      "path": "/path/to/model.safetensors",
+      "quant": "bf16",
+      "num_layers": 32,
+      "fingerprint": "sha256:...",
+      "scope": "shared"
+    }
+  ]
+}
