@@ -45,3 +45,10 @@
 - **Finding.** [VERIFIED by adversarial review of the filed A38-v1] M1 referred to canonical field equality without defining how the agent response is parsed, and M3 did not state whether it applies to an Atlas-disabled fallback run.
 - **Evidence.** [VERIFIED] A38-v1 is preserved verbatim at `Pre-Registration-A38-v1.md` with SHA-256 `28716ac077059c248a0720565dde032cc4341212a0ec82ab8543b4155a89eea8`; its M1/M3 rows contain those omissions.
 - **Consequence.** [VERIFIED] No run occurred under v1. A38-v1.1 is the canonical pre-run registration with SHA-256 `0078d3995c920329f67b89b04b3ae8951763402a7eea59f0a7ae3d9ee8920004`; it defines strict-JSON parsing and M3 applicability without changing baselines, workload, thresholds, or decision rules.
+
+## F-C06-07 — A40 protocol admitted with five pressure-test findings (certified with conditions)
+
+- **Date.** 2026-10-27.
+- **Finding.** [VERIFIED by executing `A40-PressureTest-2026-10-27.md`] The Euclidean → Hyperbolic Retraining Protocol (7 pp., SHA-256 `4bcca0fa…d89472`) is mathematically sound (Lorentz/distance/validity/preservation/time arithmetic recomputed) but carries: (1 CRITICAL) unblinded G1 triple source — placement from the same map-tree family passes by construction; (2 MAJOR) Arm B bundles Δ_H with map context — preservation success cannot isolate the retrain; (3 MAJOR) M 10× ratio with no absolute floor/void-if-zero is gameable from any weak baseline; (4 MINOR) sibling construction, triple count, aggregation rule, workload/hardware pins, M rubric, power/N underspecified; (5 MINOR) repeatability passes trivially in-process.
+- **Evidence.** [VERIFIED] Protocol PDF filed byte-identical in workstream; prereg `Pre-Registration-A40-v1.md` + pressure test filed; claims CC-015…CC-020 opened as PROPOSED.
+- **Consequence.** [PROPOSED] A40 is CERTIFIED WITH CONDITIONS C-A40-01…C-A40-08 (held-out/blinded G1, sibling definition, M floors, minimum-N + power, B0 arm, frozen workload/hardware, cross-process repeatability, replication + necessity). No A40 run until all close AND the v1 hash is filed in `Claims_Register.md`.

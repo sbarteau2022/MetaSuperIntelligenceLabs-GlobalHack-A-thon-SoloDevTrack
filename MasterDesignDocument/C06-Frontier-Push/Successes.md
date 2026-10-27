@@ -13,3 +13,9 @@
 ## Experimental Successes
 
 [VERIFIED by workspace inspection] No A1–A38 ablation execution result, hardware replication result, or judge receipt exists in this workspace for C06. Therefore there are no experimental C06 successes recorded here.
+
+## 2026-10-27 — A40 protocol pressure-tested and filed (design success, not experimental)
+
+- **Finding.** [VERIFIED by execution] The Euclidean → Hyperbolic Retraining Protocol PDF (7 pp., SHA-256 `4bcca0fa…d89472`, filed byte-identical in workstream) passed math verification (Lorentz consistency, distance ordering 0.1106 vs 0.7584 on probes, Poincaré validity incl. near-boundary, preservation 0.80×0.98=0.784, 68 h reserve arithmetic) and compatibility checks (C05 claim boundary, C06.13 ladder, C09 proof-artifact rules satisfied on anti-gaming clauses).
+- **Evidence.** [VERIFIED by file presence + recomputation log] `Euclidean-Hyperbolic-Retraining-Protocol.pdf`, `Pre-Registration-A40-v1.md`, `A40-PressureTest-2026-10-27.md`, claims CC-015…CC-020 in `Claims_Register.md`.
+- **Consequence.** [INFERRED] The design is ready for condition-closure (C-A40-01…C-A40-08) and hash filing before any A40 run. It does not establish that hyperbolic retraining works or beats any baseline.
