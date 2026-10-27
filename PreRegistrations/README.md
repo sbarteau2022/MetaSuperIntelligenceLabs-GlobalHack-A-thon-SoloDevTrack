@@ -20,14 +20,14 @@
 
 ## Hash Filing Status
 
-| Ablation | Hash Filed | Date       | Notes                                                                                                |
-| -------- | ---------- | ---------- | ---------------------------------------------------------------------------------------------------- |
-| A1–A35   | NO         | —          | Text present, hashes empty — NO RUNS until filed (Day 1–2 exit per C32)                              |
-| A36      | NO         | —          | Prereg text filed this pass; hash pending                                                            |
-| A37      | NO         | —          | Prereg text filed this pass; hash pending                                                            |
-| A38      | YES        | 2026-10-26 | Filed in C06 workstream (`Pre-Registration.md` v1.1)                                                 |
-| A39      | YES        | 2026-10-27 | Filed in C06 workstream (`Pre-Registration-A39-v1.md`)                                               |
-| A40      | YES        | 2026-10-27 | v1.1 CANONICAL (8/8 conditions closed by construction); RUN-READY — next step is frozen run manifest |
+| Ablation | Hash Filed | Date       | Notes                                                                                                                     |
+| -------- | ---------- | ---------- | ------------------------------------------------------------------------------------------------------------------------- |
+| A1–A35   | NO         | —          | Text present, hashes empty — NO RUNS until filed (Day 1–2 exit per C32)                                                   |
+| A36      | NO         | —          | Prereg text filed this pass; hash pending                                                                                 |
+| A37      | NO         | —          | Prereg text filed this pass; hash pending                                                                                 |
+| A38      | YES        | 2026-10-26 | Filed in C06 workstream (`Pre-Registration.md` v1.1)                                                                      |
+| A39      | YES        | 2026-10-27 | Filed in C06 workstream (`Pre-Registration-A39-v1.md`)                                                                    |
+| A40      | YES        | 2026-10-27 | v1.1 CANONICAL (8/8 conditions closed by construction); RUN-READY, APPROVED by Stewart — next step is frozen run manifest |
 
 ## Content Standard
 

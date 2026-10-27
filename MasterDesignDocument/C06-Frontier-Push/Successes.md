@@ -25,3 +25,9 @@
 - **Finding.** [VERIFIED by file presence] `Pre-Registration-A40-v1.1.md` (canonical hash `ac991e6e…a125c`) supersedes v1 per ADR-19 with thresholds FROZEN and all conditions closed by construction: disjoint/blinded G1 split + overlap audit (C-01), exact quad construction ≥120/≥4 depths (C-02), M rubric + 0.50 floor + void-if-M_A<0.05 (C-03), N≥150/domain + power plan + Wilson reporting (C-04), B0 arm + B−B0 decision rule (C-05), 4 named domains + hardware pins + `hardware` log field + macro-average (C-06), two-process repeatability (C-07), replication + removal ablation (C-08).
 - **Evidence.** [VERIFIED] v1.1 hash filed as FILED/CANONICAL in `Claims_Register.md`; v1 marked SUPERSEDED, PRESERVED; condition-closure map in v1.1.
 - **Consequence.** [INFERRED] A40 is RUN-READY on filing — next step is the frozen run manifest, not more prereg text. F-A40-01…05 retired as blockers; they persist as history. No experimental claim is established.
+
+## 2026-10-27 — Run-ready APPROVED by Stewart (authorization, not a result)
+
+- **Finding.** [REPORTED by user turn `run ready APPROVED`, 2026-10-27] Stewart approved A40 run-ready status under v1.1 (canonical hash `ac991e6e…a125c`).
+- **Evidence.** [VERIFIED] Approval recorded as a register annotation in `Claims_Register.md` (Run Evidence); v1.1 text + hash unchanged by this entry.
+- **Consequence.** [PROPOSED] A40 is AUTHORIZED to proceed to run-manifest authoring and execution. Authorization does not alter any threshold, condition, or claim label; CC-015…CC-020 remain PROPOSED/OPEN until measured gate outputs exist.
