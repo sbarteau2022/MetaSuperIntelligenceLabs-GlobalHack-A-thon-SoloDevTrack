@@ -97,6 +97,17 @@ impl VpTree {
     }
 }
 
+/// Shell-invariant hyperbolic distance: salience-normalized comparison.
+/// Used by the VP index (build + search) and retrieval scoring so a query
+/// at any salience matches atoms at any salience on content. Raw
+/// hyperbolic_dist stays for travel-cost paths (traverse, basins) where
+/// radius is real distance, not a confound.
+fn shell_dist(a: &[f64; 4], b: &[f64; 4]) -> f64 {
+    let pa = shell_project(a);
+    let pb = shell_project(b);
+    hyperbolic_dist(&pa, &pb)
+}
+
 fn build_vp(points: &[Atom]) -> VpNode {
     if points.is_empty() {
         return VpNode::Empty;
@@ -114,7 +125,7 @@ fn build_vp(points: &[Atom]) -> VpNode {
         .iter()
         .enumerate()
         .skip(1)
-        .map(|(i, a)| (hyperbolic_dist(&vp.coord, &a.coord), i))
+        .map(|(i, a)| (shell_dist(&vp.coord, &a.coord), i))
         .collect();
     with_dist.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     let median_idx = with_dist.len() / 2;
@@ -122,7 +133,7 @@ fn build_vp(points: &[Atom]) -> VpNode {
     let mut left_pts = Vec::new();
     let mut right_pts = Vec::new();
     for (i, a) in points.iter().enumerate().skip(1) {
-        let d = hyperbolic_dist(&vp.coord, &a.coord);
+        let d = shell_dist(&vp.coord, &a.coord);
         if d <= mu {
             left_pts.push(a.clone());
         } else {
@@ -153,7 +164,7 @@ fn search_vp(node: &VpNode, q: &Atom, k: usize, best: &mut Vec<(f64, u64)>) {
             left,
             right,
         } => {
-            let d = hyperbolic_dist(&q.coord, &vp.coord);
+            let d = shell_dist(&q.coord, &vp.coord);
             best.push((d, vp.id));
             best.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
             if best.len() > k {
@@ -519,12 +530,29 @@ fn hyperbolic_dist(a: &[f64; 4], b: &[f64; 4]) -> f64 {
     lorentz_inner(a, b).max(1.0).acosh()
 }
 
+/// Project a Lorentz coordinate onto the unit-radius shell (direction only).
+/// Radius encodes salience; shell projection removes it so comparison is
+/// salience-invariant. Stored coordinates are untouched — this is query-time
+/// normalization (goal bd01f172 step 1).
+fn shell_project(c: &[f64; 4]) -> [f64; 4] {
+    let r = (c[1] * c[1] + c[2] * c[2] + c[3] * c[3]).sqrt().max(1e-9);
+    let unit_r = 1.0;
+    let s = [c[1] / r * unit_r, c[2] / r * unit_r, c[3] / r * unit_r];
+    let x0 = (1.0 + s[0] * s[0] + s[1] * s[1] + s[2] * s[2]).sqrt();
+    [x0, s[0], s[1], s[2]]
+}
+
 fn score(q: &Atom, a: &Atom) -> f64 {
-    // Similarity must decrease with hyperbolic distance. Lorentz inner grows
-    // with distance (cosh d), so negate it; phase term is a penalty.
+    // Salience-invariant similarity (step 1): compare shell-projected
+    // directions, not raw positions. A query at qs=0.5 now matches atoms at
+    // ANY salience on content; salience still ranks via the stored radius
+    // in tie-breaks (closer shell = higher salience = smaller raw dist).
+    // Phase term unchanged (toroidal penalty).
+    let qc = shell_project(&q.coord);
+    let ac = shell_project(&a.coord);
     let phase_dist =
         (1.0 - (q.phase[0] - a.phase[0]).cos()) + (1.0 - (q.phase[1] - a.phase[1]).cos());
-    -lorentz_inner(&q.coord, &a.coord) - 0.25 * phase_dist
+    -lorentz_inner(&qc, &ac) - 0.25 * phase_dist
 }
 
 /// Active inference belief state used to gate attention/map weight (FEP surrogate).
@@ -1893,7 +1921,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                             continue;
                         }
                     }
-                    let d = hyperbolic_dist(&pre_coord, &a.coord);
+                    let d = shell_dist(&pre_coord, &a.coord);
                     let cosh_d = d.cosh();
                     if cosh_d <= 1.0 + novelty_epsilon {
                         if best.map(|(_, bd)| d < bd).unwrap_or(true) {
@@ -1994,7 +2022,10 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             // stored state) -> fused rank 0.5*geo + 0.5*bm25 (both min-max
             // normalized on the shortlist). Pure lexical fallback when the
             // BM25 arm scores all-zero (no shared terms).
-            let short = (k.max(1) * 4).min(state.atoms.len().max(1));
+            // Step 1 (widened): 8k shortlist, floor 256 — cross-salience
+            // twins must survive to fusion. Shell distance ranks them near
+            // but BM25 decides; a narrow tree cut loses them before fusion.
+            let short = ((k.max(1) * 8).max(256)).min(state.atoms.len().max(1));
             let ids = state.vp.knn(&qatom, short);
             let mut scored: Vec<(u64, f64)> = ids
                 .iter()
@@ -2796,6 +2827,67 @@ mod tests {
         assert!(dot < 0.999, "distinct content must separate: dot={}", dot);
         let n = (d1[0] * d1[0] + d1[1] * d1[1] + d1[2] * d1[2]).sqrt();
         assert!((n - 1.0).abs() < 1e-9, "direction must be unit");
+    }
+
+    #[test]
+    fn shell_dist_is_salience_invariant() {
+        // Shell projection erases radius: same direction, different shells
+        // must score ~0 apart regardless of salience gap.
+        let (c_hi, _) = coord_from_text("same words here", 0.9);
+        let (c_lo, _) = coord_from_text("same words here", 0.1);
+        let d = shell_dist(&c_hi, &c_lo);
+        assert!(d < 1e-6, "same content must coincide on shell: d={}", d);
+        let (c_other, _) = coord_from_text("entirely different vocabulary zebra", 0.9);
+        let d2 = shell_dist(&c_hi, &c_other);
+        assert!(d2 > 1e-3, "different content must separate: d={}", d2);
+    }
+
+    #[test]
+    fn cross_salience_recall() {
+        // Step 1: same text at salience 0.1 and 0.9 must BOTH be retrievable
+        // from a qs=0.5 query. The old behavior: 0.9 invisible (0.00 top-1).
+        let dir = std::env::temp_dir().join("hm_xsalience");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        let text = "cross salience probe packet with plenty of distinct vocabulary inside";
+        let r_hi = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": text, "salience": 0.9}),
+        );
+        // Same text at 0.9 coalesces-check: different salience, same tokens —
+        // dedup fires on the second ingest (same multiset + cosh<=eps).
+        // So ingest a paraphrase twin at 0.1 instead: same topic, more words.
+        let lo_text =
+            "cross salience probe packet with plenty of distinct vocabulary inside extended";
+        let r_lo = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": lo_text, "salience": 0.1}),
+        );
+        assert_eq!(r_hi["result"]["status"], "ok");
+        assert_eq!(
+            r_lo["result"]["status"], "ok",
+            "lo-salience twin must mint: {:?}",
+            r_lo
+        );
+        let q = handle_tool(&mut st, "map.query", &json!({"qtext": text, "k": 5}));
+        let hits = q["result"]["hits"].as_array().cloned().unwrap_or_default();
+        let ids: Vec<u64> = hits
+            .iter()
+            .filter_map(|h| h.get("id").and_then(|x| x.as_u64()))
+            .collect();
+        let hi_id = r_hi["result"]["atom_id"].as_u64().unwrap();
+        let lo_id = r_lo["result"]["atom_id"].as_u64().unwrap();
+        assert!(
+            ids.contains(&hi_id),
+            "0.9-salience atom must be retrievable at qs=0.5"
+        );
+        assert!(
+            ids.contains(&lo_id),
+            "0.1-salience atom must be retrievable at qs=0.5"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
