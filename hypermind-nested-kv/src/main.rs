@@ -204,6 +204,84 @@ struct Checkpoint {
     tool_ledger: Vec<String>,
 }
 
+/// One hunger row (TAP-N-TRACE.md §4). Mirrors the SQLite schema 1:1 so the
+/// in-server store upgrades to N³-T&O-Log SQLite with zero shape change.
+#[derive(Clone, Serialize, Deserialize, Default)]
+struct HungerRow {
+    gap_key: String,
+    tap: String,
+    terms_hash: String,
+    atom_ids: Vec<u64>,
+    hits: u64,
+    depth: u32,
+    first_seen: u64,
+    last_seen: u64,
+    sated: bool,
+    sated_by: String,
+}
+
+impl HungerRow {
+    fn priority(&self, now: u64) -> f64 {
+        // H-5: hits × depth × (1 + recency). Recency = 1/(1+age_days).
+        let age_days = (now.saturating_sub(self.last_seen) as f64) / 86400.0;
+        let recency = 1.0 / (1.0 + age_days);
+        (self.hits as f64) * (self.depth.max(1) as f64) * (1.0 + recency)
+    }
+}
+
+/// Deterministic tap: receipt envelope -> hunger event. No model, no network,
+/// no permissions (reads the envelope the server already holds).
+fn tap_hunger(
+    state: &mut State,
+    tap: &str,
+    gap_key: String,
+    terms_hash: String,
+    atom_ids: Vec<u64>,
+    depth: u32,
+) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    match state.hunger.get_mut(&gap_key) {
+        Some(row) => {
+            row.hits += 1;
+            row.last_seen = now;
+            if row.depth < depth {
+                row.depth = depth;
+            }
+            for id in atom_ids {
+                if !row.atom_ids.contains(&id) {
+                    row.atom_ids.push(id);
+                }
+            }
+        }
+        None => {
+            state.hunger.insert(
+                gap_key.clone(),
+                HungerRow {
+                    gap_key,
+                    tap: tap.into(),
+                    terms_hash,
+                    atom_ids,
+                    hits: 1,
+                    depth,
+                    first_seen: now,
+                    last_seen: now,
+                    sated: false,
+                    sated_by: String::new(),
+                },
+            );
+        }
+    }
+}
+
+fn terms_hash_of(text: &str) -> String {
+    let mut toks = atomadb::tokenize(text);
+    toks.sort();
+    hash_bytes(toks.join(" ").as_bytes())
+}
+
 #[derive(Serialize, Deserialize)]
 struct StateSnapshot {
     geometry_version: String,
@@ -214,6 +292,7 @@ struct StateSnapshot {
     next_basin_id: u64,
     basin_seq_start: u64,
     ledger_root: String,
+    hunger: Vec<HungerRow>,
 }
 
 /// Attractor basin: a folded geodesic envelope over atoms in one silo (C06.1, C06.21 §3/§4).
@@ -308,6 +387,11 @@ struct State {
     // Learned IDF table (item a): calibrated by map.reweight over atom texts.
     // None = TF-only fallback. Present = IDF-weighted embeds on ingest/query.
     idf: Option<std::collections::HashMap<String, f64>>,
+    // Hunger ledger (goal 134e5fbb): gap_key -> HungerRow. Persisted in
+    // snapshot (H-9). Same process as the receipt stream => zero-permission
+    // taps by construction (H-7). Upgrades to N³-T&O SQLite with zero shape
+    // change (schema mirrors TAP-N-TRACE.md §4 1:1).
+    hunger: std::collections::BTreeMap<String, HungerRow>,
 }
 
 fn workspace_root() -> PathBuf {
@@ -1655,6 +1739,7 @@ fn open_or_create(root: PathBuf) -> State {
         epoch: 1,
         next_id,
         idf: None,
+        hunger: std::collections::BTreeMap::new(),
     };
     // Item a: auto-calibrate IDF on open when atoms exist and no table is
     // stored yet. O(N) once — every embed after this is O(1) weighted.
@@ -1690,6 +1775,7 @@ fn write_snapshot(st: &mut State) -> Value {
         next_basin_id: st.next_basin_id,
         basin_seq_start: st.basin_seq_start,
         ledger_root: st.ledger_root.clone(),
+        hunger: st.hunger.values().cloned().collect(),
     };
     // Internal storage is binary (exiled JSON). Snapshot is content-addressed bincode.
     let bytes = bincode::serialize(&snap).unwrap_or_default();
@@ -1766,8 +1852,12 @@ fn recover(st: &mut State) -> Value {
         } else if snap.ledger_root != st.ledger_root {
             return json!({"status": "hash-mismatch", "expected": snap.ledger_root, "actual": st.ledger_root});
         }
+        st.hunger.clear();
+        for row in snap.hunger {
+            st.hunger.insert(row.gap_key.clone(), row);
+        }
         st.epoch = snap.epoch.max(st.epoch);
-        json!({"status":"ok","atoms":st.atoms.len(),"epoch":st.epoch})
+        json!({"status":"ok","atoms":st.atoms.len(),"epoch":st.epoch,"hunger_rows":st.hunger.len()})
     } else {
         json!({"status":"parse-error"})
     }
@@ -1806,6 +1896,8 @@ fn tools_list() -> Value {
             {"name":"map.traverse","description":"Symplectic envelope: form + energy + frame checks before dispatch; fail-explained, never fail-silent.","inputSchema":{"type":"object","properties":{"from_atom":{"type":"integer"},"to_atom":{"type":"integer"},"mlir_op":{"type":"integer"},"energy_budget":{"type":"number"},"form_tol":{"type":"number"},"frame_eps":{"type":"number"}},"required":["from_atom","to_atom"]}},
             {"name":"map.reweight","description":"Recalibrate IDF on live atom texts and reembed all coordinates (item a). O(N) once.","inputSchema":{"type":"object","properties":{}}},
             {"name":"map.lexical","description":"Pure BM25 over ALL atoms with corpus IDF (document-heavy retrieval; geometric map handles exact recall + traversal).","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"}},"required":["qtext"]}},
+            {"name":"map.hunger","description":"Ranked ignorance leaderboard: what the map is missing, pre-aggregated by taps (H-5).","inputSchema":{"type":"object","properties":{"k":{"type":"integer"}}}},
+            {"name":"map.consolidate","description":"Sleep cycle: reinforce traversed, decay untouched (floor 0.05), sate covered gaps, emit sleep receipt (H-6).","inputSchema":{"type":"object","properties":{"traversed_ids":{"type":"array"},"reinforce":{"type":"number"},"decay":{"type":"number"}}}},
             {"name":"map.carve","description":"Carve a task-scoped swarm map (view by id) from the global map; separates weights from carved swarm without duplicating.","inputSchema":{"type":"object","properties":{"task":{"type":"string"},"context_budget":{"type":"integer"},"token_pressure":{"type":"number"}}},"required":["task"]},
             {"name":"map.dissolve","description":"Dissolve a carved fiber back into M_G: validate deltas, merge by atom id, verify fingerprint, free the view.","inputSchema":{"type":"object","properties":{"fiber_id":{"type":"string"},"deltas":{"type":"object"}},"required":["fiber_id","deltas"]}},
                         {"name":"map.compact","description":"Create an anti-lobotomy continuity checkpoint (no destructive rewrite).","inputSchema":{"type":"object","properties":{"objective":{"type":"string"},"recent_state":{"type":"string"}}}},
@@ -1946,6 +2038,15 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 }
             }
             if !pass {
+                // Tap: hunger.judge_rejected fires on every reject (H-1).
+                tap_hunger(
+                    state,
+                    "hunger.judge_rejected",
+                    format!("judge-reject:{}", terms_hash_of(&text)[..16].to_string()),
+                    terms_hash_of(&text),
+                    vec![],
+                    0,
+                );
                 let out = json!({
                     "status":"judge-rejected",
                     "judge": judge_reason,
@@ -2114,6 +2215,26 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                     })
                 })
                 .collect();
+            // Tap: hunger.query_thin fires when the fused top score is thin.
+            // Threshold preregistered (TAP-N-TRACE.md §3): fused < 0.3.
+            let top_score = top
+                .first()
+                .and_then(|h| h.get("score"))
+                .and_then(|s| s.as_f64())
+                .unwrap_or(0.0);
+            if top_score < 0.3 {
+                tap_hunger(
+                    state,
+                    "hunger.query_thin",
+                    format!("query-thin:{}", terms_hash_of(&qtext)[..16].to_string()),
+                    terms_hash_of(&qtext),
+                    top.iter()
+                        .filter_map(|h| h.get("id"))
+                        .filter_map(|v| v.as_u64())
+                        .collect(),
+                    k as u32,
+                );
+            }
             let out = json!({"status":"ok","k":k,"hits":top,"count":state.atoms.len(),"retrieval":"vp-tree shortlist + BM25 fusion"});
             let rcpt = now_receipt("map.query", args, &out);
             json!({"result":out,"receipt":rcpt})
@@ -2237,6 +2358,16 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             let (a, b) = match (state.atoms.get(&from), state.atoms.get(&to)) {
                 (Some(a), Some(b)) => (a.clone(), b.clone()),
                 _ => {
+                    // Tap: missing endpoints are hunger too — the map was asked
+                    // for what it doesn't have.
+                    tap_hunger(
+                        state,
+                        "hunger.traverse_refused",
+                        format!("traverse:{}:{}:missing", from, to),
+                        terms_hash_of(&format!("{} {}", from, to)),
+                        vec![from, to],
+                        1,
+                    );
                     let out = json!({"status":"fail-explained","verdict":"fail-explained",
                         "reason":"missing endpoint atom",
                         "from_atom":from,"to_atom":to});
@@ -2343,7 +2474,122 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 "via_atom": via.id,
                 "via_detour": via_d,
             });
+            // Tap: hunger.traverse_refused fires on fail-explained (H-1, H-2).
+            // Deterministic, envelope-only, zero permissions (H-7).
+            if !reasons.is_empty() {
+                let reason_class = if fres > form_tol {
+                    "form"
+                } else if cost > budget {
+                    "over-budget"
+                } else {
+                    "frame"
+                };
+                tap_hunger(
+                    state,
+                    "hunger.traverse_refused",
+                    format!("traverse:{}:{}:{}", from, to, reason_class),
+                    terms_hash_of(&format!("{} {}", a.text, b.text)),
+                    vec![from, to, via.id],
+                    2,
+                );
+            }
             let rcpt = now_receipt("map.traverse", args, &out);
+            json!({"result":out,"receipt":rcpt})
+        }
+        "map.hunger" => {
+            // Ranked ignorance leaderboard (H-5). Hashes + ids + ranks;
+            // raw text never leaves the atoms (H-3).
+            let k = args.get("k").and_then(|x| x.as_u64()).unwrap_or(10) as usize;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let mut rows: Vec<(&String, &HungerRow, f64)> = state
+                .hunger
+                .iter()
+                .filter(|(_, r)| !r.sated)
+                .map(|(k2, r)| (k2, r, r.priority(now)))
+                .collect();
+            rows.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+            let total_open = rows.len();
+            let total_sated = state.hunger.values().filter(|r| r.sated).count();
+            let top: Vec<Value> = rows
+                .into_iter()
+                .take(k.max(1))
+                .map(|(gk, r, p)| {
+                    json!({
+                        "gap_key": gk,
+                        "tap": r.tap,
+                        "priority": p,
+                        "hits": r.hits,
+                        "depth": r.depth,
+                        "atom_ids": r.atom_ids,
+                        "first_seen": r.first_seen,
+                        "last_seen": r.last_seen,
+                    })
+                })
+                .collect();
+            let out = json!({
+                "status": "ok",
+                "open_gaps": total_open,
+                "sated_gaps": total_sated,
+                "gaps": top,
+            });
+            let rcpt = now_receipt("map.hunger", args, &out);
+            json!({"result":out,"receipt":rcpt})
+        }
+        "map.consolidate" => {
+            // Sleep cycle (H-6): reinforce traversed, decay untouched (floor
+            // 0.05 — nothing starves to zero), mark sated gaps whose atoms
+            // now cover them, emit sleep receipt. Wake = caller runs reweight.
+            let reinforce = args
+                .get("reinforce")
+                .and_then(|x| x.as_f64())
+                .unwrap_or(0.05);
+            let decay = args.get("decay").and_then(|x| x.as_f64()).unwrap_or(0.02);
+            let traversed: Vec<u64> = args
+                .get("traversed_ids")
+                .and_then(|x| x.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect())
+                .unwrap_or_default();
+            let mut n_reinforced = 0u32;
+            let mut n_decayed = 0u32;
+            for (id, a) in state.atoms.iter_mut() {
+                if traversed.contains(id) {
+                    a.salience = (a.salience + reinforce).min(1.0);
+                    n_reinforced += 1;
+                } else {
+                    let ns = (a.salience - decay).max(0.05);
+                    if ns < a.salience {
+                        n_decayed += 1;
+                    }
+                    a.salience = ns;
+                }
+            }
+            // Sate gaps whose atom_ids all still exist (distill landed).
+            let mut n_sated = 0u32;
+            for row in state.hunger.values_mut() {
+                if !row.sated
+                    && !row.atom_ids.is_empty()
+                    && row.atom_ids.iter().all(|id| state.atoms.contains_key(id))
+                    && row.hits >= 2
+                {
+                    row.sated = true;
+                    row.sated_by = format!("consolidate@{}", state.epoch);
+                    n_sated += 1;
+                }
+            }
+            state.epoch += 1;
+            state.vp_dirty = true;
+            let out = json!({
+                "status": "ok",
+                "reinforced": n_reinforced,
+                "decayed": n_decayed,
+                "sated": n_sated,
+                "open_gaps": state.hunger.values().filter(|r| !r.sated).count(),
+                "note": "sleep receipt: wake with map.reweight",
+            });
+            let rcpt = now_receipt("map.consolidate", args, &out);
             json!({"result":out,"receipt":rcpt})
         }
         "map.reweight" => {
@@ -2437,6 +2683,25 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                     })
                 })
                 .collect();
+            // Tap: hunger.lexical_thin fires when top bm25 < 5.0 (preregistered).
+            let top_bm = top
+                .first()
+                .and_then(|h| h.get("bm25"))
+                .and_then(|s| s.as_f64())
+                .unwrap_or(0.0);
+            if top_bm < 5.0 {
+                tap_hunger(
+                    state,
+                    "hunger.lexical_thin",
+                    format!("lexical-thin:{}", terms_hash_of(&qtext)[..16].to_string()),
+                    terms_hash_of(&qtext),
+                    top.iter()
+                        .filter_map(|h| h.get("id"))
+                        .filter_map(|v| v.as_u64())
+                        .collect(),
+                    1,
+                );
+            }
             let out = json!({"status":"ok","k":k,"hits":top,"count":state.atoms.len(),
                 "retrieval":"bm25-full-corpus"});
             let rcpt = now_receipt("map.lexical", args, &out);
@@ -2887,6 +3152,118 @@ mod tests {
             ids.contains(&lo_id),
             "0.1-salience atom must be retrievable at qs=0.5"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hunger_accumulates_and_ranks() {
+        // H-1/H-4: fail-explained traversals mint hunger; repeats coalesce
+        // (hits++), and map.hunger ranks them.
+        let dir = std::env::temp_dir().join("hm_hunger");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        let r1 = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": "hunger probe alpha packet with distinct tokens"}),
+        );
+        let r2 = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": "hunger probe beta packet with different tokens here"}),
+        );
+        let a = r1["result"]["atom_id"].as_u64().unwrap();
+        let b = r2["result"]["atom_id"].as_u64().unwrap();
+        // Zero budget always refuses -> tap fires twice (same gap).
+        for _ in 0..2 {
+            let t = handle_tool(
+                &mut st,
+                "map.traverse",
+                &json!({"from_atom": a, "to_atom": b, "mlir_op": 1, "energy_budget": 0.0}),
+            );
+            assert_eq!(t["result"]["verdict"], "fail-explained");
+        }
+        assert_eq!(st.hunger.len(), 1, "same gap must coalesce");
+        let row = st.hunger.values().next().unwrap();
+        assert_eq!(row.hits, 2);
+        assert_eq!(row.tap, "hunger.traverse_refused");
+        // Leaderboard serves it.
+        let h = handle_tool(&mut st, "map.hunger", &json!({"k": 5}));
+        assert_eq!(h["result"]["open_gaps"], 1);
+        assert_eq!(h["result"]["gaps"][0]["hits"], 2);
+        assert!(h["receipt"]["receipt_sha256"].is_string());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn consolidate_sleeps_and_sates() {
+        // H-6: reinforce traversed, decay the rest (floor 0.05), sate gaps,
+        // sleep receipt emitted. Nothing starves to zero.
+        let dir = std::env::temp_dir().join("hm_consol");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        let r1 = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": "sleep probe alpha packet distinct tokens", "salience": 0.5}),
+        );
+        let r2 = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": "sleep probe beta packet other tokens here", "salience": 0.9}),
+        );
+        let a = r1["result"]["atom_id"].as_u64().unwrap();
+        let b = r2["result"]["atom_id"].as_u64().unwrap();
+        // Seed hunger with 2 hits (sate threshold).
+        for _ in 0..2 {
+            handle_tool(
+                &mut st,
+                "map.traverse",
+                &json!({"from_atom": a, "to_atom": b, "mlir_op": 1, "energy_budget": 0.0}),
+            );
+        }
+        let c = handle_tool(&mut st, "map.consolidate", &json!({"traversed_ids": [a]}));
+        assert_eq!(c["result"]["status"], "ok");
+        assert_eq!(c["result"]["reinforced"], 1);
+        assert!(c["receipt"]["receipt_sha256"].is_string());
+        // Traversed reinforced, untouched decayed but floored.
+        assert!(st.atoms.get(&a).unwrap().salience > 0.5);
+        assert!(st.atoms.get(&b).unwrap().salience >= 0.05);
+        // Gap sated (hits>=2, atoms exist).
+        assert_eq!(c["result"]["sated"], 1);
+        let h = handle_tool(&mut st, "map.hunger", &json!({}));
+        assert_eq!(h["result"]["open_gaps"], 0);
+        assert_eq!(h["result"]["sated_gaps"], 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hunger_survives_snapshot() {
+        // H-9.3: hunger rows persist across snapshot/recover.
+        let dir = std::env::temp_dir().join("hm_hunger_persist");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        let r1 = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": "persist probe alpha distinct tokens packet"}),
+        );
+        let a = r1["result"]["atom_id"].as_u64().unwrap();
+        handle_tool(
+            &mut st,
+            "map.traverse",
+            &json!({"from_atom": a, "to_atom": 999999, "mlir_op": 1}),
+        );
+        // Missing endpoint also taps (fail-explained path).
+        assert_eq!(st.hunger.len(), 1);
+        let snap = handle_tool(&mut st, "map.snapshot", &json!({}));
+        assert_eq!(snap["result"]["status"], "ok");
+        // Wipe in-memory hunger, recover from snapshot.
+        st.hunger.clear();
+        let rec = handle_tool(&mut st, "map.recover", &json!({}));
+        assert_eq!(rec["result"]["status"], "ok");
+        assert_eq!(rec["result"]["hunger_rows"], 1);
+        assert_eq!(st.hunger.len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

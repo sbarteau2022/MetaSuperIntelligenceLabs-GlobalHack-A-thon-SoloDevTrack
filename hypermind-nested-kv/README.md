@@ -36,6 +36,24 @@ See `PLAIN-LANGUAGE-SPEC.md` for the system in plain words,
 - **Not cleared:** geometry/traversal/judge changes, network in hot path,
   silent substitution (probe audit gates dispatch).
 
+### Hunger Ledger (DONE 2026-10-28, goal 134e5fbb)
+
+- **Req 1 — Rules:** `RULES-HUNGER-LEDGER.md` (H-1..H-10): ignorance is
+  first-class, no model in tap path, telemetry privacy, append-only,
+  hunger ranks distill priority, consolidation is receipted sleep,
+  zero-permission taps, aggregation prior, falsifiability.
+- **Req 2 — Tap'n'Trace:** `TAP-N-TRACE.md`: taps watch receipt envelopes
+  (never payloads); T&O SQLite log coalesces on gap_key; `map.hunger`
+  serves pre-ranked ignorance. Worked example: mlir_op#26.
+- **Req 3 — Tap structure live:** 5 taps (traverse_refused incl. missing
+  endpoints, lexical_thin, query_thin, judge_rejected) + `map.hunger` +
+  `map.consolidate`. In-server store mirrors the SQLite schema 1:1 —
+  N³ upgrade with zero shape change. Same process = zero permissions
+  by construction.
+- **Proof live:** 3 refuses → hunger top-1 (priority 12.0) → consolidate
+  (2 reinforced, 2072 decayed to 0.05 floor, 1 sated) → 0 open.
+  29/29 tests (hunger accumulates/ranks, sleep sates, rows survive snapshot).
+
 ### Step 3 — Orchestration protocol (DONE 2026-10-28)
 
 - **Pipeline:** Meta (decompose) → necessity filter → tactical mapping →
