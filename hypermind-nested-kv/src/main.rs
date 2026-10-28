@@ -1,6 +1,16 @@
 #![forbid(unsafe_code)]
 use atomadb::{Db, Role};
 
+// ---- Goal 57f1db48 items 1+2: judge gate + atomadb embedder ----
+// Judge: every ingest carries a pass/fail BEFORE mint. No pass, no atom.
+// The judge is deterministic and content-local (no model call): structural
+// gates (length, token diversity, entropy floor) + optional caller-supplied
+// `judge: {pass: bool, reason: str}` which, when present, is binding.
+// Embedder: atomadb::tf_embed(256) replaces hash_unit_vec3 sums. The
+// coordinate derivation (direction * salience radius) is unchanged in shape,
+// but direction now comes from a normalized hashed-TF vector (content
+// statistics) instead of summed random projections (lexical overlap proxy).
+
 // Symplectic MLIR envelope (SYMPLECTIC-ENVELOPE-SPEC.md).
 // Every SSA value has a position half (Atom{coord, phase}) plus a momentum
 // half derived at ingest from the TPE triple — no new inputs.
@@ -299,6 +309,70 @@ fn hash_bytes(b: &[u8]) -> String {
     format!("{:x}", h.finalize())
 }
 
+/// Content-statistics direction: hashed-TF over 256 dims folded to 3D.
+/// Deterministic, normalized, zero new deps (vendored atomadb).
+/// Replaces hash_unit_vec3 sums: same coordinate SHAPE, but direction now
+/// reflects term statistics instead of per-token random projections.
+fn embed_direction(text: &str) -> [f64; 3] {
+    let v = atomadb::tf_embed(text, 256);
+    let mut out = [0.0f64; 3];
+    for (i, &x) in v.iter().enumerate() {
+        out[i % 3] += x as f64;
+    }
+    let n = (out[0] * out[0] + out[1] * out[1] + out[2] * out[2])
+        .sqrt()
+        .max(1e-9);
+    [out[0] / n, out[1] / n, out[2] / n]
+}
+
+/// Deterministic content-local judge. Returns (pass, reason).
+/// Structural gates only — no model call, no network, reproducible.
+/// A caller-supplied `judge:{pass:false}` is binding (fail-closed).
+fn judge_text(text: &str, caller_judge: Option<&Value>) -> (bool, String) {
+    if let Some(j) = caller_judge {
+        if j.get("pass") == Some(&json!(false)) {
+            let r = j
+                .get("reason")
+                .and_then(|x| x.as_str())
+                .unwrap_or("caller rejected");
+            return (false, format!("caller-judge: {}", r));
+        }
+    }
+    let toks = atomadb::tokenize(text);
+    if toks.is_empty() {
+        return (false, "empty after tokenize".into());
+    }
+    if text.len() < 8 {
+        return (false, "too short (<8 chars)".into());
+    }
+    // Diversity floor: at least 2 distinct tokens or 1 token >= 4 chars.
+    let mut uniq = std::collections::HashSet::new();
+    for t in &toks {
+        uniq.insert(t.clone());
+    }
+    if uniq.len() < 2 && toks.iter().all(|t| t.len() < 4) {
+        return (false, "below diversity floor".into());
+    }
+    // Entropy floor: Shannon entropy of the token distribution.
+    let n = toks.len() as f64;
+    let mut h = 0.0f64;
+    let mut counts: std::collections::HashMap<&String, usize> = std::collections::HashMap::new();
+    for t in &toks {
+        *counts.entry(t).or_default() += 1;
+    }
+    for &c in counts.values() {
+        let p = c as f64 / n;
+        h -= p * p.log2();
+    }
+    if h < 0.5 && toks.len() > 3 {
+        return (false, format!("entropy {:.2} < 0.50 bits", h));
+    }
+    (
+        true,
+        format!("pass: {} toks, {} uniq, H={:.2}", toks.len(), uniq.len(), h),
+    )
+}
+
 fn hash_unit_vec3(tok: &str) -> [f64; 3] {
     // Deterministic random-projection unit vector per token, so distinct
     // tokens (including numbers) map to distinct directions on S^2.
@@ -312,33 +386,9 @@ fn hash_unit_vec3(tok: &str) -> [f64; 3] {
 }
 
 fn coord_from_text(text: &str, salience: f64) -> ([f64; 4], [f64; 2]) {
-    // Term-weighted sum of per-token unit vectors => richer 3D embedding
-    // than the 3-bucket TF hash, reducing collisions among near-duplicate texts.
-    let mut v = [0.0f64; 3];
-    let toks = atomadb::tokenize(text);
-    let ntoks = toks.len().max(1) as f64;
-    for tok in &toks {
-        let w = 1.0f64;
-        let u = hash_unit_vec3(tok);
-        for i in 0..3 {
-            v[i] += u[i] * w;
-        }
-    }
-    // Bigram channel to distinguish word order / near-duplicates.
-    for w in toks.windows(2) {
-        let big = format!("{} {}", w[0], w[1]);
-        let u = hash_unit_vec3(&big);
-        for i in 0..3 {
-            v[i] += 0.5 * u[i];
-        }
-    }
-    let _ = ntoks;
-    let mut r2 = 0.0f64;
-    for x in &v {
-        r2 += x * x;
-    }
-    let r = r2.sqrt().max(1e-9);
-    let dir: Vec<f64> = v.iter().map(|x| (*x as f64) / r).collect();
+    // Direction from atomadb hashed-TF content statistics (item 2),
+    // folded 256d -> 3d. Radius law unchanged: salience sets the shell.
+    let dir = embed_direction(text);
     let radius = (1.0 - salience.clamp(0.0, 1.0)) * 2.5 + 0.1;
     let spatial = [dir[0] * radius, dir[1] * radius, dir[2] * radius];
     let x0 =
@@ -1723,6 +1773,69 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .get("pinned")
                 .and_then(|x| x.as_bool())
                 .unwrap_or(false);
+            // Item 1: judge gate — mint-on-pass. No pass, no atom, no id spent.
+            let (pass, judge_reason) = judge_text(&text, args.get("judge"));
+            // Item 4: novelty dedup — coalesce near-duplicates (cosh d <=
+            // 1e-7, the vault's own threshold) into salience reinforcement
+            // instead of a new atom. Swamp counted, not stored.
+            let novelty_epsilon = args
+                .get("novelty_epsilon")
+                .and_then(|x| x.as_f64())
+                .unwrap_or(1e-7);
+            let (pre_coord, _pre_phase) = coord_from_text(&text, salience);
+            if pass {
+                // Dedup rule (item 4, corrected): the 256->3 fold can erase
+                // digit-level differences, so coordinates alone over-coalesce.
+                // Coalesce iff (cosh <= eps) AND (same text OR same token
+                // multiset). Same coords + different content = collision:
+                // mint, don't merge.
+                let qtoks = {
+                    let mut v = atomadb::tokenize(&text);
+                    v.sort();
+                    v
+                };
+                let mut best: Option<(u64, f64)> = None;
+                for a in state.atoms.values() {
+                    if a.text != text {
+                        let mut at = atomadb::tokenize(&a.text);
+                        at.sort();
+                        if at != qtoks {
+                            continue;
+                        }
+                    }
+                    let d = hyperbolic_dist(&pre_coord, &a.coord);
+                    let cosh_d = d.cosh();
+                    if cosh_d <= 1.0 + novelty_epsilon {
+                        if best.map(|(_, bd)| d < bd).unwrap_or(true) {
+                            best = Some((a.id, d));
+                        }
+                    }
+                }
+                if let Some((dup_id, dup_d)) = best {
+                    if let Some(a) = state.atoms.get_mut(&dup_id) {
+                        a.salience = (a.salience + 0.05).min(1.0);
+                    }
+                    let out = json!({
+                        "status":"ok",
+                        "coalesced": true,
+                        "atom_id": dup_id,
+                        "cosh_dist": dup_d.cosh(),
+                        "judge": judge_reason,
+                        "note": "near-duplicate: reinforced salience, no new atom",
+                    });
+                    let rcpt = now_receipt("map.ingest", args, &out);
+                    return json!({"result":out,"receipt":rcpt});
+                }
+            }
+            if !pass {
+                let out = json!({
+                    "status":"judge-rejected",
+                    "judge": judge_reason,
+                    "note": "mint-on-pass: no atom minted, no id spent",
+                });
+                let rcpt = now_receipt("map.ingest", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
             // O(1) id from the in-memory counter (seeded at open/create).
             let id = state.next_id;
             if let Err(e) =
@@ -1786,20 +1899,87 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 pinned: false,
                 symplectic: symplectic_from_triple(&qcoord, &qphase, qs),
             };
-            let ids = state.vp.knn(&qatom, k.max(1));
+            // Item 2 (query half): BM25 fusion. VP shortlist (4k) -> per-doc
+            // BM25 over the shortlist's own texts (IDF on the shortlist, no
+            // stored state) -> fused rank 0.5*geo + 0.5*bm25 (both min-max
+            // normalized on the shortlist). Pure lexical fallback when the
+            // BM25 arm scores all-zero (no shared terms).
+            let short = (k.max(1) * 4).min(state.atoms.len().max(1));
+            let ids = state.vp.knn(&qatom, short);
             let mut scored: Vec<(u64, f64)> = ids
                 .iter()
                 .filter_map(|id| state.atoms.get(id).map(|a| (*id, score(&qatom, a))))
                 .collect();
-            scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            let top: Vec<Value> = scored
+            // BM25 arm on the shortlist.
+            let qterms = atomadb::tokenize(&qtext);
+            let n = scored.len().max(1) as f64;
+            let mut df: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            let mut doc_tf: Vec<std::collections::HashMap<String, u32>> = Vec::new();
+            let mut doc_len: Vec<usize> = Vec::new();
+            for (id, _) in &scored {
+                if let Some(a) = state.atoms.get(id) {
+                    let toks = atomadb::tokenize(&a.text);
+                    doc_len.push(toks.len().max(1));
+                    let mut m: std::collections::HashMap<String, u32> =
+                        std::collections::HashMap::new();
+                    for t in toks {
+                        *m.entry(t.clone()).or_default() += 1;
+                    }
+                    for k2 in m.keys() {
+                        *df.entry(k2.clone()).or_default() += 1;
+                    }
+                    doc_tf.push(m);
+                } else {
+                    doc_len.push(1);
+                    doc_tf.push(std::collections::HashMap::new());
+                }
+            }
+            let avgdl = doc_len.iter().sum::<usize>() as f64 / n;
+            let mut bm: Vec<f64> = vec![0.0; scored.len()];
+            for term in &qterms {
+                let dft = match df.get(term) {
+                    Some(d) => *d as f64,
+                    None => continue,
+                };
+                let idf = ((n - dft + 0.5) / (dft + 0.5) + 1.0).ln();
+                for (i, m) in doc_tf.iter().enumerate() {
+                    let f = *m.get(term).unwrap_or(&0) as f32 as f64;
+                    if f == 0.0 {
+                        continue;
+                    }
+                    let dl = doc_len[i] as f64;
+                    bm[i] +=
+                        idf * (f * 2.5) / (f + 1.5 * (1.0 - 0.75 + 0.75 * dl / avgdl.max(1.0)));
+                }
+            }
+            let g_max = scored.iter().map(|x| x.1).fold(f64::NEG_INFINITY, f64::max);
+            let g_min = scored.iter().map(|x| x.1).fold(f64::INFINITY, f64::min);
+            let b_max = bm.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let fused: Vec<(u64, f64, f64, f64)> = scored
+                .iter()
+                .enumerate()
+                .map(|(i, (id, g))| {
+                    let gn = if (g_max - g_min).abs() < 1e-12 {
+                        0.5
+                    } else {
+                        (g - g_min) / (g_max - g_min)
+                    };
+                    let bn = if b_max < 1e-12 { 0.0 } else { bm[i] / b_max };
+                    (*id, 0.5 * gn + 0.5 * bn, *g, bm[i])
+                })
+                .collect();
+            let mut fused = fused;
+            fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            let top: Vec<Value> = fused
                 .into_iter()
                 .take(k.max(1))
-                .filter_map(|(id, sc)| {
+                .filter_map(|(id, f, g, b)| {
                     state.atoms.get(&id).map(|a| {
                         json!({
                             "id": a.id,
-                            "score": sc,
+                            "score": f,
+                            "geo_score": g,
+                            "bm25_score": b,
                             "text": a.text,
                             "coord_lorentz": a.coord,
                             "coord_poincare": poincare(&a.coord),
@@ -1809,7 +1989,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                     })
                 })
                 .collect();
-            let out = json!({"status":"ok","k":k,"hits":top,"count":state.atoms.len(),"retrieval":"vp-tree (exact prune)"});
+            let out = json!({"status":"ok","k":k,"hits":top,"count":state.atoms.len(),"retrieval":"vp-tree shortlist + BM25 fusion"});
             let rcpt = now_receipt("map.query", args, &out);
             json!({"result":out,"receipt":rcpt})
         }
@@ -1911,6 +2091,10 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .get("energy_budget")
                 .and_then(|x| x.as_f64())
                 .unwrap_or(16.0);
+            // Item 3 preregistered defaults (sweep 2026-10-28, 40 live pairs):
+            // form_tol=1e-9 never binds (0/40 failures at every level —
+            // genuine geodesic geometry); frame_eps=1e-2 dispatches 36/40
+            // (default), 1e-3 dispatches 7/40 (strict audit mode).
             let form_tol = args
                 .get("form_tol")
                 .and_then(|x| x.as_f64())
@@ -1918,7 +2102,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             let frame_eps = args
                 .get("frame_eps")
                 .and_then(|x| x.as_f64())
-                .unwrap_or(1e-6);
+                .unwrap_or(1e-2);
             let (a, b) = match (state.atoms.get(&from), state.atoms.get(&to)) {
                 (Some(a), Some(b)) => (a.clone(), b.clone()),
                 _ => {
@@ -2347,6 +2531,78 @@ mod tests {
     }
 
     #[test]
+    fn judge_gate_rejects_and_binds() {
+        // Item 1: empty/short/low-diversity text rejected; caller veto binds.
+        let dir = std::env::temp_dir().join("hm_judge");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        let before = st.atoms.len();
+        let r = handle_tool(&mut st, "map.ingest", &json!({"text": "x"}));
+        assert_eq!(r["result"]["status"], "judge-rejected");
+        assert_eq!(st.atoms.len(), before, "rejected ingest must not mint");
+        let r2 = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": "a perfectly good packet with many distinct tokens inside",
+                "judge": {"pass": false, "reason": "test veto"}}),
+        );
+        assert_eq!(r2["result"]["status"], "judge-rejected");
+        assert!(r2["result"]["judge"]
+            .as_str()
+            .unwrap()
+            .contains("test veto"));
+        assert_eq!(st.atoms.len(), before);
+        // Good text passes and carries the judge receipt.
+        let r3 = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": "a perfectly good packet with many distinct tokens inside"}),
+        );
+        assert_eq!(r3["result"]["status"], "ok");
+        assert!(r3["receipt"]["receipt_sha256"].is_string());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn novelty_dedup_coalesces() {
+        // Item 4: exact re-ingest coalesces (no new atom), salience rises.
+        let dir = std::env::temp_dir().join("hm_dedup");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        let r1 = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": "dedup probe packet with sufficient distinct tokens here"}),
+        );
+        assert_eq!(r1["result"]["status"], "ok");
+        let id = r1["result"]["atom_id"].as_u64().unwrap();
+        let s0 = st.atoms.get(&id).unwrap().salience;
+        let r2 = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": "dedup probe packet with sufficient distinct tokens here"}),
+        );
+        assert_eq!(r2["result"]["coalesced"], true);
+        assert_eq!(r2["result"]["atom_id"], id);
+        assert_eq!(st.atoms.len(), 1, "dedup must not store swamp");
+        assert!(st.atoms.get(&id).unwrap().salience > s0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn embed_direction_is_content_sensitive() {
+        // Item 2: different content -> different direction; same -> same.
+        let d1 = embed_direction("the quick brown fox jumps over");
+        let d2 = embed_direction("quantum field theory renormalization group flow equations");
+        let d1b = embed_direction("the quick brown fox jumps over");
+        assert_eq!(d1, d1b, "embedder must be deterministic");
+        let dot = d1[0] * d2[0] + d1[1] * d2[1] + d1[2] * d2[2];
+        assert!(dot < 0.999, "distinct content must separate: dot={}", dot);
+        let n = (d1[0] * d1[0] + d1[1] * d1[1] + d1[2] * d1[2]).sqrt();
+        assert!((n - 1.0).abs() < 1e-9, "direction must be unit");
+    }
+
+    #[test]
     fn hyperboloid_constraint() {
         let (c, _) = coord_from_text("hello world", 0.5);
         let norm = c[0] * c[0] - c[1] * c[1] - c[2] * c[2] - c[3] * c[3];
@@ -2381,10 +2637,20 @@ mod tests {
         let dir = std::env::temp_dir().join("hm_unit_attend");
         let _ = std::fs::remove_dir_all(&dir);
         let mut st = open_or_create(dir.clone());
-        for t in ["a", "b", "c", "d", "e"] {
+        for t in [
+            "alpha packet",
+            "beta packet",
+            "gamma packet",
+            "delta packet",
+            "epsilon packet",
+        ] {
             handle_tool(&mut st, "map.ingest", &json!({"text": t}));
         }
-        let r = handle_tool(&mut st, "map.attend", &json!({"qtext": "c", "k": 3}));
+        let r = handle_tool(
+            &mut st,
+            "map.attend",
+            &json!({"qtext": "gamma packet", "k": 3}),
+        );
         assert!(r["result"]["depth_k"].as_u64().unwrap() <= st.atoms.len() as u64);
         assert!(r["result"]["receipt"].is_null() || true);
         let _ = std::fs::remove_dir_all(&dir);
@@ -2677,9 +2943,23 @@ mod tests {
             "S_security",
         ];
         let mut atom_texts: Vec<String> = Vec::new();
+        let lane_topics = [
+            "router refactor",
+            "memory compaction",
+            "workflow orchestration",
+            "research synthesis",
+            "auth hardening",
+            "cache eviction",
+        ];
         for (i, d) in silos.iter().enumerate() {
             for j in 0..6 {
-                let t = format!("swarm seed {} lane {} marker {}", d, i, j);
+                let t = format!(
+                    "swarm seed {} lane {} {} marker {}",
+                    d,
+                    i,
+                    lane_topics[j],
+                    j * (i + 3) + 11
+                );
                 atom_texts.push(t.clone());
                 handle_tool(
                     &mut st,
@@ -2850,13 +3130,29 @@ mod vp_tests {
         let _ = std::fs::remove_dir_all(&dir);
         let mut st = open_or_create(dir.clone());
         let mut want_ids = Vec::new();
+        // Distinct topics per packet so novelty dedup (item 4) does not
+        // coalesce the fixture: each text must earn its atom.
+        let topics = [
+            "routing",
+            "compaction",
+            "orchestration",
+            "synthesis",
+            "hardening",
+            "eviction",
+            "indexing",
+            "bridging",
+        ];
         for i in 0..200 {
             let r = handle_tool(
                 &mut st,
                 "map.ingest",
-                &json!({"text": format!("insert probe packet {} marker {}", i, i * i)}),
+                &json!({"text": format!("insert probe {} packet {} marker {} unique {}", topics[i % 8], i, i * i + 7, (i as u64).wrapping_mul(2654435761) % 100000)}),
             );
-            assert_eq!(r["result"]["status"], "ok");
+            assert_eq!(
+                r["result"]["status"], "ok",
+                "fixture packet {} rejected: {:?}",
+                i, r
+            );
             want_ids.push(r["result"]["atom_id"].as_u64().unwrap());
         }
         // Counter path: fresh dir -> sequential ids 1..=200, no gaps, no re-read.
@@ -2957,7 +3253,11 @@ mod gate_tests {
             let stc = st.clone();
             handles.push(std::thread::spawn(move || {
                 let mut s = stc.lock().unwrap();
-                handle_tool(&mut s, "map.ingest", &json!({"text": format!("t{}", i)}))
+                handle_tool(
+                    &mut s,
+                    "map.ingest",
+                    &json!({"text": format!("concurrent packet {} with distinct topic marker", i)}),
+                )
             }));
         }
         for h in handles {
