@@ -35,3 +35,17 @@ See `PLAIN-LANGUAGE-SPEC.md` for the system in plain words,
   migration with zero text loss. See `GPU-ENCODER-CLEARANCE.md`.
 - **Not cleared:** geometry/traversal/judge changes, network in hot path,
   silent substitution (probe audit gates dispatch).
+
+### Step 3 — Orchestration protocol (DONE 2026-10-28)
+
+- **Pipeline:** Meta (decompose) → necessity filter → tactical mapping →
+  orchestration with receipts. See `ORCHESTRATION-PROTOCOL.md`.
+- **Min-info rule:** `I*(L)` = smallest set with coverage ≥ θ at depth
+  ≥ δ(L). Necessary (absence voids the leaf), not merely sufficient.
+- **Gradient:** no weight updates ever; descent on coverage (carve where
+  retrieval failed), budget (variational depth gate), epsilons (sweep to
+  operating point), IDF (reweight to usage). GPU encoder is the fifth.
+- **Sundowning:** context-fill (capsule checkpoints), salience drift
+  (recency + reweight), plan decay (re-check at dispatch). Failed
+  traversal mid-plan IS the detector — re-ground, don't push through.
+- **Superior Quality:** `E[Q] = cov × p_useful × (1-drift)`, all measured.
