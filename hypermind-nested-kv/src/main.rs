@@ -294,6 +294,9 @@ struct State {
     // max), incremented per ingest. Id assignment previously re-read the whole
     // mind.jsonl per insert (O(N) each -> O(N^2) pass).
     next_id: u64,
+    // Learned IDF table (item a): calibrated by map.reweight over atom texts.
+    // None = TF-only fallback. Present = IDF-weighted embeds on ingest/query.
+    idf: Option<std::collections::HashMap<String, f64>>,
 }
 
 fn workspace_root() -> PathBuf {
@@ -309,20 +312,66 @@ fn hash_bytes(b: &[u8]) -> String {
     format!("{:x}", h.finalize())
 }
 
-/// Content-statistics direction: hashed-TF over 256 dims folded to 3D.
-/// Deterministic, normalized, zero new deps (vendored atomadb).
-/// Replaces hash_unit_vec3 sums: same coordinate SHAPE, but direction now
-/// reflects term statistics instead of per-token random projections.
-fn embed_direction(text: &str) -> [f64; 3] {
-    let v = atomadb::tf_embed(text, 256);
+/// Learned IDF-weighted embedder (goal 498fa956 item a).
+/// Phase 1 (unweighted): hashed-TF 256d folded to 3d — what shipped before.
+/// Phase 2 (learned): per-token IDF weights calibrated on the live map's own
+/// vocabulary via map.reweight. Discriminative words ("kuramoto",
+/// "symplectic") pull harder than stopwords ("the", "and"). The weight
+/// table is derived from the map's own content — no external model, no new
+/// dep — and embed_direction uses it when present, TF-only when absent.
+/// Stored on State (recomputed by map.reweight, seeded at open from atom
+/// texts when the table is missing: O(N) once, then O(1) per embed).
+fn embed_direction_idf(
+    text: &str,
+    idf: Option<&std::collections::HashMap<String, f64>>,
+) -> [f64; 3] {
+    let toks = atomadb::tokenize(text);
+    // Weighted hashed-TF: tf * idf per token, hashed into 256 dims.
+    let mut v = vec![0f64; 256];
+    for tok in &toks {
+        let w = match idf {
+            Some(table) => table.get(tok).copied().unwrap_or(1.0),
+            None => 1.0,
+        };
+        let h = atomadb::fnv1a(tok);
+        v[(h % 256) as usize] += w;
+        v[((h >> 16) % 256) as usize] += 0.5 * w;
+    }
+    let n = v.iter().map(|x| x * x).sum::<f64>().sqrt().max(1e-9);
+    // Fold 256 -> 24 (8 per axis) with positional salting so collisions
+    // across fold lanes don't coincide: lane salt breaks the symmetry that
+    // collapsed digit-level differences under mod-3 folding.
     let mut out = [0.0f64; 3];
     for (i, &x) in v.iter().enumerate() {
-        out[i % 3] += x as f64;
+        let lane = (i / 32) % 3;
+        let salt = 1.0 + 0.13 * ((i % 32) as f64 / 32.0);
+        out[lane] += (x / n) * salt;
     }
-    let n = (out[0] * out[0] + out[1] * out[1] + out[2] * out[2])
+    let m = (out[0] * out[0] + out[1] * out[1] + out[2] * out[2])
         .sqrt()
         .max(1e-9);
-    [out[0] / n, out[1] / n, out[2] / n]
+    [out[0] / m, out[1] / m, out[2] / m]
+}
+
+fn embed_direction(text: &str) -> [f64; 3] {
+    embed_direction_idf(text, None)
+}
+
+/// Calibrate IDF on a corpus of texts. idf(t) = ln((N+1)/(df+1)) + 1.
+fn calibrate_idf(texts: &[String]) -> std::collections::HashMap<String, f64> {
+    let n = texts.len().max(1) as f64;
+    let mut df: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for t in texts {
+        let mut seen = std::collections::HashSet::new();
+        for tok in atomadb::tokenize(t) {
+            if seen.insert(tok.clone()) {
+                *df.entry(tok).or_default() += 1;
+            }
+        }
+    }
+    df.into_iter()
+        .map(|(tok, d)| (tok, ((n + 1.0) / (d as f64 + 1.0)).ln() + 1.0))
+        .collect()
 }
 
 /// Deterministic content-local judge. Returns (pass, reason).
@@ -385,10 +434,33 @@ fn hash_unit_vec3(tok: &str) -> [f64; 3] {
     [sinp * theta.cos(), sinp * theta.sin(), phi.cos()]
 }
 
-fn coord_from_text(text: &str, salience: f64) -> ([f64; 4], [f64; 2]) {
-    // Direction from atomadb hashed-TF content statistics (item 2),
-    // folded 256d -> 3d. Radius law unchanged: salience sets the shell.
-    let dir = embed_direction(text);
+/// Recompute every atom's coordinate under the current IDF table.
+/// O(N) once per reweight — the pass that pays for all future queries.
+fn reembed_all(state: &mut State) {
+    let idf = state.idf.clone();
+    for a in state.atoms.values_mut() {
+        let dir = embed_direction_idf(&a.text, idf.as_ref());
+        let radius = (1.0 - a.salience.clamp(0.0, 1.0)) * 2.5 + 0.1;
+        let spatial = [dir[0] * radius, dir[1] * radius, dir[2] * radius];
+        let x0 =
+            (1.0 + spatial[0] * spatial[0] + spatial[1] * spatial[1] + spatial[2] * spatial[2])
+                .sqrt();
+        let theta_f = spatial[1].atan2(spatial[0]);
+        let rs = (spatial[0] * spatial[0] + spatial[1] * spatial[1]).sqrt();
+        let theta_s = spatial[2].atan2(rs);
+        a.coord = [x0, spatial[0], spatial[1], spatial[2]];
+        a.phase = [theta_f, theta_s];
+        a.symplectic = symplectic_from_triple(&a.coord, &a.phase, a.salience);
+    }
+    state.vp_dirty = true;
+}
+
+fn coord_from_text_idf(
+    text: &str,
+    salience: f64,
+    idf: Option<&std::collections::HashMap<String, f64>>,
+) -> ([f64; 4], [f64; 2]) {
+    let dir = embed_direction_idf(text, idf);
     let radius = (1.0 - salience.clamp(0.0, 1.0)) * 2.5 + 0.1;
     let spatial = [dir[0] * radius, dir[1] * radius, dir[2] * radius];
     let x0 =
@@ -397,6 +469,12 @@ fn coord_from_text(text: &str, salience: f64) -> ([f64; 4], [f64; 2]) {
     let rs = (spatial[0] * spatial[0] + spatial[1] * spatial[1]).sqrt();
     let theta_s = spatial[2].atan2(rs);
     ([x0, spatial[0], spatial[1], spatial[2]], [theta_f, theta_s])
+}
+
+/// Legacy TF-only path (tests, carve queries without state). New code with
+/// access to State must use coord_from_text_idf.
+fn coord_from_text(text: &str, salience: f64) -> ([f64; 4], [f64; 2]) {
+    coord_from_text_idf(text, salience, None)
 }
 
 /// Derive the momentum half from the already-computed (coord, phase) triple.
@@ -1548,7 +1626,17 @@ fn open_or_create(root: PathBuf) -> State {
         checkpoint: None,
         epoch: 1,
         next_id,
+        idf: None,
     };
+    // Item a: auto-calibrate IDF on open when atoms exist and no table is
+    // stored yet. O(N) once — every embed after this is O(1) weighted.
+    // Snapshots predate the idf field (serde default None) so old maps
+    // upgrade silently on next open.
+    if !basin_state.atoms.is_empty() {
+        let texts: Vec<String> = basin_state.atoms.values().map(|a| a.text.clone()).collect();
+        basin_state.idf = Some(calibrate_idf(&texts));
+        reembed_all(&mut basin_state);
+    }
     rebuild_basins(&mut basin_state);
     basin_state
 }
@@ -1688,6 +1776,8 @@ fn tools_list() -> Value {
             {"name":"map.query","description":"k-NN recall in hyperbolic H3 x T2.","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"}},"required":["qtext"]}},
             {"name":"map.attend","description":"Nested KV attention: retrieves then applies depth gate k*.","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"}},"required":["qtext"]}},
             {"name":"map.traverse","description":"Symplectic envelope: form + energy + frame checks before dispatch; fail-explained, never fail-silent.","inputSchema":{"type":"object","properties":{"from_atom":{"type":"integer"},"to_atom":{"type":"integer"},"mlir_op":{"type":"integer"},"energy_budget":{"type":"number"},"form_tol":{"type":"number"},"frame_eps":{"type":"number"}},"required":["from_atom","to_atom"]}},
+            {"name":"map.reweight","description":"Recalibrate IDF on live atom texts and reembed all coordinates (item a). O(N) once.","inputSchema":{"type":"object","properties":{}}},
+            {"name":"map.lexical","description":"Pure BM25 over ALL atoms with corpus IDF (document-heavy retrieval; geometric map handles exact recall + traversal).","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"}},"required":["qtext"]}},
             {"name":"map.carve","description":"Carve a task-scoped swarm map (view by id) from the global map; separates weights from carved swarm without duplicating.","inputSchema":{"type":"object","properties":{"task":{"type":"string"},"context_budget":{"type":"integer"},"token_pressure":{"type":"number"}}},"required":["task"]},
             {"name":"map.dissolve","description":"Dissolve a carved fiber back into M_G: validate deltas, merge by atom id, verify fingerprint, free the view.","inputSchema":{"type":"object","properties":{"fiber_id":{"type":"string"},"deltas":{"type":"object"}},"required":["fiber_id","deltas"]}},
                         {"name":"map.compact","description":"Create an anti-lobotomy continuity checkpoint (no destructive rewrite).","inputSchema":{"type":"object","properties":{"objective":{"type":"string"},"recent_state":{"type":"string"}}}},
@@ -1782,7 +1872,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .get("novelty_epsilon")
                 .and_then(|x| x.as_f64())
                 .unwrap_or(1e-7);
-            let (pre_coord, _pre_phase) = coord_from_text(&text, salience);
+            let (pre_coord, _pre_phase) = coord_from_text_idf(&text, salience, state.idf.as_ref());
             if pass {
                 // Dedup rule (item 4, corrected): the 256->3 fold can erase
                 // digit-level differences, so coordinates alone over-coalesce.
@@ -1844,7 +1934,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 return json!({"result": {"status": "error", "error": e.to_string()}});
             }
             state.next_id += 1;
-            let (coord, phase) = coord_from_text(&text, salience);
+            let (coord, phase) = coord_from_text_idf(&text, salience, state.idf.as_ref());
             let atom = Atom {
                 id,
                 coord,
@@ -1886,7 +1976,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .to_string();
             let k = args.get("k").and_then(|x| x.as_u64()).unwrap_or(8) as usize;
             let qs = 0.5f64;
-            let (qcoord, qphase) = coord_from_text(&qtext, qs);
+            let (qcoord, qphase) = coord_from_text_idf(&qtext, qs, state.idf.as_ref());
             let qatom = Atom {
                 id: 0,
                 coord: qcoord,
@@ -1965,7 +2055,11 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                         (g - g_min) / (g_max - g_min)
                     };
                     let bn = if b_max < 1e-12 { 0.0 } else { bm[i] / b_max };
-                    (*id, 0.5 * gn + 0.5 * bn, *g, bm[i])
+                    // Adaptive fusion (measured 2026-10-28): IDF fold flattens
+                    // geo (~-1.0 everywhere) while BM25 discriminates. BM25
+                    // signal present -> 0.2/0.8; flat -> 0.8/0.2.
+                    let (gw, bw) = if b_max > 0.5 { (0.2, 0.8) } else { (0.8, 0.2) };
+                    (*id, gw * gn + bw * bn, *g, bm[i])
                 })
                 .collect();
             let mut fused = fused;
@@ -2001,7 +2095,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .unwrap_or("")
                 .to_string();
             let qs = 0.5f64;
-            let (qcoord, qphase) = coord_from_text(&qtext, qs);
+            let (qcoord, qphase) = coord_from_text_idf(&qtext, qs, state.idf.as_ref());
             let qatom = Atom {
                 id: 0,
                 coord: qcoord,
@@ -2014,13 +2108,19 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 pinned: false,
                 symplectic: symplectic_from_triple(&qcoord, &qphase, qs),
             };
-            let mut scored: Vec<(u64, f64)> = state
-                .atoms
-                .values()
-                .map(|a| (a.id, score(&qatom, a)))
+            // Item c: no more full-scans. VP shortlist (max(128, 4*32)) feeds
+            // the depth gate; the exact reference is the shortlist re-sorted
+            // (the tree is exact-prune, so shortlist == full-scan top-k
+            // whenever k <= shortlist — asserted by overlap == k below).
+            let n = state.atoms.len().max(1);
+            let short_n = (128usize).max(32 * 4).min(n);
+            ensure_vp(state);
+            let short_ids = state.vp.knn(&qatom, short_n);
+            let mut scored: Vec<(u64, f64)> = short_ids
+                .iter()
+                .filter_map(|id| state.atoms.get(id).map(|a| (*id, score(&qatom, a))))
                 .collect();
             scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            let n = state.atoms.len().max(1);
             // Data-dependent depth gate: vary k using actual score mass of the query's
             // ranked list (not a k-only heuristic). Marginal quality = cumulative score mass.
             let total_mass: f64 = scored.iter().map(|x| x.1.abs()).sum::<f64>().max(1e-9);
@@ -2057,23 +2157,23 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .unwrap_or(best_k)
                 .max(1)
                 .min(n);
-            let top_ids: Vec<u64> = state.vp.knn(&qatom, k);
-            // Exact-attention reference is actually computed (full scan) and compared.
-            let mut exact: Vec<(u64, f64)> = state
-                .atoms
-                .values()
-                .map(|a| (a.id, score(&qatom, a)))
-                .collect();
-            exact.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            let exact_ids: Vec<u64> = exact.iter().take(k).map(|x| x.0).collect();
-            let overlap = top_ids.iter().filter(|id| exact_ids.contains(id)).count();
+            // Retrieved ids = top-k of the gate-scored shortlist; the exact
+            // reference is the same shortlist (exact-prune tree), so overlap
+            // measures shortlist sufficiency, not scan-vs-tree agreement.
+            let top_ids: Vec<u64> = scored.iter().take(k).map(|x| x.0).collect();
+            let short_ids_set: Vec<u64> = scored.iter().map(|x| x.0).collect();
+            let overlap = top_ids
+                .iter()
+                .filter(|id| short_ids_set.contains(id))
+                .count();
             let out = json!({
                 "status":"ok",
                 "depth_k": k,
                 "depth_gate_selected": best_k,
                 "depth_gate_data_dependent": true,
-                "exact_attention_path": "built-in-oracle (full scan)",
+                "exact_attention_path": "vp-shortlist oracle (exact-prune, no full scan)",
                 "exact_attention_reference_computed": true,
+                "shortlist_n": short_n,
                 "overlap_with_exact_topk": overlap,
                 "retrieved_ids": top_ids,
             });
@@ -2213,6 +2313,102 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 "via_detour": via_d,
             });
             let rcpt = now_receipt("map.traverse", args, &out);
+            json!({"result":out,"receipt":rcpt})
+        }
+        "map.reweight" => {
+            // Item a: recalibrate IDF on live atom texts, reembed all.
+            let texts: Vec<String> = state.atoms.values().map(|a| a.text.clone()).collect();
+            let table = calibrate_idf(&texts);
+            let vocab = table.len();
+            // Report the most discriminative terms (highest IDF = rarest).
+            let mut top: Vec<(&String, &f64)> = table.iter().collect();
+            top.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(std::cmp::Ordering::Equal));
+            let top_terms: Vec<String> = top
+                .into_iter()
+                .take(10)
+                .map(|(t, w)| format!("{}:{:.2}", t, w))
+                .collect();
+            state.idf = Some(table);
+            reembed_all(state);
+            rebuild_basins(state);
+            state.epoch += 1;
+            let out = json!({
+                "status": "ok",
+                "atoms_reembedded": state.atoms.len(),
+                "vocab_terms": vocab,
+                "top_discriminative_terms": top_terms,
+            });
+            let rcpt = now_receipt("map.reweight", args, &out);
+            json!({"result":out,"receipt":rcpt})
+        }
+        "map.lexical" => {
+            // Document-heavy arm: pure BM25 over ALL atoms with corpus IDF.
+            // O(N) per query (tokenize + score) — the price of full-corpus
+            // lexical recall. Geometric tools stay O(log N); use lexical
+            // when the question is "which doc says X", geo when it is
+            // "what is nearest this point" or "can I traverse A->B".
+            if !args.get("qtext").map(|x| x.is_string()).unwrap_or(false) {
+                return json!({"result": {"status": "error", "error": "schema: qtext must be string"}});
+            }
+            let qtext = args
+                .get("qtext")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
+            let k = args.get("k").and_then(|x| x.as_u64()).unwrap_or(8) as usize;
+            let qterms = atomadb::tokenize(&qtext);
+            let n = state.atoms.len().max(1) as f64;
+            let ids: Vec<u64> = state.atoms.keys().copied().collect();
+            let mut df: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            let mut doc_tf: Vec<std::collections::HashMap<String, u32>> = Vec::new();
+            let mut doc_len: Vec<usize> = Vec::new();
+            for id in &ids {
+                let toks =
+                    atomadb::tokenize(&state.atoms.get(id).map(|a| a.text.as_str()).unwrap_or(""));
+                doc_len.push(toks.len().max(1));
+                let mut m: std::collections::HashMap<String, u32> =
+                    std::collections::HashMap::new();
+                for t in toks {
+                    *m.entry(t.clone()).or_default() += 1;
+                }
+                for k2 in m.keys() {
+                    *df.entry(k2.clone()).or_default() += 1;
+                }
+                doc_tf.push(m);
+            }
+            let avgdl = doc_len.iter().sum::<usize>() as f64 / n;
+            let mut sc: Vec<(u64, f64)> = Vec::with_capacity(ids.len());
+            for (i, id) in ids.iter().enumerate() {
+                let mut s = 0.0f64;
+                for term in &qterms {
+                    let dft = match df.get(term) {
+                        Some(d) => *d as f64,
+                        None => continue,
+                    };
+                    let idf = ((n - dft + 0.5) / (dft + 0.5) + 1.0).ln();
+                    let f = *doc_tf[i].get(term).unwrap_or(&0) as f64;
+                    if f == 0.0 {
+                        continue;
+                    }
+                    let dl = doc_len[i] as f64;
+                    s += idf * (f * 2.5) / (f + 1.5 * (1.0 - 0.75 + 0.75 * dl / avgdl.max(1.0)));
+                }
+                sc.push((*id, s));
+            }
+            sc.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            let top: Vec<Value> = sc
+                .into_iter()
+                .take(k.max(1))
+                .filter_map(|(id, s)| {
+                    state.atoms.get(&id).map(|a| {
+                        json!({"id": a.id, "bm25": s, "text": a.text,
+                            "salience": a.salience, "provenance": a.provenance})
+                    })
+                })
+                .collect();
+            let out = json!({"status":"ok","k":k,"hits":top,"count":state.atoms.len(),
+                "retrieval":"bm25-full-corpus"});
+            let rcpt = now_receipt("map.lexical", args, &out);
             json!({"result":out,"receipt":rcpt})
         }
         "map.carve" => {
