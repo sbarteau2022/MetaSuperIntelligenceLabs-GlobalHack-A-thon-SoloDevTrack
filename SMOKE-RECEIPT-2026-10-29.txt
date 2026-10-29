@@ -1,0 +1,11 @@
+end-to-end smoke receipt
+date=2026-10-29
+machine=this Mac (Apple Silicon), model server omlx :8000 live
+commits=2c0c8cc + 1ae728f + d8cf07f (pushed to origin/main before smoke)
+
+smoke1 rgah-n3-wire verdict=PASS (stdio round-trip, ingest/query/compact/checkpoint, swarm_run_id echoed, fallback drills)
+smoke2 n3-wire-proof all-accepts=True (receipts, pami_stats pr_chunk=2.768, sqlite replay 10 events idempotent seq=1, rank-lie denial, bench 0.25ms n=20)
+smoke3 hardware-ppc real_probe=true kept_base=true gain=0.0000 heldout=4/4 (leakage/security/pareto pass, noise_band correctly abstains)
+smoke4 suites: rgah 50/50, nkv 53/53 (3 lib + 42 bin + 8 transducer), sqlite 54/54 — 157 green, 0 fail
+
+verdict=SMOKE PASS (bounded runs; daemon/HTTP + live SQLite writer remain PROPOSED)
