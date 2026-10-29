@@ -1,6 +1,8 @@
 use clap::{Parser, Subcommand};
-use rgah::mission::{MissionInput, MissionReceipt, dry_run, geometry_mission, run_mission, run_mission_with_prior};
-use rgah::receipt::{Receipt, ReceiptLog};
+use rgah::mission::{
+    MissionInput, MissionReceipt, dry_run, geometry_mission, run_mission, run_mission_with_prior,
+};
+use rgah::receipt::parse_prior_receipt_text;
 use rgah::{FrozenPolicyKernel, bench, registry};
 use std::fs;
 use std::path::PathBuf;
@@ -36,9 +38,16 @@ enum Commands {
         budget: f64,
     },
     /// Resume the built-in mission from a prior receipt file.
-    /// Prior file: one passed packet id per line. Passed packets are not re-run.
+    /// Prior file: output of `rgah run` (receipt lines with outcome=PASS).
+    /// Only `receipt packet=<id> ... outcome=PASS` lines for packets in this
+    /// mission are trusted; bare ids, summary lines, and non-PASS outcomes
+    /// are ignored and counted on stderr. Passed packets are not re-run.
+    /// Guardrail: the prior file is operator convenience, NOT verified
+    /// acceptance — the CLI does not authenticate the file or re-check
+    /// evidence. Do not cite a resumed run as acceptance proof.
     Resume {
-        /// Prior receipt file, one passed packet id per line.
+        /// Prior receipt file (output of `rgah run`). Only receipt lines with
+        /// outcome=PASS are trusted; anything else is ignored and counted.
         #[arg(long)]
         prior: PathBuf,
         /// Receipt output file. Defaults to stdout when omitted.
@@ -59,7 +68,10 @@ fn receipt_text(out: &MissionReceipt) -> String {
     text.push_str(&format!("skipped={}\n", out.skipped.join(",")));
     text.push_str(&format!("escalated={}\n", out.escalated.join(",")));
     text.push_str(&format!("energy_spent_j={:.4}\n", out.energy_spent_j));
-    text.push_str(&format!("energy_remaining_j={:.4}\n", out.energy_remaining_j));
+    text.push_str(&format!(
+        "energy_remaining_j={:.4}\n",
+        out.energy_remaining_j
+    ));
     for r in &out.receipts.entries {
         text.push_str(&format!(
             "receipt packet={} attempt={} outcome={} judges={} energy_j={:.4} erased_bits={}\n",
@@ -77,7 +89,9 @@ fn receipt_text(out: &MissionReceipt) -> String {
 fn emit(receipt: Option<PathBuf>, out: &MissionReceipt) -> Result<(), String> {
     let text = receipt_text(out);
     match receipt {
-        Some(path) => fs::write(&path, text).map_err(|e| format!("write {}: {}", path.display(), e)),
+        Some(path) => {
+            fs::write(&path, text).map_err(|e| format!("write {}: {}", path.display(), e))
+        }
         None => {
             print!("{}", text);
             Ok(())
@@ -131,7 +145,11 @@ fn main() -> ExitCode {
             let input: MissionInput = geometry_mission();
             match dry_run(&input.plan) {
                 Ok(()) => {
-                    println!("GO mission={} packets={}", input.plan.id, input.plan.packets.len());
+                    println!(
+                        "GO mission={} packets={}",
+                        input.plan.id,
+                        input.plan.packets.len()
+                    );
                     ExitCode::SUCCESS
                 }
                 Err(e) => {
@@ -153,63 +171,42 @@ fn main() -> ExitCode {
             }
             report(&out)
         }
-        Commands::Resume { prior, receipt, budget } => {
-            match fs::read_to_string(&prior) {
-                Ok(text) => {
-                    let mut prior_log = ReceiptLog::default();
-                    let plan_ids: Vec<String> = geometry_mission()
-                        .plan
-                        .packets
-                        .iter()
-                        .map(|p| p.id.clone())
-                        .collect();
-                    for line in text.lines() {
-                        let id = line.trim();
-                        if id.is_empty() {
-                            continue;
-                        }
-                        // Prior files written by this CLI list receipts as
-                        // "receipt packet=<id> ... outcome=PASS ...".
-                        // Accept both that form and a bare id per line, but
-                        // only if the id is a packet in this mission. Summary
-                        // lines like passed=... are not packet ids and are skipped.
-                        let packet_id = if let Some(rest) = id.strip_prefix("receipt packet=") {
-                            rest.split_whitespace().next().unwrap_or(rest)
-                        } else {
-                            id
-                        };
-                        if !plan_ids.iter().any(|p| p == packet_id) {
-                            continue;
-                        }
-                        prior_log.append(Receipt {
-                            packet_id: packet_id.to_string(),
-                            attempt: 1,
-                            outcome: "PASS".into(),
-                            judge_ids: vec![],
-                            evidence_hash: String::new(),
-                            energy_joules: 0.0,
-                            erased_bits: 0,
-                            timestamp_ms: 0,
-                        });
-                    }
-                    let input: MissionInput = geometry_mission();
-                    if let Err(e) = dry_run(&input.plan) {
-                        eprintln!("NO-GO {}: {}", input.plan.id, e);
-                        return ExitCode::FAILURE;
-                    }
-                    let out = run_mission_with_prior(input, budget, Some(prior_log));
-                    if let Err(e) = emit(receipt, &out) {
-                        eprintln!("{}", e);
-                        return ExitCode::FAILURE;
-                    }
-                    report(&out)
+        Commands::Resume {
+            prior,
+            receipt,
+            budget,
+        } => match fs::read_to_string(&prior) {
+            Ok(text) => {
+                let plan_ids: Vec<String> = geometry_mission()
+                    .plan
+                    .packets
+                    .iter()
+                    .map(|p| p.id.clone())
+                    .collect();
+                let (prior_log, stats) = parse_prior_receipt_text(&text, &plan_ids);
+                eprintln!(
+                    "resume prior={} accepted={} ignored={} (only receipt lines with outcome=PASS trusted; resume is not verified acceptance)",
+                    prior.display(),
+                    stats.accepted,
+                    stats.ignored
+                );
+                let input: MissionInput = geometry_mission();
+                if let Err(e) = dry_run(&input.plan) {
+                    eprintln!("NO-GO {}: {}", input.plan.id, e);
+                    return ExitCode::FAILURE;
                 }
-                Err(e) => {
-                    eprintln!("NO-GO read {}: {}", prior.display(), e);
-                    ExitCode::FAILURE
+                let out = run_mission_with_prior(input, budget, Some(prior_log));
+                if let Err(e) = emit(receipt, &out) {
+                    eprintln!("{}", e);
+                    return ExitCode::FAILURE;
                 }
+                report(&out)
             }
-        }
+            Err(e) => {
+                eprintln!("NO-GO read {}: {}", prior.display(), e);
+                ExitCode::FAILURE
+            }
+        },
         Commands::Registry => {
             for entry in registry::registry() {
                 println!(

@@ -156,12 +156,14 @@ fn longtask_40_packet_head_to_head() {
     assert_eq!(total, 40);
 
     // P-06: PPC k=2 honesty — either outcome accepted; abstention reported.
+    // Unit scaffold uses a deterministic stub probe (NOT ship evidence).
     let base = Bundle::base();
     let mut ppc_budget = EnergyBudget::new(50.0);
     let ppc = ProposeProbeCompose::new(2);
-    let (adopted, m) = ppc.run(&base, &mut ppc_budget);
+    let stub = |_: &Bundle| (1usize, 2usize, 100u64, vec!["last_number_eq".to_string()]);
+    let (adopted, m) = ppc.run(&base, &mut ppc_budget, stub);
     println!(
-        "ppc k={} rollouts={} sessions={} kept_base={} abstained={} gain={:.3} energy={:.4} adopted_v={}",
+        "ppc k={} rollouts={} sessions={} kept_base={} abstained={} gain={:.3} energy={:.4} adopted_v={} real_probe={}",
         m.k,
         m.rollouts,
         m.sessions,
@@ -169,7 +171,8 @@ fn longtask_40_packet_head_to_head() {
         m.abstained,
         m.quality_gain,
         m.energy_spent_j,
-        adopted.version
+        adopted.version,
+        m.real_probe
     );
     assert_eq!(m.rollouts, 8); // Harness2 accounting R=4k
     assert_eq!(m.sessions, 6); // P=3k

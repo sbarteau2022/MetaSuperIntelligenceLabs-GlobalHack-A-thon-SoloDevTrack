@@ -34,6 +34,14 @@ struct Atom {
     salience: f64,
     provenance: String,
     taint: String,
+    /// PAMI rank (REQUIREMENT N^3-System-Audit §7.6): 0 = chunk (child),
+    /// 1 = document (partition-and-aggregate parent). Same-rank inner
+    /// products are preserved exactly under rotate_rank; cross-rank
+    /// retrieval applies the phase rotation before scoring. Chunk atoms
+    /// default to 0; document atoms must aggregate their children.
+    /// Snapshots predate this field (serde default 0 = chunk).
+    #[serde(default)]
+    rank: u8,
     /// Silo/domain tag (C06.21): selects which swarm views may include this atom.
     domain: String,
     /// Governance pin (I4): pinned atoms survive carving/eviction.
@@ -423,9 +431,19 @@ fn hash_bytes(b: &[u8]) -> String {
 /// dep — and embed_direction uses it when present, TF-only when absent.
 /// Stored on State (recomputed by map.reweight, seeded at open from atom
 /// texts when the table is missing: O(N) once, then O(1) per embed).
+///
+/// PAMI phase (REQUIREMENT N^3-System-Audit §7.6): the 256d TF vector is
+/// rotated by rank BEFORE the 256->3 fold. Rank 0 (chunk) = identity
+/// (rotate_rank with 0.0 returns the vector unchanged — same-rank inner
+/// products preserved exactly). Rank 1 (document) = RoPE-family phase
+/// rotation, so cross-rank inner products are phase-suppressed: a doc-level
+/// query compares against chunk atoms on phase, not raw overlap. Fold AFTER
+/// rotation so the 3d direction carries the phase, matching the vendored
+/// pami_smoke build_index (rotate-then-store, rotate-then-query).
 fn embed_direction_idf(
     text: &str,
     idf: Option<&std::collections::HashMap<String, f64>>,
+    rank: u8,
 ) -> [f64; 3] {
     let toks = atomadb::tokenize(text);
     // Weighted hashed-TF: tf * idf per token, hashed into 256 dims.
@@ -439,9 +457,11 @@ fn embed_direction_idf(
         v[(h % 256) as usize] += w;
         v[((h >> 16) % 256) as usize] += 0.5 * w;
     }
-    // PAMI phase rotation (atomadb::rotate_rank): rank 1 for document-level phase.
+    // PAMI phase rotation (atomadb::rotate_rank): rank 0 = identity (chunk),
+    // rank 1 = document-level phase (partition-and-aggregate parent).
+    // Fold AFTER rotation so the 3d direction carries the rank phase.
     let vv: Vec<f32> = v.iter().map(|x| *x as f32).collect();
-    let rotated = atomadb::rotate_rank(&vv, 1.0);
+    let rotated = atomadb::rotate_rank(&vv, rank as f32);
     let v: Vec<f64> = rotated.into_iter().map(|x| x as f64).collect();
     let n = v.iter().map(|x| x * x).sum::<f64>().sqrt().max(1e-9);
     // Fold 256 -> 24 (8 per axis) with positional salting so collisions
@@ -460,7 +480,7 @@ fn embed_direction_idf(
 }
 
 fn embed_direction(text: &str) -> [f64; 3] {
-    embed_direction_idf(text, None)
+    embed_direction_idf(text, None, 0)
 }
 
 /// Calibrate IDF on a corpus of texts. idf(t) = ln((N+1)/(df+1)) + 1.
@@ -540,12 +560,13 @@ fn hash_unit_vec3(tok: &str) -> [f64; 3] {
     [sinp * theta.cos(), sinp * theta.sin(), phi.cos()]
 }
 
-/// Recompute every atom's coordinate under the current IDF table.
+/// Recompute every atom's coordinate under the current IDF table AND its
+/// PAMI rank (rotate_rank by rank BEFORE the 256->3 fold).
 /// O(N) once per reweight — the pass that pays for all future queries.
 fn reembed_all(state: &mut State) {
     let idf = state.idf.clone();
     for a in state.atoms.values_mut() {
-        let dir = embed_direction_idf(&a.text, idf.as_ref());
+        let dir = embed_direction_idf(&a.text, idf.as_ref(), a.rank);
         let radius = (1.0 - a.salience.clamp(0.0, 1.0)) * 2.5 + 0.1;
         let spatial = [dir[0] * radius, dir[1] * radius, dir[2] * radius];
         let x0 =
@@ -565,8 +586,9 @@ fn coord_from_text_idf(
     text: &str,
     salience: f64,
     idf: Option<&std::collections::HashMap<String, f64>>,
+    rank: u8,
 ) -> ([f64; 4], [f64; 2]) {
-    let dir = embed_direction_idf(text, idf);
+    let dir = embed_direction_idf(text, idf, rank);
     let radius = (1.0 - salience.clamp(0.0, 1.0)) * 2.5 + 0.1;
     let spatial = [dir[0] * radius, dir[1] * radius, dir[2] * radius];
     let x0 =
@@ -578,10 +600,16 @@ fn coord_from_text_idf(
 }
 
 /// Legacy TF-only path (tests, carve queries without state). New code with
-/// access to State must use coord_from_text_idf.
+/// access to State must use coord_from_text_idf with the atom's rank.
 fn coord_from_text(text: &str, salience: f64) -> ([f64; 4], [f64; 2]) {
-    coord_from_text_idf(text, salience, None)
+    coord_from_text_idf(text, salience, None, 0)
 }
+
+/// Query probe constructor: a rank-0 (chunk-space) probe, matching how stored
+/// chunk atoms embed. Document-level queries declare rank explicitly via
+/// map.query {"rank": 1} (partition-and-aggregate parent space) so
+/// cross-rank retrieval rotates the QUERY into the target space before
+/// scoring, exactly like vendored pami_smoke (rotate-then-query).
 
 /// SLOPE READOUT (not evolution): derive the momentum half by sampling the
 /// vault spiral-out law's analytic derivative at the atom's radius.
@@ -1073,7 +1101,7 @@ fn carve_swarm_map(
     pressure: f64,
     args_capsule: Option<&Value>,
 ) -> Value {
-    let (mu, mphase) = coord_from_text(task, 0.5);
+    let (mu, mphase) = coord_from_text_idf(task, 0.5, state.idf.as_ref(), 0);
     let qatom = Atom {
         id: 0,
         coord: mu,
@@ -1082,6 +1110,7 @@ fn carve_swarm_map(
         salience: 0.5,
         provenance: "carve".into(),
         taint: "none".into(),
+        rank: 0,
         domain: "query".into(),
         pinned: false,
         symplectic: symplectic_from_triple(&mu, &mphase, 0.5),
@@ -1730,13 +1759,19 @@ fn open_or_create(root: PathBuf) -> State {
                         .unwrap_or("")
                         .to_string();
                     let salience = v.get("salience").and_then(|x| x.as_f64()).unwrap_or(0.5);
-                    let (coord, phase) = coord_from_text(&text, salience);
+                    // Mind lines: read `rank` when present, default 0
+                    // (chunk, the rotate_rank identity). No IDF table at load
+                    // (None) — rank rotation still applies before the fold.
+                    let mrank: u8 =
+                        v.get("rank").and_then(|x| x.as_u64()).unwrap_or(0).min(1) as u8;
+                    let (coord, phase) = coord_from_text_idf(&text, salience, None, mrank);
                     let atom = Atom {
                         id,
                         coord,
                         phase,
                         text,
                         salience,
+                        rank: mrank,
                         provenance: v
                             .get("provenance")
                             .and_then(|x| x.as_str())
@@ -1919,9 +1954,18 @@ fn recover(st: &mut State) -> Value {
 fn now_receipt(op: &str, input: &Value, output: &Value) -> Value {
     let payload = json!({"op":op,"input":input,"output":output});
     let bytes = serde_json::to_vec(&payload).unwrap_or_default();
+    // swarm_run_id echo (N^3-Research-Harness-Wiring §5): the harness run id
+    // arrives inside args (input) and is therefore already covered by the
+    // receipt hash; echo it as an explicit field so aggregation does not
+    // require re-hashing. Absent = local call, not a harness run.
+    let swarm = input
+        .get("swarm_run_id")
+        .and_then(|x| x.as_str())
+        .unwrap_or("");
     json!({
         "op": op,
         "receipt_sha256": hash_bytes(&bytes),
+        "swarm_run_id": swarm,
         "timestamp_unix": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
     })
 }
@@ -1943,11 +1987,12 @@ fn respond_error(id: &Value, code: i64, msg: &str) {
 fn tools_list() -> Value {
     json!({
         "tools": [
-            {"name":"map.ingest","description":"Ingest text as an atom with hyperbolic coordinate (reuses AtomaDB mind store).","inputSchema":{"type":"object","properties":{"text":{"type":"string"},"salience":{"type":"number"},"provenance":{"type":"string"},"taint":{"type":"string"}},"required":["text"]}},
-            {"name":"map.query","description":"k-NN recall in hyperbolic H3 x T2.","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"}},"required":["qtext"]}},
-            {"name":"map.attend","description":"Nested KV attention: retrieves then applies depth gate k*.","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"}},"required":["qtext"]}},
+            {"name":"map.ingest","description":"Ingest text as an atom with hyperbolic coordinate (reuses AtomaDB mind store). rank 0 = chunk (default); rank 1 = document (requires children: [atom ids] for partition-and-aggregate).","inputSchema":{"type":"object","properties":{"text":{"type":"string"},"salience":{"type":"number"},"provenance":{"type":"string"},"taint":{"type":"string"},"rank":{"type":"integer"},"children":{"type":"array"}},"required":["text"]}},
+            {"name":"map.query","description":"k-NN recall in hyperbolic H3 x T2. rank 0 = chunk-space (default); rank 1 = document-space (query rotated into aggregate space).","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"},"rank":{"type":"integer"}},"required":["qtext"]}},
+            {"name":"map.attend","description":"Nested KV attention: retrieves then applies depth gate k*. rank 0 = chunk-space (default); rank 1 = document-space.","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"},"rank":{"type":"integer"}},"required":["qtext"]}},
             {"name":"map.traverse","description":"Symplectic envelope: form + energy + frame checks before dispatch; fail-explained, never fail-silent.","inputSchema":{"type":"object","properties":{"from_atom":{"type":"integer"},"to_atom":{"type":"integer"},"mlir_op":{"type":"integer"},"energy_budget":{"type":"number"},"form_tol":{"type":"number"},"frame_eps":{"type":"number"}},"required":["from_atom","to_atom"]}},
             {"name":"map.reweight","description":"Recalibrate IDF on live atom texts and reembed all coordinates (item a). O(N) once.","inputSchema":{"type":"object","properties":{}}},
+            {"name":"map.pami_stats","description":"PAMI multi-fractal report: participation_ratio over live chunk (rank 0) and document (rank 1) vector groups, plus rank counts. Teacher-free content statistic.","inputSchema":{"type":"object","properties":{}}},
             {"name":"map.lexical","description":"Pure BM25 over ALL atoms with corpus IDF (document-heavy retrieval; geometric map handles exact recall + traversal).","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"}},"required":["qtext"]}},
             {"name":"map.read_euclid","description":"Euclidean reader: flat R^n projection of query hits (Poincare ball + IDF direction + phase as features). No hyperbolic math required by the caller — any Euclidean model consumes this directly.","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"},"dim":{"type":"integer"}},"required":["qtext"]}},
             {"name":"map.kv_store","description":"Store a key-value in the nested KV tree (BTreeMap, snapshotted). Value cites producing atom ids.","inputSchema":{"type":"object","properties":{"key":{"type":"string"},"value":{"type":"string"},"produced_by":{"type":"array"}},"required":["key","value"]}},
@@ -2040,6 +2085,24 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .get("pinned")
                 .and_then(|x| x.as_bool())
                 .unwrap_or(false);
+            // PAMI rank (N^3-System-Audit §7.6): 0 = chunk (default — every
+            // ad-hoc ingest is a chunk child); 1 = document (must pass
+            // "children": [atom ids] so the doc vector aggregates them).
+            // Clients that file rank: 1 without children get a schema error:
+            // a document with no children is a rank lie, not a doc.
+            let rank: u8 = args
+                .get("rank")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0)
+                .min(1) as u8;
+            let children: Vec<u64> = args
+                .get("children")
+                .and_then(|x| x.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_u64()).collect())
+                .unwrap_or_default();
+            if rank == 1 && children.is_empty() {
+                return json!({"result": {"status": "error", "error": "schema: rank 1 (document) requires non-empty children: [atom ids]"}});
+            }
             // Item 1: judge gate — mint-on-pass. No pass, no atom, no id spent.
             let (pass, judge_reason) = judge_text(&text, args.get("judge"));
             // Item 4: novelty dedup — coalesce near-duplicates (cosh d <=
@@ -2049,7 +2112,10 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .get("novelty_epsilon")
                 .and_then(|x| x.as_f64())
                 .unwrap_or(1e-7);
-            let (pre_coord, _pre_phase) = coord_from_text_idf(&text, salience, state.idf.as_ref());
+            // Rank-aware dedup probe: embed at the INGEST rank so a chunk
+            // never coalesces into a doc (or vice versa) across ranks.
+            let (pre_coord, _pre_phase) =
+                coord_from_text_idf(&text, salience, state.idf.as_ref(), rank);
             if pass {
                 // Dedup rule (item 4, corrected): the 256->3 fold can erase
                 // digit-level differences, so coordinates alone over-coalesce.
@@ -2063,6 +2129,11 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 };
                 let mut best: Option<(u64, f64)> = None;
                 for a in state.atoms.values() {
+                    // Rank gate: dedup never crosses ranks. A chunk and a doc
+                    // with identical text are DIFFERENT partition levels.
+                    if a.rank != rank {
+                        continue;
+                    }
                     if a.text != text {
                         let mut at = atomadb::tokenize(&a.text);
                         at.sort();
@@ -2120,7 +2191,66 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 return json!({"result": {"status": "error", "error": e.to_string()}});
             }
             state.next_id += 1;
-            let (coord, phase) = coord_from_text_idf(&text, salience, state.idf.as_ref());
+            // Rank-aware embed: chunk text embeds at rank 0; doc embeds
+            // partition-and-aggregate (mean of child TF vectors, rotated at
+            // rank 1) when children resolve, else own-text at rank 1.
+            let (coord, phase) = if rank == 1 && !children.is_empty() {
+                let mut acc = vec![0f64; 256];
+                let mut n = 0usize;
+                for cid in &children {
+                    if let Some(c) = state.atoms.get(cid) {
+                        let toks = atomadb::tokenize(&c.text);
+                        let mut tv = vec![0f64; 256];
+                        for tok in &toks {
+                            let w = match state.idf.as_ref() {
+                                Some(table) => table.get(tok).copied().unwrap_or(1.0),
+                                None => 1.0,
+                            };
+                            let h = atomadb::fnv1a(tok);
+                            tv[(h % 256) as usize] += w;
+                            tv[((h >> 16) % 256) as usize] += 0.5 * w;
+                        }
+                        for j in 0..256 {
+                            acc[j] += tv[j];
+                        }
+                        n += 1;
+                    }
+                }
+                if n > 0 {
+                    for j in 0..256 {
+                        acc[j] /= n as f64;
+                    }
+                    let vv: Vec<f32> = acc.iter().map(|x| *x as f32).collect();
+                    let rotated = atomadb::rotate_rank(&vv, 1.0);
+                    let v: Vec<f64> = rotated.into_iter().map(|x| x as f64).collect();
+                    let norm = v.iter().map(|x| x * x).sum::<f64>().sqrt().max(1e-9);
+                    let mut out = [0.0f64; 3];
+                    for (i, &x) in v.iter().enumerate() {
+                        let lane = (i / 32) % 3;
+                        let salt = 1.0 + 0.13 * ((i % 32) as f64 / 32.0);
+                        out[lane] += (x / norm) * salt;
+                    }
+                    let m = (out[0] * out[0] + out[1] * out[1] + out[2] * out[2])
+                        .sqrt()
+                        .max(1e-9);
+                    let dir = [out[0] / m, out[1] / m, out[2] / m];
+                    let radius = (1.0 - salience.clamp(0.0, 1.0)) * 2.5 + 0.1;
+                    let spatial = [dir[0] * radius, dir[1] * radius, dir[2] * radius];
+                    let x0 = (1.0
+                        + spatial[0] * spatial[0]
+                        + spatial[1] * spatial[1]
+                        + spatial[2] * spatial[2])
+                        .sqrt();
+                    let theta_f = spatial[1].atan2(spatial[0]);
+                    let rs = (spatial[0] * spatial[0] + spatial[1] * spatial[1]).sqrt();
+                    let theta_s = spatial[2].atan2(rs);
+                    ([x0, spatial[0], spatial[1], spatial[2]], [theta_f, theta_s])
+                } else {
+                    coord_from_text_idf(&text, salience, state.idf.as_ref(), 1)
+                }
+            } else {
+                coord_from_text_idf(&text, salience, state.idf.as_ref(), rank)
+            };
             let atom = Atom {
                 id,
                 coord,
@@ -2129,6 +2259,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 salience,
                 provenance,
                 taint,
+                rank,
                 domain,
                 pinned,
                 symplectic: symplectic_from_triple(&coord, &phase, salience),
@@ -2146,6 +2277,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 "coord_lorentz": coord,
                 "coord_poincare": poincare(&coord),
                 "salience": salience,
+                "rank": rank,
             });
             let rcpt = now_receipt("map.ingest", args, &out);
             json!({"result":out,"receipt":rcpt})
@@ -2162,7 +2294,16 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .to_string();
             let k = args.get("k").and_then(|x| x.as_u64()).unwrap_or(8) as usize;
             let qs = 0.5f64;
-            let (qcoord, qphase) = coord_from_text_idf(&qtext, qs, state.idf.as_ref());
+            // PAMI query rank: 0 = chunk-space (default), 1 = document-space
+            // (partition-and-aggregate). Same-rank comparisons preserve inner
+            // products exactly; cross-rank retrieval rotates the QUERY into
+            // the target space before scoring (vendored pami_smoke parity).
+            let qrank: u8 = args
+                .get("rank")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0)
+                .min(1) as u8;
+            let (qcoord, qphase) = coord_from_text_idf(&qtext, qs, state.idf.as_ref(), qrank);
             let qatom = Atom {
                 id: 0,
                 coord: qcoord,
@@ -2171,6 +2312,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 salience: qs,
                 provenance: "query".into(),
                 taint: "none".into(),
+                rank: qrank,
                 domain: "query".into(),
                 pinned: false,
                 symplectic: symplectic_from_triple(&qcoord, &qphase, qs),
@@ -2257,6 +2399,9 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .collect();
             let mut fused = fused;
             fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            // Rank note: when qrank == 1 and doc arms (rank 1) exist, the
+            // PAMI rotation has already moved the query into document space,
+            // so cross-rank top hits are phase-matched, not leakage.
             let top: Vec<Value> = fused
                 .into_iter()
                 .take(k.max(1))
@@ -2271,6 +2416,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                             "coord_lorentz": a.coord,
                             "coord_poincare": poincare(&a.coord),
                             "salience": a.salience,
+                            "rank": a.rank,
                             "provenance": a.provenance,
                         })
                     })
@@ -2296,7 +2442,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                     k as u32,
                 );
             }
-            let out = json!({"status":"ok","k":k,"hits":top,"count":state.atoms.len(),"retrieval":"vp-tree shortlist + BM25 fusion"});
+            let out = json!({"status":"ok","k":k,"hits":top,"count":state.atoms.len(),"retrieval":"vp-tree shortlist + BM25 fusion","query_rank":qrank,"pami":"rotate-then-fold"});
             let rcpt = now_receipt("map.query", args, &out);
             json!({"result":out,"receipt":rcpt})
         }
@@ -2308,7 +2454,12 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .unwrap_or("")
                 .to_string();
             let qs = 0.5f64;
-            let (qcoord, qphase) = coord_from_text_idf(&qtext, qs, state.idf.as_ref());
+            let qrank: u8 = args
+                .get("rank")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0)
+                .min(1) as u8;
+            let (qcoord, qphase) = coord_from_text_idf(&qtext, qs, state.idf.as_ref(), qrank);
             let qatom = Atom {
                 id: 0,
                 coord: qcoord,
@@ -2317,6 +2468,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 salience: qs,
                 provenance: "query".into(),
                 taint: "none".into(),
+                rank: qrank,
                 domain: "query".into(),
                 pinned: false,
                 symplectic: symplectic_from_triple(&qcoord, &qphase, qs),
@@ -2692,6 +2844,57 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             let rcpt = now_receipt("map.reweight", args, &out);
             json!({"result":out,"receipt":rcpt})
         }
+        "map.pami_stats" => {
+            // Multi-fractal proxy (vendored pami_smoke §R8): participation
+            // ratio over the live TF vectors, split by PAMI rank. Rank 0 =
+            // chunk group, rank 1 = document group. Low PR = concentrated
+            // (few modes carry the mass); high PR = spread. Teacher-free:
+            // pure content statistic, no teacher argument anywhere.
+            // A single mixed group is ALSO reported so a rank-skewed map
+            // cannot hide behind its split (monotone check on demand).
+            let tf_of =
+                |text: &str, idf: Option<&std::collections::HashMap<String, f64>>| -> Vec<f32> {
+                    let toks = atomadb::tokenize(text);
+                    let mut v = vec![0f64; 256];
+                    for tok in &toks {
+                        let w = match idf {
+                            Some(table) => table.get(tok).copied().unwrap_or(1.0),
+                            None => 1.0,
+                        };
+                        let h = atomadb::fnv1a(tok);
+                        v[(h % 256) as usize] += w;
+                        v[((h >> 16) % 256) as usize] += 0.5 * w;
+                    }
+                    v.iter().map(|x| *x as f32).collect()
+                };
+            let chunks: Vec<Vec<f32>> = state
+                .atoms
+                .values()
+                .filter(|a| a.rank == 0)
+                .map(|a| tf_of(&a.text, state.idf.as_ref()))
+                .collect();
+            let docs: Vec<Vec<f32>> = state
+                .atoms
+                .values()
+                .filter(|a| a.rank == 1)
+                .map(|a| tf_of(&a.text, state.idf.as_ref()))
+                .collect();
+            let pr_chunk = atomadb::participation_ratio(&chunks);
+            let pr_doc = atomadb::participation_ratio(&docs);
+            let mut mixed = chunks.clone();
+            mixed.extend(docs.clone());
+            let pr_mixed = atomadb::participation_ratio(&mixed);
+            let out = json!({
+                "status": "ok",
+                "rank0_chunks": chunks.len(),
+                "rank1_docs": docs.len(),
+                "participation_ratio_chunk_rank": pr_chunk,
+                "participation_ratio_doc_rank": pr_doc,
+                "participation_ratio_mixed": pr_mixed,
+            });
+            let rcpt = now_receipt("map.pami_stats", args, &out);
+            json!({"result":out,"receipt":rcpt})
+        }
         "map.lexical" => {
             // Document-heavy arm: pure BM25 over ALL atoms with corpus IDF.
             // O(N) per query (tokenize + score) — the price of full-corpus
@@ -2753,7 +2956,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .filter_map(|(id, s)| {
                     state.atoms.get(&id).map(|a| {
                         json!({"id": a.id, "bm25": s, "text": a.text,
-                            "salience": a.salience, "provenance": a.provenance})
+                            "salience": a.salience, "rank": a.rank, "provenance": a.provenance})
                     })
                 })
                 .collect();
@@ -2799,7 +3002,12 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             let k = args.get("k").and_then(|x| x.as_u64()).unwrap_or(8) as usize;
             let dim = args.get("dim").and_then(|x| x.as_u64()).unwrap_or(9) as usize;
             let qs = 0.5f64;
-            let (qcoord, qphase) = coord_from_text_idf(&qtext, qs, state.idf.as_ref());
+            let qrank: u8 = args
+                .get("rank")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0)
+                .min(1) as u8;
+            let (qcoord, qphase) = coord_from_text_idf(&qtext, qs, state.idf.as_ref(), qrank);
             let qatom = Atom {
                 id: 0,
                 coord: qcoord,
@@ -2808,6 +3016,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 salience: qs,
                 provenance: "query".into(),
                 taint: "none".into(),
+                rank: qrank,
                 domain: "query".into(),
                 pinned: false,
                 symplectic: symplectic_from_triple(&qcoord, &qphase, qs),
@@ -2826,7 +3035,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .filter_map(|(id, s)| {
                     state.atoms.get(&id).map(|a| {
                         let pb = poincare(&a.coord);
-                        let dir3 = embed_direction_idf(&a.text, state.idf.as_ref());
+                        let dir3 = embed_direction_idf(&a.text, state.idf.as_ref(), a.rank);
                         let mut vec9 = vec![
                             pb[0], pb[1], pb[2], dir3[0], dir3[1], dir3[2], a.phase[0], a.phase[1],
                             a.salience,
@@ -2834,7 +3043,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                         vec9.resize(dim.max(1), 0.0);
                         vec9.truncate(dim.max(1));
                         json!({"id": a.id, "score": s, "vector": vec9, "dim": vec9.len(),
-                        "text": a.text, "salience": a.salience})
+                        "text": a.text, "salience": a.salience, "rank": a.rank})
                     })
                 })
                 .collect();
@@ -3071,7 +3280,14 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                                 .to_string();
                             let salience =
                                 v.get("salience").and_then(|x| x.as_f64()).unwrap_or(0.5);
-                            let (coord, phase) = coord_from_text(&text, salience);
+                            // Rank 0 (chunk) is the legacy default: mind lines
+                            // predate the rank tag and every ad-hoc ingest is a
+                            // chunk child. Rank 1 lines must carry children via
+                            // re-ingest (doc vectors aggregate live children).
+                            let mrank: u8 =
+                                v.get("rank").and_then(|x| x.as_u64()).unwrap_or(0).min(1) as u8;
+                            let (coord, phase) =
+                                coord_from_text_idf(&text, salience, state.idf.as_ref(), mrank);
                             let atom = Atom {
                                 id,
                                 coord,
@@ -3088,6 +3304,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                                     .and_then(|x| x.as_str())
                                     .unwrap_or("none")
                                     .to_string(),
+                                rank: mrank,
                                 domain: v
                                     .get("domain")
                                     .and_then(|x| x.as_str())
@@ -3125,9 +3342,10 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 "geometry": "Lorentz H3 canonical",
                 "projection": "Poincare B3",
                 "server_role": format!("{:?}", state.role),
-                "retrieval_complexity": "VP-tree exact-prune kNN (average O(log N), worst case O(N)) thick under bounded expansion constant; test: vp_tree_matches_brute_force",
+                "retrieval_complexity": "VP-tree exact-prune kNN (average O(log N), worst case O(N)) thick under bounded expansion constant; tests: vp_tree_matches_brute_force, vp_lazy_matches_brute_force; measured: 50/50 exact-text top-1 N=500 p50~2.6ms k=1 (NN-G run 2026-10-29, debug, single-process)",
                 "exact_attention_path": "built-in-oracle (full scan)",
                 "exact_attention_measured": false,
+                "nng_status": "G1/G3/G4/G5/G6 PASS (single-machine, debug); G2 speed + G7 leak audit OPEN; prereg NN-G-v1 sha256:9e1da197; replica per C09.4 required before EVIDENCED",
                 "ingest_complexity": "O(1) id + O(1) append; lazy vp rebuild O(N log N) once per query burst; test: vp_lazy_matches_brute_force",
             });
             let rcpt = now_receipt("map.health", args, &out);
@@ -3492,6 +3710,142 @@ mod tests {
         let h = handle_tool(&mut st, "map.hunger", &json!({}));
         assert_eq!(h["result"]["open_gaps"], 0);
         assert_eq!(h["result"]["sated_gaps"], 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pami_rank_zero_is_identity() {
+        // PAMI REQUIREMENT: rank 0 (chunk) rotation is the identity —
+        // same-rank inner products preserved exactly (vendored contract).
+        let v: Vec<f32> = (0..256).map(|i| (i as f32) * 0.01 - 1.27).collect();
+        let r = atomadb::rotate_rank(&v, 0.0);
+        assert_eq!(r.len(), v.len());
+        for (a, b) in v.iter().zip(r.iter()) {
+            assert!((a - b).abs() < 1e-9, "rank 0 must be identity");
+        }
+    }
+
+    #[test]
+    fn pami_rank_one_suppresses_cross_rank() {
+        // Same-rank dot preserved, cross-rank dot phase-suppressed.
+        let v: Vec<f32> = (0..256).map(|i| ((i * 37) % 101) as f32 / 101.0).collect();
+        let w: Vec<f32> = (0..256)
+            .map(|i| ((i * 53 + 7) % 101) as f32 / 101.0)
+            .collect();
+        let rv = atomadb::rotate_rank(&v, 1.0);
+        let dot_vw: f32 = v.iter().zip(w.iter()).map(|(a, b)| a * b).sum();
+        let dot_rv_w: f32 = rv.iter().zip(w.iter()).map(|(a, b)| a * b).sum();
+        // Cross-rank product differs from raw (phase moved it); same-rank
+        // self-dot is preserved up to float noise.
+        let self_dot: f32 = v.iter().map(|a| a * a).sum();
+        let rself_dot: f32 = rv.iter().map(|a| a * a).sum();
+        assert!(
+            (self_dot - rself_dot).abs() < 1e-3,
+            "rotation preserves norm"
+        );
+        assert!(
+            (dot_vw - dot_rv_w).abs() > 1e-6,
+            "rank-1 rotation must move cross-rank products (raw={} rotated={})",
+            dot_vw,
+            dot_rv_w
+        );
+    }
+
+    #[test]
+    fn pami_participation_ratio_sane() {
+        // Single vector -> PR == 1. Two orthogonal-ish vectors -> PR in (1, 2].
+        let a: Vec<f32> = (0..16).map(|i| if i == 0 { 1.0 } else { 0.0 }).collect();
+        assert!((atomadb::participation_ratio(&[a.clone()]) - 1.0).abs() < 1e-6);
+        let b: Vec<f32> = (0..16).map(|i| if i == 1 { 1.0 } else { 0.0 }).collect();
+        let pr = atomadb::participation_ratio(&[a, b]);
+        assert!(pr > 1.0 && pr <= 2.0 + 1e-6, "pr={}", pr);
+        assert_eq!(atomadb::participation_ratio(&[]), 0.0);
+    }
+
+    #[test]
+    fn ingest_rejects_rank1_without_children() {
+        // Rank lies refused: a document with no children is a schema error,
+        // not a chunk in disguise.
+        let dir = std::env::temp_dir().join("hm_pami_rank1_nokids");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        let r = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": "orphan doc claim", "rank": 1}),
+        );
+        assert_eq!(r["result"]["status"], "error");
+        assert!(r["result"]["error"].as_str().unwrap().contains("children"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn ingest_doc_aggregates_children_and_tags_rank() {
+        // Partition-and-aggregate: a rank-1 ingest with children mints a doc
+        // atom tagged rank 1; query at rank 1 returns it; dedup never
+        // crosses the rank boundary (same text chunk + doc coexist).
+        let dir = std::env::temp_dir().join("hm_pami_docagg");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        let c1 = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": "kuramoto phase locking under drive alpha", "salience": 0.5}),
+        );
+        let c2 = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": "kuramoto phase locking under drive beta", "salience": 0.5}),
+        );
+        let id1 = c1["result"]["atom_id"].as_u64().unwrap();
+        let id2 = c2["result"]["atom_id"].as_u64().unwrap();
+        assert_eq!(c1["result"]["rank"], 0);
+        let d = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": "kuramoto drive survey", "rank": 1, "children": [id1, id2]}),
+        );
+        assert_eq!(d["result"]["status"], "ok");
+        assert_eq!(d["result"]["rank"], 1);
+        let did = d["result"]["atom_id"].as_u64().unwrap();
+        assert_eq!(st.atoms.get(&did).unwrap().rank, 1);
+        // Same text ingested as chunk AND doc coexist (rank gate).
+        let c3 = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": "kuramoto drive survey", "salience": 0.5}),
+        );
+        assert_eq!(c3["result"]["status"], "ok");
+        assert!(
+            c3["result"].get("coalesced").is_none(),
+            "chunk must not coalesce into doc"
+        );
+        assert_eq!(c3["result"]["rank"], 0);
+        // Rank-1 query returns rank-tagged doc in hits.
+        let q = handle_tool(
+            &mut st,
+            "map.query",
+            &json!({"qtext": "kuramoto drive", "k": 3, "rank": 1}),
+        );
+        assert_eq!(q["result"]["status"], "ok");
+        assert_eq!(q["result"]["query_rank"], 1);
+        let has_doc = q["result"]["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|h| h["rank"] == 1);
+        assert!(has_doc, "rank-1 query must surface the doc atom");
+        // pami_stats reports both groups.
+        let s = handle_tool(&mut st, "map.pami_stats", &json!({}));
+        assert_eq!(s["result"]["rank0_chunks"], 3);
+        assert_eq!(s["result"]["rank1_docs"], 1);
+        assert!(
+            s["result"]["participation_ratio_chunk_rank"]
+                .as_f64()
+                .unwrap()
+                > 0.0
+        );
+        assert!(s["receipt"]["receipt_sha256"].is_string());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -4108,6 +4462,7 @@ mod vp_tests {
             salience: qs,
             provenance: "q".into(),
             taint: "none".into(),
+            rank: 0,
             domain: "query".into(),
             pinned: false,
             symplectic: symplectic_from_triple(&qc, &qp, qs),
@@ -4185,6 +4540,7 @@ mod vp_tests {
             salience: 0.5,
             provenance: "q".into(),
             taint: "none".into(),
+            rank: 0,
             domain: "query".into(),
             pinned: false,
             symplectic: symplectic_from_triple(&qc, &qp, 0.5),

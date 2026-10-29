@@ -107,24 +107,50 @@ impl GovernedLibrary {
     }
 }
 
+/// Outcome of one real probe of a bundle: pass rate over judge-gated tasks.
+/// quality is a MEASURED pass rate (0..1), never a word heuristic.
 #[derive(Clone, Debug)]
 pub struct ProbeResult {
     pub bundle: Bundle,
-    pub quality: f64, // synthetic score 0..1
+    pub quality: f64, // measured probe pass rate 0..1
+    pub tokens: u64,  // measured model tokens for this probe
+    pub energy_j: f64,
+    pub passes: usize, // tasks passed
+    pub total: usize,  // tasks probed
+    pub judge_ids: Vec<String>,
+}
+
+/// Per-proposal ledger row for PpcMetrics: what was probed and what it cost.
+#[derive(Clone, Debug)]
+pub struct ProposalRecord {
+    pub fingerprint: String, // Bundle::fingerprint()
+    pub version: u32,
+    pub passes: usize,
+    pub total: usize,
+    pub quality: f64,
     pub tokens: u64,
     pub energy_j: f64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PpcMetrics {
     pub k: usize,
     pub rollouts: usize,
     pub sessions: usize,
     pub adopted_version: u32,
+    pub adopted_fingerprint: String,
     pub kept_base: bool,
     pub quality_gain: f64,
     pub energy_spent_j: f64,
     pub abstained: bool,
+    /// One row per unique (deduped) proposal actually probed.
+    pub proposals: Vec<ProposalRecord>,
+    /// Judge ids backing the adoption decision (deterministic judges).
+    pub judge_ids: Vec<String>,
+    /// (regulator, passed) ledger: leakage, noise_band, security_floor, pareto.
+    pub regulators: Vec<(String, bool)>,
+    /// true iff every quality number in this run came from probe_fn.
+    pub real_probe: bool,
 }
 
 pub struct ProposeProbeCompose {
@@ -136,8 +162,18 @@ impl ProposeProbeCompose {
         Self { k: k.max(1) }
     }
 
+    /// SYNTHETIC FALLBACK ONLY — never an adoption signal.
+    /// Labelling (per HARDWARE-GATE-RUNBOOK.md): word-count heuristic kept so
+    /// legacy tests compile and the failure mode stays visible; run() ignores
+    /// it whenever a probe_fn is supplied. Any quality claim from score() is
+    /// scaffolding, not a measurement.
+    #[allow(dead_code)]
+    pub fn synthetic_fallback_score(bundle: &Bundle) -> f64 {
+        Self::score(bundle)
+    }
+
     /// Synthetic quality model: more matching "improve" markers => higher quality.
-    /// This is PROPOSED scaffolding; replace with real model execution in Phase 1.
+    /// FALLBACK ONLY (see synthetic_fallback_score). Kept private to new code.
     fn score(bundle: &Bundle) -> f64 {
         let mut s = 0.5;
         for c in &bundle.components {
@@ -165,70 +201,177 @@ impl ProposeProbeCompose {
         }
     }
 
-    /// Run PPC once: propose INV/DOM candidates, probe, compose k finals, select.
+    /// Run PPC once with a REAL probe function.
+    ///
+    /// probe_fn(bundle) -> (passes, total, tokens, judge_ids): quality is
+    /// passes/total from deterministic last-number judges over probe tasks.
+    ///
+    /// Fixed-PPC order (HARDWARE-GATE-RUNBOOK.md):
+    /// 1. propose k INV + k DOM; 2. dedup by fingerprint (base pinned first);
+    /// 3. probe each unique proposal IFF the budget affords it (no record for
+    ///    an unaffordable probe); 4. adopt via leakage_critic + 0.02 noise
+    ///    band + regularized_adopt with KEEP_BASE the default.
     /// Returns (adopted_bundle, metrics). Base is retained as KEEP_BASE candidate.
-    pub fn run(
+    pub fn run<F>(
         &self,
         base: &Bundle,
         budget: &mut crate::energy::EnergyBudget,
-    ) -> (Bundle, PpcMetrics) {
+        probe_fn: F,
+    ) -> (Bundle, PpcMetrics)
+    where
+        F: Fn(&Bundle) -> (usize, usize, u64, Vec<String>),
+    {
         let k = self.k;
-        let mut proposals: Vec<Bundle> = vec![base.clone()]; // base included for abstention
-        let _finals: Vec<Bundle> = vec![];
+        let base_fp = base.fingerprint();
 
-        // proposal session count: k INV + k DOM
+        // 1. propose k INV + k DOM, base pinned for abstention.
+        let mut proposals: Vec<Bundle> = vec![base.clone()];
         for _ in 0..k {
-            let inv = base.apply(&self.propose_inv(base));
-            let dom = base.apply(&self.propose_dom(base));
-            proposals.push(inv);
-            proposals.push(dom);
+            proposals.push(base.apply(&self.propose_inv(base)));
+            proposals.push(base.apply(&self.propose_dom(base)));
         }
 
-        // probe all (synthetic) and charge energy
-        let mut probed: Vec<ProbeResult> = vec![];
-        for b in &proposals {
-            let q = Self::score(b);
-            let tokens = 800u64;
-            let energy = tokens as f64 * 0.0005; // surrogate J
-            if budget.can_afford(energy) {
-                budget.charge(energy, tokens * 4);
+        // 2. dedup by fingerprint BEFORE probing (base keeps slot 0).
+        let mut seen = std::collections::HashSet::new();
+        let mut unique: Vec<Bundle> = vec![];
+        for b in proposals {
+            let fp = b.fingerprint();
+            if seen.insert(fp) {
+                unique.push(b);
             }
+        }
+
+        // 3. probe each unique proposal; skip (do not record) unaffordable ones.
+        let mut probed: Vec<ProbeResult> = vec![];
+        for b in &unique {
+            let fp = b.fingerprint();
+            // Measured-cost estimate for the affordability check: the probe
+            // itself is the cost; use the surrogate J/token from the energy
+            // ledger (0.0005 J/token) on a 800-token estimate. A proposal that
+            // cannot be afforded is NOT probed and NOT recorded.
+            let est_energy = 800.0 * 0.0005;
+            if !budget.can_afford(est_energy) {
+                continue;
+            }
+            let (passes, total, tokens, judge_ids) = probe_fn(b);
+            let quality = if total == 0 {
+                0.0
+            } else {
+                passes as f64 / total as f64
+            };
+            let energy = tokens as f64 * 0.0005; // surrogate J
+            budget.charge(energy, tokens * 4);
             probed.push(ProbeResult {
                 bundle: b.clone(),
-                quality: q,
+                quality,
                 tokens,
                 energy_j: energy,
+                passes,
+                total,
+                judge_ids,
             });
+            let _ = fp;
         }
 
-        // compose finals: k compositions = top candidate-ish (here just best probed)
-        let mut best_q = 0.0;
-        let mut best_bundle = base.clone();
+        // Base quality = its measured probe (KEEP_BASE competes on real signal).
+        let base_q = probed
+            .iter()
+            .find(|p| p.bundle.fingerprint() == base_fp)
+            .map(|p| p.quality)
+            .unwrap_or(0.0);
+        let base_tokens = probed
+            .iter()
+            .find(|p| p.bundle.fingerprint() == base_fp)
+            .map(|p| p.tokens)
+            .unwrap_or(0);
+        let _ = base_tokens;
+
+        // 4. adopt: best measured candidate via all regulators; KEEP_BASE default.
+        let mut best: Option<&ProbeResult> = None;
         for p in &probed {
-            if p.quality > best_q {
-                best_q = p.quality;
-                best_bundle = p.bundle.clone();
+            if p.bundle.fingerprint() == base_fp {
+                continue;
+            }
+            match best {
+                None => best = Some(p),
+                Some(b) if p.quality > b.quality => best = Some(p),
+                _ => {}
             }
         }
-        // KEEP_BASE / abstention: only adopt if best beats base by margin
-        let base_q = Self::score(base);
-        let kept_base = best_q <= base_q + 0.01;
-        let adopted = if kept_base {
-            base.clone()
+        // Security proxy for regularized_adopt: bundle text carries no gate
+        // relaxation signal in this port, so candidate_security == base_security
+        // (floor binds only on real relaxations); leakage/noise/pareto decide.
+        let mut adopted = base.clone();
+        let mut kept_base = true;
+        let mut regulators: Vec<(String, bool)> = vec![];
+        let mut judge_ids: Vec<String> = vec![];
+        if let Some(cand) = best {
+            let (adopt, reasons) = crate::evolution::regularized_adopt(
+                cand.quality,
+                base_q,
+                &cand.bundle,
+                1.0,  // candidate_security: no gate relaxation in prompt text
+                1.0,  // base_security
+                0.02, // noise band: 2pp (runbook)
+            );
+            let reason_str = reasons.join("; ");
+            regulators.push(("leakage_critic".into(), !reason_str.contains("leakage")));
+            regulators.push(("noise_band_0.02".into(), !reason_str.contains("noise band")));
+            regulators.push((
+                "security_floor".into(),
+                !reason_str.contains("security floor"),
+            ));
+            regulators.push(("pareto_frontier".into(), !reason_str.contains("pareto")));
+            judge_ids = cand.judge_ids.clone();
+            if adopt {
+                adopted = cand.bundle.clone();
+                kept_base = false;
+            }
         } else {
-            best_bundle.clone()
-        };
+            // No affordable non-base candidate: regulators trivially pass,
+            // KEEP_BASE by default (no evidence to adopt).
+            for name in [
+                "leakage_critic",
+                "noise_band_0.02",
+                "security_floor",
+                "pareto_frontier",
+            ] {
+                regulators.push((name.into(), true));
+            }
+        }
         let abstained = kept_base;
 
+        let proposals: Vec<ProposalRecord> = probed
+            .iter()
+            .map(|p| ProposalRecord {
+                fingerprint: p.bundle.fingerprint(),
+                version: p.bundle.version,
+                passes: p.passes,
+                total: p.total,
+                quality: p.quality,
+                tokens: p.tokens,
+                energy_j: p.energy_j,
+            })
+            .collect();
         let metrics = PpcMetrics {
             k,
             rollouts: 4 * k, // Harness² accounting
             sessions: 3 * k,
             adopted_version: adopted.version,
+            adopted_fingerprint: adopted.fingerprint(),
             kept_base,
-            quality_gain: Self::score(&adopted) - base_q,
+            quality_gain: probed
+                .iter()
+                .find(|p| p.bundle.fingerprint() == adopted.fingerprint())
+                .map(|p| p.quality)
+                .unwrap_or(base_q)
+                - base_q,
             energy_spent_j: probed.iter().map(|p| p.energy_j).sum(),
             abstained,
+            proposals,
+            judge_ids,
+            regulators,
+            real_probe: true,
         };
 
         (adopted, metrics)
