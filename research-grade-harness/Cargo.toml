@@ -8,16 +8,25 @@ authors = ["MetaSuperIntelligenceLabs"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 thiserror = "1.0"
+# NOTE (last pass): serde_json REMOVED. No JSON anywhere in this crate —
+# receipts, plans, packets, session events are native Rust structs.
+# Serialization boundary (if ever needed) is bincode, never JSON.
 sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
 clap = { version = "4.5", features = ["derive"] }
 
+[build-dependencies]
+cc = "1.0"
+
 [[bin]]
 name = "rgah"
 path = "src/main.rs"
+
+[[bench]]
+name = "smoke"
+harness = false
 
 [profile.release]
 opt-level = 3

@@ -1,5 +1,6 @@
-//! Items 3/4/5: session log, live evaluator, plugins, calibration,
-//! RAG, lanes, evolution. Every claim has a passing gate.
+//! Items 3/4/5 + last pass: session log, live evaluator, plugins,
+//! calibration, RAG, lanes, evolution, FEP bound, research gate,
+//! dynamic self-recursive optimization. Every claim has a passing gate.
 use rgah::{
     calibration::{QualityReading, QualitySource, WattCalibration, twin_fingerprint_check},
     evaluator::{EvalVerdict, GeneratedApp, LiveCheck, LiveEvaluator, SprintContract},
@@ -7,9 +8,12 @@ use rgah::{
         ParetoPoint, leakage_critic, noise_band_accept, pareto_frontier, prune_dominated,
         regularized_adopt,
     },
+    fep::{FreeEnergyTerms, SessionBound, precision_update},
+    gate::{InformationNeed, ResearchRecord, dynamic_iteration_directive, research_gate},
     lanes::{ContributorLaneMuse, DualLaneRun, LaneVerdict, NativeLane, TaskPacket},
     plugins::{PluginRegistry, PluginSpec},
     rag::{MockMap, RealVector, rag_coverage},
+    recursive::{SubsystemScore, mandate_iteration, optimize_cycle, rank_subsystems},
     session::{SessionEventKind, SessionLog},
 };
 
@@ -229,6 +233,122 @@ fn evolution_never_buys_pass_with_gate_relax() {
     // Genuine win on both axes adopts.
     let (adopt2, _) = regularized_adopt(0.75, 0.60, &Bundle::base(), 0.95, 0.9, 0.02);
     assert!(adopt2);
+    // FEP bound: complexity + inaccuracy + beta*dissipation, and it descends.
+    let t = FreeEnergyTerms::new(0.5, 0.3, 1e-21);
+    assert!((t.bound() - 0.8).abs() < 1e-9);
+    let mut sb = SessionBound::new();
+    let s1 = FreeEnergyTerms::new(0.5, 0.4, 0.0);
+    let s2 = FreeEnergyTerms::new(0.2, 0.1, 0.0);
+    assert!(
+        s2.bound() < s1.bound(),
+        "descent must reduce the step bound"
+    );
+    sb.descend(s1);
+    let total = sb.descend(s2);
+    assert!(
+        (total - (0.9 + 0.3)).abs() < 1e-9,
+        "total accumulates steps"
+    );
+    let (c, i, d) = sb.audit();
+    assert!((c - 0.7).abs() < 1e-9 && (i - 0.5).abs() < 1e-9 && d.abs() < 1e-12);
+    // Precision update: confident-wrong moves beliefs far.
+    let (post, terms) = precision_update(0.9, 5.0, false);
+    assert!(post < 0.9 && terms.complexity_nats > 1.0);
+    let (post2, _) = precision_update(0.9, 0.1, false);
+    assert!(
+        (post2 - 0.9).abs() < (post - 0.9).abs(),
+        "low precision shrugs"
+    );
+    // Iteration trigger: flat then spike requires iteration.
+    let mut sb2 = SessionBound::new();
+    for _ in 0..5 {
+        sb2.descend(FreeEnergyTerms::new(0.1, 0.1, 0.0));
+    }
+    assert!(!sb2.requires_iteration(2.0));
+    sb2.descend(FreeEnergyTerms::new(5.0, 5.0, 0.0));
+    assert!(sb2.requires_iteration(2.0));
+    // Research gate: no planning in log -> refuse with named reason.
+    let log = SessionLog::new("s-g");
+    let need = InformationNeed {
+        packet_id: "p".into(),
+        required_terms: vec!["x".into()],
+        min_depth: 1,
+    };
+    assert!(research_gate(&log, &need, &[], 0.8).is_err());
+    // Planning logged but no research record -> refuse, names the packet.
+    let mut log2 = SessionLog::new("s-g2");
+    log2.append("wf", SessionEventKind::ContextInject, "{}", 1);
+    let err = research_gate(&log2, &need, &[], 0.8).unwrap_err();
+    assert!(err.iter().any(|e| e.contains('p')));
+    // Satisfied need passes.
+    let rec = ResearchRecord {
+        packet_id: "p".into(),
+        covered_terms: vec!["x".into()],
+        depth_reached: 2,
+        rag_coverage: 0.9,
+    };
+    assert!(research_gate(&log2, &need, &[rec], 0.8).is_ok());
+    // Dynamic iteration: spike + no answer mandates planning, never retry.
+    assert!(mandate_iteration("p", &sb2, false).is_some());
+    assert!(mandate_iteration("p", &sb2, true).is_none());
+    assert!(dynamic_iteration_directive("p", true, false).is_some());
+    assert!(dynamic_iteration_directive("p", false, false).is_none());
+    // Recursive optimizer: worst-first, never cherry-picked.
+    let scores = vec![
+        SubsystemScore {
+            name: "retrieval",
+            bound: 0.9,
+            improvable: true,
+        },
+        SubsystemScore {
+            name: "judge",
+            bound: 0.2,
+            improvable: true,
+        },
+        SubsystemScore {
+            name: "ledger",
+            bound: 1.5,
+            improvable: false,
+        },
+    ];
+    let ranked = rank_subsystems(&scores);
+    assert_eq!(ranked[0].name, "retrieval");
+    assert_eq!(ranked.len(), 2, "non-improvable excluded");
+    let mut sb3 = SessionBound::new();
+    let mut log3 = SessionLog::new("s-opt");
+    let out = optimize_cycle(
+        &mut sb3,
+        &scores,
+        &|_| FreeEnergyTerms::new(0.1, 0.1, 0.0),
+        &mut log3,
+        "wf",
+        1,
+    );
+    assert_eq!(out.unwrap().0, "retrieval");
+    assert_eq!(log3.events.len(), 1, "optimizer logs its own decision");
+    // C++ bridge audit: byte-agreement Rust vs C++ over 1k points.
+    let q = [1.5, 0.8, 0.4, 0.2];
+    let atoms: Vec<[f64; 4]> = (0..1000)
+        .map(|i| {
+            let r = 0.3 + (i as f64) * 0.002;
+            let s = [0.6 * r, 0.5 * r, 0.62 * r];
+            [
+                ((1.0 + s[0] * s[0] + s[1] * s[1] + s[2] * s[2]) as f64).sqrt(),
+                s[0],
+                s[1],
+                s[2],
+            ]
+        })
+        .collect();
+    let cpp = rgah::shell_dist_batch(&q, &atoms);
+    assert_eq!(cpp.len(), 1000);
+    let mut max_diff: f64 = 0.0;
+    for (i, a) in atoms.iter().enumerate() {
+        let rs = rgah::shell_dist_rs(&q, a);
+        max_diff = max_diff.max((cpp[i] - rs).abs());
+    }
+    assert!(max_diff < 1e-12, "C++ disagrees with Rust: {}", max_diff);
+    assert_eq!(rgah::bridge_version(), 1);
     // Pareto frontier shape.
     let f = pareto_frontier(&[
         ParetoPoint {

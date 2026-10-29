@@ -3,12 +3,15 @@ pub mod bench;
 pub mod cache;
 pub mod calibration;
 pub mod cordis;
+pub mod cpp_bridge;
 pub mod distill_judge;
 pub mod distillation;
 pub mod energy;
 pub mod engine;
 pub mod evaluator;
 pub mod evolution;
+pub mod fep;
+pub mod gate;
 pub mod hear;
 pub mod judge;
 pub mod lanes;
@@ -17,6 +20,7 @@ pub mod plugins;
 pub mod policy_kernel;
 pub mod rag;
 pub mod receipt;
+pub mod recursive;
 pub mod register;
 pub mod rsi;
 pub mod runbook;
@@ -32,6 +36,7 @@ pub use calibration::{
     twin_fingerprint_check,
 };
 pub use cordis::{Coeffect, Component, HmrGate, ReversibleEffect};
+pub use cpp_bridge::{bridge_version, shell_dist_batch, shell_dist_rs};
 pub use distill_judge::{
     DistillationJudge, DistillationJudgeResult, DistillationJudgeVerdict, DistillationRun,
     RoleCounts,
@@ -46,6 +51,8 @@ pub use evolution::{
     ParetoPoint, leakage_critic, noise_band_accept, pareto_frontier, prune_dominated,
     regularized_adopt,
 };
+pub use fep::{FreeEnergyTerms, SessionBound, precision_update};
+pub use gate::{InformationNeed, ResearchRecord, dynamic_iteration_directive, research_gate};
 pub use hear::{CoordinationDecision, EngineRuntimeState, HearCoordinator, WorkflowIntent};
 pub use judge::{Judge, JudgeKind, JudgeOutcome, JudgeResult};
 pub use lanes::{
@@ -57,6 +64,9 @@ pub use plugins::{PluginReceipt, PluginRegistry, PluginSpec};
 pub use policy_kernel::FrozenPolicyKernel;
 pub use rag::{MockMap, RagQuery, RealVector, rag_coverage};
 pub use receipt::{Receipt, ReceiptLog};
+pub use recursive::{
+    IterationMandate, SubsystemScore, mandate_iteration, optimize_cycle, rank_subsystems,
+};
 pub use register::{HypothesisRegister, ProbePlan, rank_probes};
 pub use rsi::{Bundle, BundleDelta, GovernedLibrary, LibraryEntry, ProposeProbeCompose};
 pub use runbook::{JudgeRef, Packet, PacketStatus, Plan, ToolCall};

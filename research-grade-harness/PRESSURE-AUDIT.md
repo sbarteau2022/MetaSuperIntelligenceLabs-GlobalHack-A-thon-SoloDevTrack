@@ -73,4 +73,42 @@ RG-AH shows lowest tokens/energy/erasure among synthetic runs. **Label PROPOSED*
 | Full T2 parallel-branch + T3/T4 doctrine paths                  | branch/merge executor coverage beyond tested sequential path (owner: build)   |
 | Fixed-point decay fuzz + eviction-leaf property                 | fuzz harness (owner: build)                                                   |
 
-**Single next command to re-verify:** `cargo test` in `research-grade-harness/` (16/16 expected).
+**Single next command to re-verify:** `cargo test` in `research-grade-harness/` (34/34 expected).
+
+## Last-pass certification — 2026-10-28 (goal bd2e10fd, VERIFIED this session)
+
+**Gates run:** `cargo test` 34/34 green (10 impl + 8 build_345 + 8 impl2? see below + 1 longtask + 7 pressure);
+`cargo clippy --all-targets` 0 new warnings (pre-existing collapsible-if/sort_by_key untouched);
+`cargo fmt --check` clean; `cargo bench --bench smoke` measured (below).
+
+Breakdown: 10 unit (engine/cache/judge/rsi/aif/fpk/receipt) + 8 build_345 (items 3/4/5) +
+8 FEP/gate/recursive/C++ (last pass) + 1 longtask + 7 pressure = 34.
+
+### CERTIFIED this pass (evidence: passing gate + receipt + reproducible command)
+
+| Claim | Evidence |
+|---|---|---|
+| No JSON anywhere | `serde_json` dep REMOVED; zero uses in src/tests (grep VERIFIED); receipts are native structs |
+| No Python in crate | zero `python/subprocess` refs (only `Command` judge runner, which is tool execution, not glue) |
+| Session log (item 3) | chain/resume/fork/replay/tamper tests green; seq+workflow_id supersede mirror (timestamp/kind/data) |
+| Live evaluator (item 4) | operates-app test green; fail→sprint-continues logic tested; separate roles structural |
+| Plugins (5a) | load/unload/swap/rollback + capability-match dependent block, all green |
+| Calibration (5b) | watt steady-state gating, synthetic-vs-real labels, twin-fingerprint, HyperMap ingest receipt |
+| RAG (5c) | real-vector cosine + coverage tests green; no tf-hash in path |
+| Lanes (5d) | dual-lane agreement + attribution tests green; 501 replaced by trait |
+| Evolution (5e) | leakage/noise/prune/Pareto/security-floor tests green; gate-relax adopt fails as specified |
+| FEP bound | descend/audit/precision/spike tests green; `E[Quality] = cov × p_useful × (1-drift)` wired |
+| Research gate | no-plan/no-record/unsatisfied/satisfied + mandate paths all green |
+| C++ bridge | byte-agreement < 1e-12 over 1k points; version pinned |
+
+### MEASURED (bench, not claims)
+
+```
+hotloop N=2074 rust_scalar_us=8.6 cpp_batch_us=18.3 speedup=0.47x
+fep 1000 steps us=2.0 final_bound=216.2204
+```
+
+C++ scalar LOSES to LLVM (0.47x). Bridge stays as proven FFI infrastructure,
+not a speed claim. The real geometric win needs explicit SIMD or GPU —
+scoped, not shipped. TS 7.1-beta: NO toolchain on machine, NOTHING built;
+see TS-CLEARANCE.md for the bar (shootout or nothing).
