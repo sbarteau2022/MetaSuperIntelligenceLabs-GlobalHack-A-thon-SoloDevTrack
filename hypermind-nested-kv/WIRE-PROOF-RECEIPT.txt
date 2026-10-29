@@ -3,7 +3,7 @@ date=2026-10-29
 spec=N^3-Wiring-and-Fallbacks.md + N^3-Research-Harness-Wiring.md
 mcp=hypermind-mcp (/Users/stewartbarteau/Desktop/GitHub/MetaSuperIntelligenceLabs-GlobalHack-A-thon-SoloDevTrack/hypermind-nested-kv/target/debug/hypermind-mcp) transport=stdio single tools/call path
 sqlite=/Users/stewartbarteau/Desktop/GitHub/MetaSuperIntelligenceLabs-GlobalHack-A-thon-SoloDevTrack/hypermind-nested-kv/observability/store/wire-proof.sqlite3 events=10 integrity=ok
-merkle_roots=0 last_event_hash=a3c780c7147a8427...
+merkle_roots=0 last_event_hash=5729b5580c133a43...
 acceptance:
 accept tools/call-with-receipts=True (every response carried receipt_sha256)
 accept pami-on-rag-path=True (map.query fused + map.pami_stats participation_ratio)
