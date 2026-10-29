@@ -24,6 +24,7 @@ pub mod rag;
 pub mod receipt;
 pub mod recursive;
 pub mod register;
+pub mod registry;
 pub mod rsi;
 pub mod runbook;
 pub mod session;
