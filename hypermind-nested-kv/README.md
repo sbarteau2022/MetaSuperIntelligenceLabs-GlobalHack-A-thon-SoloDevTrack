@@ -36,6 +36,21 @@ See `PLAIN-LANGUAGE-SPEC.md` for the system in plain words,
 - **Not cleared:** geometry/traversal/judge changes, network in hot path,
   silent substitution (probe audit gates dispatch).
 
+### Edge port (DONE 2026-10-28, goal 57167b0b)
+
+- **Proven:** Rust Worker live on `:8899` (`edge-worker/`), 5/5 core tests,
+  Wasm 898KB, edition 2024. `/traverse-check` verdict MATCHES the laptop
+  oracle on the same refusal (fail-explained, over-budget).
+- **Fixes found building it:** `worker` 0.5 → 0.8 (worker-build demands
+  ≥0.8.7), `req.json()` → `req.text()`+parse (externref catch wrappers),
+  `--no-panic-recovery` (legacy bundler path, no abort-handler requirement),
+  `main: build/index.js` (not src/lib.rs), compat date ≤ 2026-08-08
+  (local workerd ceiling), `.cargo/config.toml` reference-types flags.
+- **Port path:** `core.rs` = byte-identical decision math (shell, score,
+  form, hunger priority, fusion, judge, traverse verdict). Bindings
+  (D1/Vectorize/AI) attach at routes next — math never moves again.
+- See `EDGE-MIGRATION.md` for the full D1/Vectorize/Workers-AI/R2/KV map.
+
 ### Hunger Ledger (DONE 2026-10-28, goal 134e5fbb)
 
 - **Req 1 — Rules:** `RULES-HUNGER-LEDGER.md` (H-1..H-10): ignorance is
