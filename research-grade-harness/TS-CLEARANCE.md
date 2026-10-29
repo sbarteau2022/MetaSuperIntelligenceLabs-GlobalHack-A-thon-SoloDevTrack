@@ -44,6 +44,19 @@ cd research-grade-harness && cargo bench --bench boundary  # TO BE WRITTEN with 
 # 4. Winner ships the boundary. Loser is deleted, not kept "just in case".
 ```
 
+## Re-verification (2026-10-29, VERIFIED on this Mac)
+
+- Toolchain probe: `tsc` ABSENT, `bun` ABSENT, `deno` ABSENT;
+  `node` v26.9.0, `cmake` 4.4.3, `cargo` 1.99.0 present.
+  No TS toolchain has landed; nothing TS built, measured, or committed.
+- `ablation_benchmarks/ts_frontend/src/` is empty; a `STATUS.md`
+  disposition marker now records that emptiness as PROPOSED, not as a
+  result. The boundary-race shootout above remains the only path for TS
+  to ship, and the decision core stays Rust regardless of outcome.
+- Disposition: OUT OF SCOPE for this pass. The shootout is pursued only
+  if a TS 7.1 toolchain lands AND the boundary race is explicitly
+  requested — not by default, per the standing rule.
+
 ## What was NOT done (explicit)
 
 - No TS written, no TS measured, no TS committed.

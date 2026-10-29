@@ -5,7 +5,7 @@
 ## 1. Bottom line (VERIFIED from repo)
 
 - N³ is the **nested retrieval layer** inside Atoma, not an app and not a model loop. Substrate only: deterministic, model-independent. (REPORTED — design doc §1.)
-- The single built, pressure-tested artifact is `hypermind-nested-kv` (`hypermind-nested-kv/Cargo.toml`, bin `hypermind-mcp`), certified WITH CORRECTIONS on 2026-10-27 (`HyperMindNestedKV-Certification.md`). PROPOSED gates NN-G1..G7 remain un-preregistered; retrieval is brute-force today, not VP-tree.
+- The single built, pressure-tested artifact is `hypermind-nested-kv` (`hypermind-nested-kv/Cargo.toml`, bin `hypermind-mcp`), certified WITH CORRECTIONS on 2026-10-27 (`HyperMindNestedKV-Certification.md`). PROPOSED gates NN-G1..G7 remain un-preregistered; retrieval is brute-force today, not VP-tree. [SUPERSEDED IN PART 2026-10-29 — see §9: VP-tree exact-prune kNN shipped on all query paths, NN-G prereg filed with measured run; PAMI rank tags implemented.]
 - No telemetry SQLite DB exists in the built artifact; telemetry today = per-tool `receipt` objects returned by `handle_tool` (`src/main.rs::now_receipt` usage in every `map.*` branch). The SQLite aggregator described below is PROPOSED.
 
 ## 2. Part 1 — Vetted RAG (canonical source of truth)
@@ -125,3 +125,9 @@ Binding implications (PROPOSED enforcement):
 - No build/test run was re-executed in this pass (last certified 2026-10-27); treat the certification receipt as REPORTED.
 - No code path was traced beyond tool names in `tools_list`/`handle_tool` dispatch; open the crate (`src/main.rs`) for byte-level review.
 - Gate status (NN-G1..G7) is PROPOSED and not preregistered; retrieval-speed claims are not yet validated against a flat baseline.
+
+## 9. Dated corrections — 2026-10-29 (Zed agent; corrections are entries, originals preserved above)
+
+- **§7.6 SUPERSEDED in part.** `rotate_rank` IS now called in `hypermind-nested-kv/src/main.rs` (`embed_direction_idf`, rank-parameterized since this pass): chunk embeds at rank 0 (identity — same-rank products exact), doc embeds at rank 1 (phase rotation, partition-and-aggregate over `children`). Rank tags (`rank: u8`, serde-default 0) ride the `Atom` struct, receipts, and all query/hit/euclid surfaces; `map.pami_stats` reports `participation_ratio` per rank group. What REMAINS open from §7.6: cross-rank retrieval at scale is exercised only on small fixtures (rank-1 query surfacing asserted in `ingest_doc_aggregates_children_and_tags_rank`); no large mixed-rank recall benchmark yet. The claim "does NOT call rotate_rank" is WITHDRAWN.
+- **§7.7 compile-break note WITHDRAWN.** The "FAILS TO COMPILE — 5 pre-existing errors" report does not reproduce at HEAD: `cargo test --locked` green (3 lib + 42 bin + 8 transducer, VERIFIED this session). The errors were against a tree that predates the `rank`/PAMI fields (missing-field class). Standing rule unchanged: a crate with zero tests beyond compile-time is still REPORTED as test-thin, but it COMPILES.
+- **§5 telemetry note PARTIALLY closed.** The SQLite sink exists OFFLINE (`hypermind-nested-kv/observability/`, 54/54 suite green, REPORTED) with a demonstrated replay path (`wire-proof.sqlite3`, 10 events, idempotent). The live in-server writer remains PROPOSED. `map.health` now surfaces `swarm_run_id` echo per receipt + `nng_status` (NN-G1/G3/G4/G5/G6 single-machine PASS; G2 speed + G7 leak audit OPEN).

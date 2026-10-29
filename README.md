@@ -92,7 +92,17 @@ the SQLite suite passed 54 tests. The native build reports existing unused-code
 warnings. See `research-grade-harness/HARDWARE-GATE-RUNBOOK.md` for the remaining
 real-model hardware gate; synthetic/unit fixtures do not satisfy it.
 
-Review limitation: the mission resume CLI currently accepts recognized packet IDs
-from receipt lines without validating their outcome/evidence; do not treat that
-resume path as verified acceptance. This publication preserves the local code
-as requested rather than silently altering its behavior.
+Review limitation (2026-10-26): the mission resume CLI accepted recognized packet IDs
+from receipt lines without validating their outcome/evidence; that resume path was
+not verified acceptance. Corrected 2026-10-29: `rgah resume` now trusts only
+`receipt packet=<id> ... outcome=PASS` lines for packets in the mission (bare ids,
+summary lines, and non-PASS outcomes are ignored and counted on stderr), and the
+`resume --help` text states the path is operator convenience, not acceptance proof.
+Corrections are entries, not edits: the 2026-10-26 limitation above stands as the
+record of what was shipped; the 2026-10-29 fix changes behavior going forward.
+
+FW-A1-CUDA result status (2026-10-29): `ablation_results/FW-A1-CUDA/` holds only a
+`STATUS.md` disposition marker — no `claim.json`, no judge ratios, no CUDA execution
+(DRAFT pre-reg, no filed hash; CUDA absent on this Mac). Scaffold trees
+`ablation_benchmarks/{cf_workers,go_wasm,metal_rust,ts_frontend,zig}/src/` are empty;
+`ts_frontend` has no code pending the TS 7.1 shootout per `TS-CLEARANCE.md`.

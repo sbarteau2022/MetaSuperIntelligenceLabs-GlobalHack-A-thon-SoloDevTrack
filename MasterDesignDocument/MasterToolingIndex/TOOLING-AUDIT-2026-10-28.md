@@ -61,3 +61,9 @@ Custom-named operators (TOOL-03._–TOOL-07._) are **design-level slots**, not i
 **Tool count summary.** Certified slots: 35. Installed PATH commands: 1900. Combined audit tool surface: 1935 (≥ 100 target met). See `INSTALLED-TOOL-CENSUS-2026-10-28.md`.
 
 **Result:** tooling is **audit-ready as documentation**; it is **not execution-ready** on this machine for SKL-01/SKL-02 profiling extras. No claim of executable behavior is made.
+
+## Addendum 2026-10-29 (Zed agent; corrections are entries, originals preserved above)
+
+- **C05.1 CLOSED.** A36/A37 section hashes filed in `PreRegistrations/PRE-REGISTRATION-A11-A35.md` (A36 `sha256:480a3943…`, A37 `sha256:75e4446e…`, computed over section texts 2026-10-29) + `PreRegistrations/README.md` status flipped to YES. Full condition table with 5 CLOSED / 14 OWNED / 2 BLOCKED lives in `TOOLING-CONDITIONS-DISPOSITION-2026-10-29.md` (same folder). No record promoted to EVIDENCED.
+- **Toolchain re-probe 2026-10-29 (this Mac):** `tlaplus`, `tlc`, `apalache`, `kind2`, `kani`, `creusot`, `cargo-fuzz` — ALL STILL ABSENT (not on PATH). `rustc`/`cargo` 1.99.0, `powermetrics` present. SKL-01/SKL-02 executable gap stands; formal-spec runs remain blocked on install.
+- **C03.1 corroborated:** 23 hook moments VERIFIED in `C28/Design.md:12,25`. C07.1 IFC pointer correction VERIFIED already recorded in ToolingC07 §26.

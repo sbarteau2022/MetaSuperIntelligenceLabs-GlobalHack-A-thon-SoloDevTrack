@@ -34,8 +34,10 @@ Nothing from the VM prototype ships on VM evidence alone.
    cargo test
 
 4. Run the fixed PPC probe on this Mac with a real model signal (not the word score), on the 6 probe tasks plus 4 held-out tasks from the VM prototype, with deterministic last-number judges.
+   - EXECUTED 2026-10-29 (VERIFIED): `src/bin/hardware_ppc.rs`, 8 probe + 4 held-out (task set widened: elementary items saturated, all bundles 8/8, then word problems added — still saturated). VM prototype task list not present in this repo; authored replacement set is documented in the receipt. Model: Qwen3.6-MoE-Combined via omlx :8000.
 
 5. File the hardware receipt as plain text in this folder (no JSON, per the Mac no-JSON rule for receipts). The receipt must list: cargo test result, model used, per-bundle passes, tokens, regulators passed or failed, held-out result, and adopted bundle or KEEP_BASE.
+   - FILED 2026-10-29 (VERIFIED): `HARDWARE-PPC-RECEIPT.txt` — cargo release green (18+10+8+1+10), real_probe=true, per-bundle 8/8, tokens, regulators (noise_band correctly failed=abstain), held-out 4/4, KEEP_BASE adopted. Verdict: honest abstention on measured signal; task-set ceiling noted with material-change escalation (harder tasks).
 
 ## Observability rule (Stewart, 2026-10-29)
 

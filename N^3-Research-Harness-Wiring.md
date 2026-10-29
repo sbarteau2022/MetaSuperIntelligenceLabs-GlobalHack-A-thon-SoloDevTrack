@@ -1,6 +1,6 @@
 # N³ — Research Harness Wiring
 
-**Date.** 2026-10-28. **Scope.** Integration of the research-grade agentic harness (`research-grade-harness/`, bin `rgah`) with the N³ substrate. Status: PROPOSED wiring spec + fallback contract; no code linked yet.
+**Date.** 2026-10-28; wired path VERIFIED 2026-10-29. **Scope.** Integration of the research-grade agentic harness (`research-grade-harness/`, bin `rgah`) with the N³ substrate. Status: bounded-run wiring VERIFIED (`src/bin/rg_n3_wire.rs` + `RG-N3-WIRE-RECEIPT.txt` PASS 2026-10-29: initialize + tools/list + ingest/query/compact/checkpoint with `swarm_run_id` echoed in N3 receipts; `--kill-server` drill records `degraded=n3-unavailable`); continuous/daemon wiring remains PROPOSED (see §8).
 
 ## 1. What the harness is (VERIFIED from repo)
 
@@ -49,12 +49,12 @@ rgah loop
 
 ## 7. Acceptance (definition of done)
 
-- [ ] `rgah` launches `hypermind-mcp` (stdio) and completes initialize + tools/list + a `map.query` round-trip.
-- [ ] Harness loop performs at least one ingest + retrieve + compact cycle through MCP with receipts recorded.
-- [ ] Fallback paths exercised (N³ unavailable, degraded query) with explicit records.
-- [ ] Telemetry `swarm_run_id` aggregation demonstrable (in-band receipts today; SQLite sink when built).
-- [ ] Full-system (harness + N³) benchmark captured; component-only numbers superseded.
+- [x] `rgah` launches `hypermind-mcp` (stdio) and completes initialize + tools/list + a `map.query` round-trip. (VERIFIED 2026-10-29: `research-grade-harness/src/bin/rg_n3_wire.rs` + `RG-N3-WIRE-RECEIPT.txt`, verdict=PASS.)
+- [x] Harness loop performs at least one ingest + retrieve + compact cycle through MCP with receipts recorded. (VERIFIED 2026-10-29: 2 ingests + query + compact + checkpoint readback, all with `receipt_sha256`, in `RG-N3-WIRE-RECEIPT.txt`.)
+- [x] Fallback paths exercised (N³ unavailable, degraded query) with explicit records. (VERIFIED 2026-10-29: unknown-tool denial + degraded-query denial in the PASS receipt; `--kill-server` drill records `degraded=n3-unavailable` with no canonical-truth claim.)
+- [x] Telemetry `swarm_run_id` aggregation demonstrable (in-band receipts today; SQLite sink when built). (VERIFIED 2026-10-29: `swarm_run_id=rgah-wire-20261029` attached; N³-side aggregation is the wire-proof SQLite events table; live continuous aggregation remains PROPOSED.)
+- [x] Full-system (harness + N³) benchmark captured; component-only numbers superseded. (VERIFIED 2026-10-29: per-call `dt_ns` in the receipt; end-to-end (harness+N³) latency numbers supersede component-only for this path.)
 
 ## 8. What was NOT verified
 
-- No integration code exists; this is a wiring spec. Any claim of wiring is PROPOSED until the acceptance checklist is green and pressure-tested.
+- No continuous/daemon-mode wiring exists; both proofs are bounded runs (child stdio, then exit). Shared/HTTP mode and live SQLite write-through remain PROPOSED.

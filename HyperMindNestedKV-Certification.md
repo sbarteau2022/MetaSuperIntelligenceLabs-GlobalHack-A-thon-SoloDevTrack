@@ -40,3 +40,10 @@ Receipt presence: every tool result carried `receipt.receipt_sha256`. Snapshot h
 ## Verdict
 
 Build PASS, pressure test PASS after two corrections. Retrieval correctness now holds for exact-text queries at matched salience. Gate G-NN1 (same top-1 as flat) remains PROPOSED until a preregistered ablation runs.
+
+## Addendum 2026-10-29 (Zed agent; corrections are entries, originals preserved above)
+
+- **Build.** `cargo test --locked` green at HEAD: 3 lib + 42 bin + 8 transducer (was 37 bin at certification; +5 PAMI/rank tests). `map.health` retrieval line updated with the measured NN-G1 number; `exact_attention_measured` remains `false` (built-in oracle full scan) — VP exact-prune is the retrieval path, the oracle label is unchanged.
+- **Retrieval.** Was "brute-force today, not VP-tree" (Known gaps). Now: VP-tree exact-prune kNN on ALL query paths (`map.query`/`map.attend`/`map.read_euclid`) with parity tests (`vp_tree_matches_brute_force`, `vp_lazy_matches_brute_force`). NN-G prereg filed (`Pre-Registration-NN-G-v1.md`, sha256:9e1da197…); measured run 2026-10-29: G1 50/50 exact-text, G3 500/500 receipts, G4 passport stable, G5 judge-reject structural, G6 suite 8/8; G2 (flat-baseline speed) + G7 (leak audit) OPEN.
+- **Embedding.** Was "same-salience only; cross-salience does not always rank #1." Now: shell projection is salience-invariant by construction (query at any salience matches atoms at any salience on content; VERIFIED by `cross_salience_recall` + widened 8k shortlist). PAMI rank tags close the remaining geometry gap from the N³ audit §7.6.
+- **Known gaps carried forward:** no large-N mixed-rank recall benchmark; G2/G7 open; full-system numbers are path-only (wired tools/call), not whole-system.

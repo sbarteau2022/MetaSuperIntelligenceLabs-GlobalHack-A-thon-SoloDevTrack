@@ -1,0 +1,32 @@
+n3_wire_proof_receipt
+date=2026-10-29
+spec=N^3-Wiring-and-Fallbacks.md + N^3-Research-Harness-Wiring.md
+mcp=hypermind-mcp (/Users/stewartbarteau/Desktop/GitHub/MetaSuperIntelligenceLabs-GlobalHack-A-thon-SoloDevTrack/hypermind-nested-kv/target/debug/hypermind-mcp) transport=stdio single tools/call path
+sqlite=/Users/stewartbarteau/Desktop/GitHub/MetaSuperIntelligenceLabs-GlobalHack-A-thon-SoloDevTrack/hypermind-nested-kv/observability/store/wire-proof.sqlite3 events=10 integrity=ok
+merkle_roots=0 last_event_hash=a3c780c7147a8427...
+acceptance:
+accept tools/call-with-receipts=True (every response carried receipt_sha256)
+accept pami-on-rag-path=True (map.query fused + map.pami_stats participation_ratio)
+accept auto-compact-e2e=True (map.compact ok + map.checkpoint readback ok)
+accept failure-drills=True (schema denial + unknown-tool denial, both with receipts)
+accept sqlite-replay=True (store.verify ok + idempotent re-append seq=1)
+accept degraded-pressure=True (rank-lie denial recorded mode=degraded)
+replay_idempotent_seq=1
+log:
+  initialize ok server=hypermind-nested-kv
+  tools/list ok count=22
+  ingest ok n=3 (judge-gated)
+  query ok top1='kuramoto phase coupling synchronizes oscillator lattices' retrieval=vp-tree shortlist + BM25 fusion
+  pami_stats ok pr_chunk=2.768190860748291 pr_doc=0.0 ranks=(3,0)
+  compact+checkpoint ok (no silent overwrite)
+  failure-drill schema-denial ok
+  failure-drill unknown-tool ok
+  degraded-path rank-lie denial ok
+  bench query mean=0.25ms n=20 path=tools/call-stdio
+  sqlite replay ok idempotent seq=1 events=10
+degraded:
+  map.query missing-qtext -> schema denial + receipt
+  unknown tool -> denial + receipt
+  rank-1-ingest without children -> schema denial + receipt
+bench_query_mean_ms=0.25 n=20
+note=full-system number for THIS path only; component numbers retired for it

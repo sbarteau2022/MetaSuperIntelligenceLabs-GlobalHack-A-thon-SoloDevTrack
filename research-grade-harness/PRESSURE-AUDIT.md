@@ -112,3 +112,11 @@ C++ scalar LOSES to LLVM (0.47x). Bridge stays as proven FFI infrastructure,
 not a speed claim. The real geometric win needs explicit SIMD or GPU —
 scoped, not shipped. TS 7.1-beta: NO toolchain on machine, NOTHING built;
 see TS-CLEARANCE.md for the bar (shootout or nothing).
+
+## Re-verification — 2026-10-29 (VERIFIED this session)
+
+**Gates run:** `cargo test --locked` **49/49 green** (20 lib incl. 2 new distill fan-out tests + 10 build_345 + 8 implementation + 1 longtask + 10 pressure incl. 3 new fixed-PPC tests); `cargo clippy --all-targets` 0 errors; `cargo fmt` untouched (no reformatting pass this session).
+**New binaries (bounded instruments, not library code):** `src/bin/hardware_ppc.rs` (fixed-PPC gate instrument per HARDWARE-GATE-RUNBOOK) + `src/bin/rg_n3_wire.rs` (RG-AH↔N³ stdio round-trip + fallback drills).
+**Fixed PPC:** `rsi.rs::ProposeProbeCompose::run(probe_fn)` now takes a real probe (dedup by fingerprint, budget-gated, leakage_critic + 0.02 noise band + regularized_adopt, KEEP_BASE default, `real_probe=true` ledger). Live-model hardware run 2026-10-29: base 8/8 + 2 candidates 8/8 (Qwen3.6-MoE-Combined, omlx :8000) → gain 0.00 → KEEP_BASE; held-out 4/4. Receipt: `HARDWARE-PPC-RECEIPT.txt` (committed, annotated). Task-set ceiling noted: elementary arithmetic saturates all bundles; escalation = harder tasks (material change).
+**PRESSURE-AUDIT open items closed by the above:** PPC quality signal (was `score()` marker heuristic) → now real-probe with stub-tested regulators; the 3 new pressure tests pin dedup/budget/leakage on stub probes (structure), the hardware receipt pins them on live signal.
+**Carried forward (unchanged):** Landauer watt-meter calibration (needs hardware run); full T2 parallel-branch + T3/T4 doctrine paths; fixed-point fuzz; TS shootout (toolchain still absent, re-verified).

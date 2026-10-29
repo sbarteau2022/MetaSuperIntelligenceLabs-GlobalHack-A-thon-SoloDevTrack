@@ -171,7 +171,7 @@ Null/negative results are recorded as first-class entries.
 - Sample-size plan: interim analyses at 25/50/75% with Lan-DeMets alpha-spending (ρ=2, C09); stop for futility if conditional power < 0.2.
 - Null-handling: acceptance ≤30% → draft uncalibrated, item WITHDRAWN (fall back to exogenous D-max); beats one parent only → fusion unjustified, item WITHDRAWN, simpler parent ships.
 - Claims-register draft: C06.15 PROPOSED → EVIDENCED on pass + replication.
-- Status: TBD (prereg text filed; hash pending).
+- Status: FILED (prereg text hashed 2026-10-29; hash in table below).
 
 ## A37 — Judge Calibration Drift Monitor (C06.16; contributor Muse 2026-10-26)
 
@@ -183,7 +183,7 @@ Null/negative results are recorded as first-class entries.
 - Sample-size plan: fixed 10+10 runs (no interim — binary outcome per run); pre-stated before run.
 - Null-handling: detection >200 verdicts → thresholds too loose, retune + re-preregister; false alarms ≥5% → boundary too tight, retune + re-preregister. Either null keeps C06.16 PROPOSED.
 - Claims-register draft: C06.16 PROPOSED → EVIDENCED on pass.
-- Status: TBD (prereg text filed; hash pending).
+- Status: FILED (prereg text hashed 2026-10-29; hash in table below).
 
 ---
 
@@ -216,7 +216,7 @@ Null/negative results are recorded as first-class entries.
 | A33       |                |            |
 | A34       |                |            |
 | A35       |                |            |
-| A36       |                |            |
-| A37       |                |            |
+| A36       | sha256:480a3943ac8ec1be693ba013e5e19c190649af0537f77e21fd42da7d7f489d3f | 2026-10-29 |
+| A37       | sha256:75e4446e0256451d08990934d4404bf13b47511c5f2ad92e84ee84128ddad5ed | 2026-10-29 |
 | EOF       |
 | echo done |

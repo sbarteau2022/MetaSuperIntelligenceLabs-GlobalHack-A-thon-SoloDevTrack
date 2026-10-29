@@ -1,0 +1,18 @@
+rg_n3_wire_receipt
+spec=N^3-Research-Harness-Wiring.md
+path=rgah(child-stdio)->hypermind-mcp tools/call with receipts
+initialize ok=true dt_ms=170
+tools/list map_tools=22
+ingest status=ok receipt=true swarm_echo=true dt_ns=1270584
+ingest status=ok receipt=true swarm_echo=true dt_ns=742292
+query ok=true dt_ns=632792 retrieval=vp-tree shortlist + BM25 fusion
+swarm_run_id=rgah-wire-20261029 (attached to harness ledger; in-band receipts returned by N3)
+compact ok=true
+checkpoint_readback ok=true
+fallback unknown-tool denied=true
+fallback degraded-query denied-with-receipt=true
+accept rgah-launch-stdio-roundtrip=true
+accept ingest-retrieve-compact-cycle=true
+accept fallback-drills=true
+accept swarm_run_id-attached=true (echoed in N3 receipts, not harness-log-only)
+verdict=PASS

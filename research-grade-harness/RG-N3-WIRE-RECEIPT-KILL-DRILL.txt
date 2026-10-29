@@ -1,0 +1,7 @@
+rg_n3_wire_receipt
+spec=N^3-Research-Harness-Wiring.md
+path=rgah(child-stdio)->hypermind-mcp tools/call with receipts
+n3_available=false
+degraded=n3-unavailable
+mode=receiptless-in-N3, harness-local ledger only; no claim of canonical truth
+accept fallback-n3-unavailable=True

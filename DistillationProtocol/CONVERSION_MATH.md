@@ -58,7 +58,16 @@ Single pass conditions:
 - receipt chain (sha-chained) emitted,
 - after pass, a fresh model run with the carved map installed must show ΔCap ≥ 0 and no regression on held-out tasks.
 
-One-pass is valid iff `Σ receipt_ok = atoms_minted` (zero dropped receipts, NN-G3 analog).
+One-pass is valid iff ALL FOUR interim gates pass on the filed run receipt (AUDIT.md §7; enforced in-repo by `research-grade-harness/src/distill_judge.rs::DistillationJudge`):
+
+```
+knowledge_atoms_minted == modes_scanned            (no dropped receipts, NN-G3 analog)
+novel_atoms_minted + coalesced_atoms == knowledge_atoms_minted (novelty accounting: coalescing is counted, not hidden; CORR-2026-10-29: with weight-mode fan-out one mode yields many atoms, so the balance is against MINTED, not scanned — trajectory 1:1 is the special case)
+sum(role_counts) == knowledge_atoms_minted          (role distribution balances)
+0 <= mean_retained_energy <= 1                      (Cap(T) requires Rbar in [0,1])
+```
+
+CORR-2026-10-29 (supersedes the old `Σ receipt_ok = atoms_minted` line, which referenced nonexistent receipt fields per AUDIT.md C-AUD-5): `WeightDistillationReceipt` has no per-atom `receipt_ok` field, so the old condition was vacuous. The four-gate form above is computable TODAY from fields the receipt actually carries. Full per-atom `receipt_ok` gating returns when the in-engine judge lands (AUDIT finding 4).
 
 ## 4. What is NOT fine-tuning
 
@@ -66,7 +75,7 @@ No gradient. No weight mutation. No optimizer state. The distillation is **extra
 
 ## 5. Open calibration
 
-- α (conversion coefficient) — measure via A/B (held-out).
+- α (conversion coefficient) — measure via A/B (held-out). **Units (declared 2026-10-29):** capability-points per unit of (coverage × retained-energy), where Cap(T) and Cap0(T) are scored on the SAME task rubric (same units), `cov(T)` is dimensionless in [0,1], and `R̄` is dimensionless in [0,1]. So `[α] = [Cap]`: α converts one unit of (coverage × energy) into the rubric's capability points. If Cap is a normalized score, α is dimensionless. The A/B MUST state the rubric scale at prereg or α is uninterpretable.
 - p_useful — measure via judge coverage report.
 - δ (novelty threshold) — sweep in ablation.
 - B_map budget — from C21.
