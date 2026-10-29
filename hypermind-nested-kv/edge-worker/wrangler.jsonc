@@ -11,4 +11,12 @@
     "enabled": true,
     "head_sampling_rate": 1,
   },
+  "d1_databases": [
+    {
+      "binding": "HUNGER",
+      "database_name": "hypermind-hunger",
+      "database_id": "4d599136-eb2f-4c8f-b3c0-fb0185ad5d70",
+      "migrations_dir": "./migrations",
+    },
+  ],
 }
