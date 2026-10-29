@@ -51,6 +51,18 @@ See `PLAIN-LANGUAGE-SPEC.md` for the system in plain words,
   (D1/Vectorize/AI) attach at routes next — math never moves again.
 - See `EDGE-MIGRATION.md` for the full D1/Vectorize/Workers-AI/R2/KV map.
 
+### Takeoff D1 (DONE 2026-10-28, goal c3e2a957)
+
+- **`hypermind-hunger` D1 live** (local + remote): TAP-N-TRACE §4 schema
+  verbatim (`migrations/0001_hunger.sql`).
+- **Routes:** `POST /hunger-tap` (upsert+coalesce), `GET /hunger` (H-5
+  priority in SQL), `POST /hunger-sate` (mark covered). Proven: tap×2 →
+  hits=2 → priority 8 → sate → 0 open / 1 sated, all over HTTP.
+- **Fixes:** `worker` d1 feature flag, BigInt→f64 on all binds (D1 local
+  rejects BigInt), `--no-panic-recovery` legacy path stands.
+- **Write path (ingest/consolidate on edge) is next** — D1 transactions,
+  laptop becomes replica.
+
 ### Hunger Ledger (DONE 2026-10-28, goal 134e5fbb)
 
 - **Req 1 — Rules:** `RULES-HUNGER-LEDGER.md` (H-1..H-10): ignorance is
