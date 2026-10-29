@@ -144,9 +144,5 @@ pub fn authorize(level: TacticalLevel, cmd: Command) -> Result<(), String> {
 
 /// Levels never drop mid-problem (monotone).
 pub fn raise_level(cur: TacticalLevel, req: TacticalLevel) -> TacticalLevel {
-    if req > cur {
-        req
-    } else {
-        cur
-    }
+    if req > cur { req } else { cur }
 }

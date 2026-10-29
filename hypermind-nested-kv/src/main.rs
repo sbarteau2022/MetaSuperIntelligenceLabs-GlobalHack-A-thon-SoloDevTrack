@@ -1,4 +1,6 @@
 #![forbid(unsafe_code)]
+mod coherence_gate;
+mod structured_egress;
 use atomadb::{Db, Role};
 
 // ---- Goal 57f1db48 items 1+2: judge gate + atomadb embedder ----
@@ -437,6 +439,10 @@ fn embed_direction_idf(
         v[(h % 256) as usize] += w;
         v[((h >> 16) % 256) as usize] += 0.5 * w;
     }
+    // PAMI phase rotation (atomadb::rotate_rank): rank 1 for document-level phase.
+    let vv: Vec<f32> = v.iter().map(|x| *x as f32).collect();
+    let rotated = atomadb::rotate_rank(&vv, 1.0);
+    let v: Vec<f64> = rotated.into_iter().map(|x| x as f64).collect();
     let n = v.iter().map(|x| x * x).sum::<f64>().sqrt().max(1e-9);
     // Fold 256 -> 24 (8 per axis) with positional salting so collisions
     // across fold lanes don't coincide: lane salt breaks the symmetry that

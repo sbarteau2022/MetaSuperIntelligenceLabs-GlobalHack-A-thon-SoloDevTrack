@@ -162,7 +162,14 @@ fn longtask_40_packet_head_to_head() {
     let (adopted, m) = ppc.run(&base, &mut ppc_budget);
     println!(
         "ppc k={} rollouts={} sessions={} kept_base={} abstained={} gain={:.3} energy={:.4} adopted_v={}",
-        m.k, m.rollouts, m.sessions, m.kept_base, m.abstained, m.quality_gain, m.energy_spent_j, adopted.version
+        m.k,
+        m.rollouts,
+        m.sessions,
+        m.kept_base,
+        m.abstained,
+        m.quality_gain,
+        m.energy_spent_j,
+        adopted.version
     );
     assert_eq!(m.rollouts, 8); // Harness2 accounting R=4k
     assert_eq!(m.sessions, 6); // P=3k

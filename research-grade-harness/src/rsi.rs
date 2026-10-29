@@ -148,11 +148,7 @@ impl ProposeProbeCompose {
                 s += 0.03;
             }
         }
-        if s > 0.99 {
-            0.99
-        } else {
-            s
-        }
+        if s > 0.99 { 0.99 } else { s }
     }
 
     pub fn propose_inv(&self, base: &Bundle) -> BundleDelta {

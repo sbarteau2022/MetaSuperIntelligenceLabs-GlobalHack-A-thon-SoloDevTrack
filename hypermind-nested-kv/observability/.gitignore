@@ -1,0 +1,2 @@
+# Local databases, WAL/SHM files, and test scratch; migrations remain versioned.
+/store/

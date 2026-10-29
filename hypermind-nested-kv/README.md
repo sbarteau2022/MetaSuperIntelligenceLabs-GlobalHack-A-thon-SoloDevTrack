@@ -109,3 +109,12 @@ See `PLAIN-LANGUAGE-SPEC.md` for the system in plain words,
   (recency + reweight), plan decay (re-check at dispatch). Failed
   traversal mid-plan IS the detector — re-ground, don't push through.
 - **Superior Quality:** `E[Q] = cov × p_useful × (1-drift)`, all measured.
+
+## Whole-system SQLite traceability foundation (2026-10-29)
+
+[observability/README.md](observability/README.md) documents the 76-table SQLite
+base initialized at `observability/store/traceability.sqlite3`, including swarm
+cost gates, tool/MCP/skill/plugin outcomes, recovery, DAG/Obsidian graphs, KV,
+resource attribution and atom/trajectory/novelty lineage. SQL migrations and
+offline admin/tests are built; Rust/harness live telemetry adapters remain
+PROPOSED. Existing map storage and runtime behavior are unchanged.

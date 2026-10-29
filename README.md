@@ -67,3 +67,32 @@ updated alongside it.
 ---
 
 _Last updated: 2026-10-26 (finalizing pass)._
+
+## N³ traceability and observability base (2026-10-29)
+
+The [SQLite foundation](hypermind-nested-kv/observability/README.md) covers the
+whole system: meta decisions, cost-gated brigade activation, models, capabilities,
+MCP/plugins/skills, execution and acceptance, DAG/knowledge graphs, resource
+usage, KV, atoms, novelty/reranking, security, research evidence and recovery.
+The local base is initialized; live runtime adapters remain PROPOSED.
+Schema, constraints, validation evidence and operating instructions live beside
+the versioned SQL under `hypermind-nested-kv/observability/`.
+
+## Local work publication — 2026-10-29
+
+This source snapshot also includes the local harness mission CLI and native-name
+registry, optimizer scheduling changes, PAMI rotation wiring, coherence/structured
+egress modules, frontier design notes and N³ integration/fallback specifications.
+Publication preserves development work; it is not a production release or proof
+that the fixed PPC hardware gate or live SQLite adapters have passed.
+
+Pre-push validation on this Mac: `cargo test --locked` passed in
+`research-grade-harness` (42 tests) and `hypermind-nested-kv` (48 tests);
+the SQLite suite passed 54 tests. The native build reports existing unused-code
+warnings. See `research-grade-harness/HARDWARE-GATE-RUNBOOK.md` for the remaining
+real-model hardware gate; synthetic/unit fixtures do not satisfy it.
+
+Review limitation: the mission resume CLI currently accepts recognized packet IDs
+from receipt lines without validating their outcome/evidence; do not treat that
+resume path as verified acceptance. This publication preserves the local code
+as requested rather than silently altering its behavior.

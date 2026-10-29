@@ -16,6 +16,8 @@ pub mod hear;
 pub mod judge;
 pub mod lanes;
 pub mod mode;
+pub mod mission;
+pub mod registry;
 pub mod plugins;
 pub mod policy_kernel;
 pub mod rag;
@@ -66,7 +68,8 @@ pub use policy_kernel::FrozenPolicyKernel;
 pub use rag::{MockMap, RagQuery, RealVector, rag_coverage};
 pub use receipt::{Receipt, ReceiptLog};
 pub use recursive::{
-    IterationMandate, SubsystemScore, mandate_iteration, optimize_cycle, rank_subsystems,
+    IterationMandate, OptimizerScheduler, SPIKE_SIGMA, SubsystemScore, mandate_iteration,
+    optimize_cycle, rank_subsystems,
 };
 pub use register::{HypothesisRegister, ProbePlan, rank_probes};
 pub use rsi::{Bundle, BundleDelta, GovernedLibrary, LibraryEntry, ProposeProbeCompose};

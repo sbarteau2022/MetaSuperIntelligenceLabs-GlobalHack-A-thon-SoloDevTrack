@@ -1,8 +1,8 @@
 use rgah::{
-    active_inference::PolicyCandidate, active_inference::PolicyRanker, cache::Cache,
-    energy::EnergyBudget, judge::Judge, judge::JudgeKind, receipt::ReceiptLog, rsi::Bundle,
-    rsi::ProposeProbeCompose, runbook::Packet, runbook::PacketStatus, runbook::Plan,
-    runbook::RetryPolicy, FrozenPolicyKernel,
+    FrozenPolicyKernel, active_inference::PolicyCandidate, active_inference::PolicyRanker,
+    cache::Cache, energy::EnergyBudget, judge::Judge, judge::JudgeKind, receipt::ReceiptLog,
+    rsi::Bundle, rsi::ProposeProbeCompose, runbook::Packet, runbook::PacketStatus, runbook::Plan,
+    runbook::RetryPolicy,
 };
 
 #[test]
