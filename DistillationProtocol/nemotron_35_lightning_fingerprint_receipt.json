@@ -1,0 +1,30 @@
+{
+ "model": "Nemotron-3.5-Lightning",
+ "path": "/Users/stewartbarteau/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit-Abliterated",
+ "scope": "shards only (*.safetensors), concatenated in sorted filename order",
+ "files": [
+  {
+   "file": "model-00001-of-00004.safetensors",
+   "sha256": "ef4384412404b9bd1192646d15396b9784c0adf828277f72cf800d823e9acfce",
+   "bytes": 5118631456
+  },
+  {
+   "file": "model-00002-of-00004.safetensors",
+   "sha256": "a34a8838d818a1389249ee79e81e70df5bf9d0d32e0d254327289ace11f27de5",
+   "bytes": 5291568303
+  },
+  {
+   "file": "model-00003-of-00004.safetensors",
+   "sha256": "310681db39560d0c84c27de663388b96647bacf1464ec12618c99650d45bc824",
+   "bytes": 5291568399
+  },
+  {
+   "file": "model-00004-of-00004.safetensors",
+   "sha256": "8fa2e23b69b7a0304ffd492bc89efc9f553236fa1d481d67e7c9a8ffb598da5a",
+   "bytes": 2073657055
+  }
+ ],
+ "combined_sha256": "sha256:d4ff8c62b1503ecf346191906ba3f9b6573fa441275e409d4dab7fbfe08e1d4d",
+ "total_bytes": 17775425213,
+ "method": "sha256 per shard + running combined (4MB chunks)"
+}

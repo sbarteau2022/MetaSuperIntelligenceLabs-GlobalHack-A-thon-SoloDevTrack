@@ -1,0 +1,1 @@
+{"run_id": "zed-test-failed-001", "lane": "zed-test", "prompt_sha256_16": "e3b0c44298fc1c14", "output_summary": "test failed run, must hold", "verdict": "failed", "steps": [], "tool_calls": [], "level": "text-action trajectory (not weight-level)"}

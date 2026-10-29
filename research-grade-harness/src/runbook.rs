@@ -89,7 +89,7 @@ impl Plan {
         }
         let mut q: VecDeque<String> = indeg
             .iter()
-            .filter(|(_, &v)| v == 0)
+            .filter(|&(_, &v)| v == 0)
             .map(|(k, _)| k.clone())
             .collect();
         let mut seen = 0usize;

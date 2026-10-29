@@ -1,0 +1,30 @@
+{
+ "model": "Qwen3.6-35B-MoE",
+ "path": "/Users/stewartbarteau/models/fused/Qwen3.6-MoE-Combined",
+ "scope": "shards only (*.safetensors), concatenated in sorted filename order",
+ "files": [
+  {
+   "file": "model-00001-of-00004.safetensors",
+   "sha256": "b9bfd13788da9e65fa9e7d5f436b89e4d25b9cc10fdc958dd61ee6b60d37cb9d",
+   "bytes": 5343699404
+  },
+  {
+   "file": "model-00002-of-00004.safetensors",
+   "sha256": "fd930505f30014da6e6f1b3fe08ec69050c46a2bb5a5154010fda183ad9212ef",
+   "bytes": 5368472723
+  },
+  {
+   "file": "model-00003-of-00004.safetensors",
+   "sha256": "fb31d89560b48cfae24ed034b5f9a9b4096c816e73124a0976aeef897b4bcf37",
+   "bytes": 5368324201
+  },
+  {
+   "file": "model-00004-of-00004.safetensors",
+   "sha256": "c2104cb58e02ade1754e71ea133d9fcf27930f3ad71e67a06d6ff69b1ddc063b",
+   "bytes": 3428527593
+  }
+ ],
+ "combined_sha256": "sha256:1c3aa1a1d265fd9321ecb93945e0ab3fb2ff94cab72516d61df83478625fb50c",
+ "total_bytes": 19509023921,
+ "method": "sha256 per shard + running combined (4MB chunks)"
+}

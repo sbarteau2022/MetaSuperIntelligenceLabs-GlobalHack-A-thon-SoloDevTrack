@@ -1,0 +1,30 @@
+{
+ "model": "Muse-Glimmer",
+ "path": "/Users/stewartbarteau/models/Muse-Glimmer-q4km-gs128-MLX",
+ "scope": "shards only (*.safetensors), concatenated in sorted filename order",
+ "files": [
+  {
+   "file": "model-00001-of-00004.safetensors",
+   "sha256": "33c1881b631d7a101acab26a7b5e8c0864d949fa5c203de34f6c2c41306aba9f",
+   "bytes": 5337821841
+  },
+  {
+   "file": "model-00002-of-00004.safetensors",
+   "sha256": "192b387ae0e90032f99aaf63bc3cb2a5b56151a927f3ba7744a01f49d146067a",
+   "bytes": 5355411888
+  },
+  {
+   "file": "model-00003-of-00004.safetensors",
+   "sha256": "4ecc274ad367c211f5efdce4502eaae42d8fe39af7464e3db08ae02f1b84e149",
+   "bytes": 5272797091
+  },
+  {
+   "file": "model-00004-of-00004.safetensors",
+   "sha256": "5848778d6f741452e4a7d0e3c6b74907535ed44ba1dfa85020078886b713196d",
+   "bytes": 2046438034
+  }
+ ],
+ "combined_sha256": "sha256:48a6c13cea903c9f05b77619dcdf5069d7e407bad29c6c73c1dd240c03fb59de",
+ "total_bytes": 18012468854,
+ "method": "sha256 per shard + running combined (4MB chunks)"
+}

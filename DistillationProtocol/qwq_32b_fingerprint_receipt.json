@@ -1,0 +1,30 @@
+{
+ "model": "QwQ-32B",
+ "path": "/Volumes/WD Drive/models/QwQ-32B-4bit",
+ "scope": "shards only (*.safetensors), concatenated in sorted filename order",
+ "files": [
+  {
+   "file": "model-00001-of-00004.safetensors",
+   "sha256": "6cec9cdfca05f513862da1c8cb42f25b5a448eb4c2517b5f1e7f28f3b9eb5882",
+   "bytes": 5366582717
+  },
+  {
+   "file": "model-00002-of-00004.safetensors",
+   "sha256": "457e9190be3a2d3e5e45ebfacc5ae059a3a0866114cdcd50fe5fb5a1e72a9d74",
+   "bytes": 5335712920
+  },
+  {
+   "file": "model-00003-of-00004.safetensors",
+   "sha256": "4043ba68f52d735c4c984c50b5ed9f3aee571e093e924381953375b11799b2e9",
+   "bytes": 5366641934
+  },
+  {
+   "file": "model-00004-of-00004.safetensors",
+   "sha256": "22aeccbd3e966d7b918e24a0a46009881974426ae28880b3353066605c72276b",
+   "bytes": 2362540888
+  }
+ ],
+ "combined_sha256": "sha256:2fbe2bca5c0d19d8ee93bffbb65759fdf3b52a4bc4be87bf7125664958a18886",
+ "total_bytes": 18431478459,
+ "method": "sha256 per shard + running combined (4MB chunks)"
+}

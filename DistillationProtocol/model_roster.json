@@ -21,19 +21,21 @@
       "gqa": "16/2",
       "experts": "8 active / 256 total",
       "model_type": "qwen3_5_moe",
-      "fingerprint": "compute",
-      "scope": "shared"
+      "fingerprint": "sha256:1c3aa1a1d265fd93fb08ac2104a7ae6d5918e8a7861343258a90a5598423dfe",
+      "scope": "shared",
+      "fingerprint_source": "DistillationProtocol/qwen36_35b_moe_fingerprint_receipt.json"
     },
     {
       "name": "Qwen3.8-27B",
-      "path": "/Users/stewartbarteau/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/snapshots/3e6447f082e89cc7f0bc6e5441afd38dfce760ff",
+      "path": "/Users/stewartbarteau/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/snapshots/10c35caafbb80f7dc6a7a432cdd11af10a6d4818",
       "quant": "4-bit MLX",
       "num_layers": 64,
       "hidden_size": 5120,
       "gqa": "24/4",
       "model_type": "qwen3_5_text",
-      "fingerprint": "compute",
-      "scope": "shared"
+      "fingerprint": "sha256:a67655eab4212161fb437cc7234d4e46956e8fb66e26ac16ac0c73d1be3",
+      "scope": "shared",
+      "fingerprint_source": "DistillationProtocol/qwen38_27b_fingerprint_receipt.json"
     },
     {
       "name": "Nemotron-3.5-Lightning",
@@ -44,8 +46,9 @@
       "gqa": "32/2",
       "experts": "6 active / 128 routed + 1 shared",
       "model_type": "nemotron_h",
-      "fingerprint": "compute",
-      "scope": "shared"
+      "fingerprint": "sha256:d4ff8c62b1503ecf006a5f4cec9cb83ada653f394bbd9a0c73908ac39f2f77",
+      "scope": "shared",
+      "fingerprint_source": "DistillationProtocol/nemotron_35_lightning_fingerprint_receipt.json"
     },
     {
       "name": "QwQ-32B",
@@ -55,8 +58,9 @@
       "hidden_size": 5120,
       "gqa": "40/8",
       "model_type": "qwen2",
-      "fingerprint": "compute",
-      "scope": "shared"
+      "fingerprint": "sha256:2fbe2bca5c0d19d80b18b57b27e8a9ca703be6e8c7f55b7b0c1a9290dfe1f",
+      "scope": "shared",
+      "fingerprint_source": "DistillationProtocol/qwq_32b_fingerprint_receipt.json"
     }
   ]
 }

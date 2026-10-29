@@ -1,0 +1,1 @@
+{"run_id": "zed-test-passed-001", "lane": "zed-test", "prompt_sha256_16": "e3b0c44298fc1c14", "output_summary": "Zed router lane.mint test, one gated atom", "verdict": "passed", "steps": ["route", "execute lane.mint"], "tool_calls": [], "level": "text-action trajectory (not weight-level)"}

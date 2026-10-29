@@ -1,0 +1,95 @@
+{
+  "date": "2026-10-28",
+  "time_cdt": "06:51-06:53",
+  "runner": "monster-hybrid-server/orchestrator/target/release/monster_hybrid_server (built 2026-10-27 00:09; orchestrator lib.rs modified 2026-10-27 12:08, after binary)",
+  "vault": "monster-hybrid-server/design/global_active_mind.atoma_map",
+  "backup_before": "design/global_active_mind.atoma_map.backup-2026-10-28-pre-5model-distill",
+  "vault_file_sha256_after": "e14d6417b723a0c90a65f8dd6bc3db25eddb140346a40809fb24abf309fa2710",
+  "engine_vault_sha256_after": "bdb97ebef6921bbf",
+  "vault_load_after": {
+    "global_0cells": 32675,
+    "global_1cell_arcs": 109300,
+    "locked_arcs": 109300,
+    "ingested_tensors": 5934
+  },
+  "runs": [
+    {
+      "model": "Qwen3.8-27B",
+      "shards": 3,
+      "tensors_distilled": 1183,
+      "skipped": 0,
+      "novel_0cells": 4468,
+      "dedup_0cells": 0,
+      "novel_arcs": 1078,
+      "dedup_arcs": 2574,
+      "silos": "12/12"
+    },
+    {
+      "model": "Muse-Glimmer",
+      "shards": 4,
+      "tensors_distilled": 836,
+      "skipped": 0,
+      "novel_0cells": 2666,
+      "dedup_0cells": 0,
+      "novel_arcs": 684,
+      "dedup_arcs": 1882,
+      "silos": "12/12"
+    },
+    {
+      "model": "Qwen3.6-35B-MoE",
+      "shards": 6,
+      "note": "6 not 4: engine filter model-* includes model-mtp.safetensors and model-mtp.rapid.safetensors",
+      "tensors_distilled": 19,
+      "skipped": 754,
+      "novel_0cells": 74,
+      "dedup_0cells": 0,
+      "novel_arcs": 17,
+      "dedup_arcs": 37,
+      "silos": "12/12"
+    },
+    {
+      "model": "Nemotron-3.5-Lightning",
+      "shards": 4,
+      "tensors_distilled": 0,
+      "skipped": 401,
+      "novel_0cells": 0,
+      "dedup_0cells": 0,
+      "novel_arcs": 0,
+      "dedup_arcs": 0,
+      "silos": "0/12"
+    },
+    {
+      "model": "QwQ-32B",
+      "shards": 4,
+      "tensors_distilled": 0,
+      "skipped": 449,
+      "novel_0cells": 0,
+      "dedup_0cells": 0,
+      "novel_arcs": 0,
+      "dedup_arcs": 0,
+      "silos": "0/12"
+    }
+  ],
+  "totals": {
+    "tensors_distilled": 2038,
+    "skipped": 1604,
+    "novel_0cells": 7208,
+    "novel_arcs": 1779,
+    "dedup_arcs": 4493
+  },
+  "idempotency_rerun_qwen38": {
+    "tensors_distilled": 0,
+    "skipped": 1183,
+    "novel_0cells": 0,
+    "novel_arcs": 0,
+    "file_sha256_unchanged": true
+  },
+  "not_run": [
+    "twin-fingerprint invariance test (spec only, no runner in engine)",
+    "judge gate (0 judge refs in distill_engine.rs/refraction.rs; template only in research-grade-harness)",
+    "HyperMap/AtomaDB ingest (separate store, manifest segments empty)",
+    "hypermind-nested-kv import (no global_active_mind import path found in its source)"
+  ],
+  "vault_before_mb": 576,
+  "vault_after_mb": 706
+}
