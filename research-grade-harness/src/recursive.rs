@@ -33,6 +33,11 @@ pub fn rank_subsystems(scores: &[SubsystemScore]) -> Vec<&SubsystemScore> {
 
 /// Optimization cycle: measure all, improve the worst, log the decision.
 /// Returns the improved subsystem name + the new session total.
+///
+/// TECH DEBT (MATH-INVARIANTS.md Invariant 3): no scheduler forces the
+/// cadence — the mandate exists, the loop-closer doesn't. The live map
+/// closes its loop (fail → hunger → consolidate → sated, proven); this
+/// optimizer loop is specified but unscheduled. Named, not hand-waved.
 /// Improvement is a caller-supplied step (the harness implements per
 /// subsystem: reweight, prune, re-plan, consolidate...); the optimizer
 /// only decides WHERE, never HOW — separation of concerns.
@@ -73,6 +78,9 @@ pub fn mandate_iteration(
     bound: &SessionBound,
     has_answer: bool,
 ) -> Option<IterationMandate> {
+    // TECH DEBT (MATH-INVARIANTS.md Invariant 3): sigma is a literal.
+    // A fixed sensitivity is a static gate wearing dynamic clothes.
+    // Next pass threads it from session config. Documented, not hidden.
     let spike = bound.requires_iteration(2.0);
     match crate::gate::dynamic_iteration_directive(packet_id, spike, has_answer) {
         Some(reason) => Some(IterationMandate {

@@ -326,6 +326,91 @@ fn evolution_never_buys_pass_with_gate_relax() {
     );
     assert_eq!(out.unwrap().0, "retrieval");
     assert_eq!(log3.events.len(), 1, "optimizer logs its own decision");
+}
+
+#[test]
+fn superposition_holds_deliberation() {
+    // I-RECALL fires before any hold; H1/H2/H3 enforced throughout.
+    let cached = vec![("kv:conclusion-a", 0.05, vec!["toroidal", "phase"])];
+    let mut sb = SessionBound::new();
+    let (out, _) = rgah::deliberate(&["toroidal", "phase"], &cached, vec![], 1.0, &mut sb, "t");
+    assert!(
+        matches!(out, rgah::DeliberationOutcome::Recalled { .. }),
+        "recall must pre-empt hold, got {:?}",
+        out
+    );
+    // Miss -> hold -> suppress -> collapse.
+    let mk = |id: usize, src: rgah::BranchSource, f: f64, ready: bool| rgah::DeliberationBranch {
+        branch_id: id,
+        source: src,
+        terms: rgah::FreeEnergyTerms::new(f * 0.5, f * 0.5, 0.0),
+        prediction_hash: format!("h{}", id),
+        prediction_ready: ready,
+    };
+    let mut sb2 = SessionBound::new();
+    let branches = vec![
+        mk(0, rgah::BranchSource::DirectRecall, 1.0, true),
+        mk(1, rgah::BranchSource::NeighborAtom, 3.0, true),
+        mk(2, rgah::BranchSource::FreshDerivation, 3.0, true),
+    ];
+    let (out2, st2) = rgah::deliberate(&["unseen", "topic"], &[], branches, 1.0, &mut sb2, "t2");
+    assert!(
+        matches!(
+            out2,
+            rgah::DeliberationOutcome::Collapsed { branch_id: 0, .. }
+        ),
+        "min-F wins, got {:?}",
+        out2
+    );
+    assert_eq!(
+        st2.branches.len(),
+        1,
+        "isotropic suppression keeps only F_min+delta"
+    );
+    // H2 PROOF: same F, different sources -> identical survival. The pruner
+    // is source-blind BY CONSTRUCTION (it reads .bound() only).
+    let same_f = vec![
+        mk(0, rgah::BranchSource::DirectRecall, 2.0, true),
+        mk(1, rgah::BranchSource::CrossBasinBridge, 2.0, true),
+        mk(2, rgah::BranchSource::FreshDerivation, 2.0, true),
+        mk(3, rgah::BranchSource::NeighborAtom, 2.0, true),
+    ];
+    let surv = rgah::suppress_isotropic(&same_f, 0.5);
+    assert_eq!(
+        surv.len(),
+        4,
+        "equal-F branches survive regardless of source"
+    );
+    // Separation: duplicates rejected, distant rejected.
+    assert!(
+        !rgah::check_separation(&same_f[..1], 2.0 + 1e-9, &rgah::SeparationBounds::default()),
+        "duplicate rejected"
+    );
+    assert!(
+        !rgah::check_separation(&same_f[..1], 2.0 + 5.0, &rgah::SeparationBounds::default()),
+        "distant rejected"
+    );
+    assert!(rgah::check_separation(
+        &same_f[..1],
+        2.0 + 0.5,
+        &rgah::SeparationBounds::default()
+    ));
+    // Boltzmann normalizes.
+    let w = rgah::boltzmann_weights(&same_f);
+    let z: f64 = w.iter().map(|(_, x)| x).sum();
+    assert!((z - 1.0).abs() < 1e-9);
+    // Not-ready winner forces iteration, not collapse.
+    let mut sb3 = SessionBound::new();
+    let b2 = vec![mk(0, rgah::BranchSource::DirectRecall, 0.5, false)];
+    let (out3, _) = rgah::deliberate(&["unseen"], &[], b2, 1.0, &mut sb3, "t3");
+    assert!(
+        matches!(out3, rgah::DeliberationOutcome::Iterate { .. }),
+        "unready prediction must iterate"
+    );
+}
+
+#[test]
+fn cpp_bridge_audit() {
     // C++ bridge audit: byte-agreement Rust vs C++ over 1k points.
     let q = [1.5, 0.8, 0.4, 0.2];
     let atoms: Vec<[f64; 4]> = (0..1000)

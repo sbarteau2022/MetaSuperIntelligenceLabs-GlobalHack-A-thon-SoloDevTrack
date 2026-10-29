@@ -577,10 +577,12 @@ fn coord_from_text(text: &str, salience: f64) -> ([f64; 4], [f64; 2]) {
     coord_from_text_idf(text, salience, None)
 }
 
-/// Derive the momentum half from the already-computed (coord, phase) triple.
+/// SLOPE READOUT (not evolution): derive the momentum half by sampling the
+/// vault spiral-out law's analytic derivative at the atom's radius.
 /// dθ from the phase split (fast/slow proxy via phase magnitude),
-/// dr/dw from the spiral-out law slope at the atom's radius,
+/// dr/dw = span·(0.35 + 0.65/(1+w)) — exact d/dw of r(w) (MATH-INVARIANTS.md),
 /// η from the amplitude channel (monotone in drive energy per TPE spec §4.3).
+/// This reads the law; it never integrates it. Evolution lives in the vault.
 fn symplectic_from_triple(coord: &[f64; 4], phase: &[f64; 2], salience: f64) -> SymplecticState {
     let r = (coord[1] * coord[1] + coord[2] * coord[2] + coord[3] * coord[3]).sqrt();
     // Spiral-out slope dr/dw at this radius band (TPE spec §4.1 shape).
@@ -1644,9 +1646,41 @@ struct KvEntry {
     key: String,
     value: String,
     produced_by: Vec<u64>,
+    /// DAG edges (Recall-vs-Recompute Law §4): keys this entry was derived
+    /// from. Invalidation walks these downstream — exact, never TTL.
+    depends_on: Vec<String>,
+    /// Stale flag: set by invalidate, cleared by re-store. Stale entries
+    /// re-derive on next fetch (pay F_recompute once, then cheap again).
+    stale: bool,
     hits: u64,
     stored_epoch: u64,
     receipt: String,
+}
+
+/// Exact invalidation: mark `key` stale and walk downstream to every entry
+/// that (transitively) depends on it. Returns the invalidated key list.
+/// No TTL, no guessing — edges or nothing.
+fn kv_invalidate(state: &mut State, key: &str) -> Vec<String> {
+    let mut marked = vec![];
+    let mut frontier = vec![key.to_string()];
+    while let Some(k) = frontier.pop() {
+        // Mark the node itself if present and not already stale.
+        if let Some(e) = state.kv.get_mut(&k) {
+            if !e.stale {
+                e.stale = true;
+                marked.push(k.clone());
+            }
+        }
+        // Find dependents: entries whose depends_on contains k.
+        let dependents: Vec<String> = state
+            .kv
+            .iter()
+            .filter(|(_, e)| !e.stale && e.depends_on.iter().any(|d| d == &k))
+            .map(|(dk, _)| dk.clone())
+            .collect();
+        frontier.extend(dependents);
+    }
+    marked
 }
 
 fn open_or_create(root: PathBuf) -> State {
@@ -1911,7 +1945,8 @@ fn tools_list() -> Value {
             {"name":"map.lexical","description":"Pure BM25 over ALL atoms with corpus IDF (document-heavy retrieval; geometric map handles exact recall + traversal).","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"}},"required":["qtext"]}},
             {"name":"map.read_euclid","description":"Euclidean reader: flat R^n projection of query hits (Poincare ball + IDF direction + phase as features). No hyperbolic math required by the caller — any Euclidean model consumes this directly.","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"},"dim":{"type":"integer"}},"required":["qtext"]}},
             {"name":"map.kv_store","description":"Store a key-value in the nested KV tree (BTreeMap, snapshotted). Value cites producing atom ids.","inputSchema":{"type":"object","properties":{"key":{"type":"string"},"value":{"type":"string"},"produced_by":{"type":"array"}},"required":["key","value"]}},
-            {"name":"map.kv_fetch","description":"Fetch a key with hit receipt (hits count, producers, receipt chain). MISS is a hunger event.","inputSchema":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}},
+            {"name":"map.kv_fetch","description":"Fetch a key with hit receipt (hits count, producers, receipt chain). MISS taps hunger.","inputSchema":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}},
+            {"name":"map.kv_invalidate","description":"Exact invalidation: mark a key stale and walk downstream dependents (edges, never TTL).","inputSchema":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}},
             {"name":"map.hunger","description":"Ranked ignorance leaderboard: what the map is missing, pre-aggregated by taps (H-5).","inputSchema":{"type":"object","properties":{"k":{"type":"integer"}}}},
             {"name":"map.consolidate","description":"Sleep cycle: reinforce traversed, decay untouched (floor 0.05), sate covered gaps, emit sleep receipt (H-6).","inputSchema":{"type":"object","properties":{"traversed_ids":{"type":"array"},"reinforce":{"type":"number"},"decay":{"type":"number"}}}},
             {"name":"map.carve","description":"Carve a task-scoped swarm map (view by id) from the global map; separates weights from carved swarm without duplicating.","inputSchema":{"type":"object","properties":{"task":{"type":"string"},"context_budget":{"type":"integer"},"token_pressure":{"type":"number"}}},"required":["task"]},
@@ -2206,6 +2241,10 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                     // Adaptive fusion (measured 2026-10-28): IDF fold flattens
                     // geo (~-1.0 everywhere) while BM25 discriminates. BM25
                     // signal present -> 0.2/0.8; flat -> 0.8/0.2.
+                    // INVARIANT (isotropic suppression): the 0.5 threshold and
+                    // 0.2/0.8 splits are SWEPT, never constant. hardening them
+                    // would bake in a preferred direction. Re-sweep on the
+                    // 12-probe audit before any change (MATH-INVARIANTS.md).
                     let (gw, bw) = if b_max > 0.5 { (0.2, 0.8) } else { (0.8, 0.2) };
                     (*id, gw * gn + bw * bn, *g, bm[i])
                 })
@@ -2298,8 +2337,17 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 cum += s.abs();
                 masses.push(cum / total_mass);
             }
+            // Recall-vs-Recompute Law §3 (F-units): the gate cost IS a free-
+            // energy bound. complexity = ln(k)+k (retrieval work in nats),
+            // inaccuracy = -qmass*8 (negated score mass = remaining surprise),
+            // dissipation = k * C_ROW_J (rows touched x per-row joules).
+            // The argmin below minimizes F_recall(k); the receipt exposes
+            // the terms so the session bound can price the SAME decision
+            // (Gap B closed: one minimizer, two readers).
+            const C_ROW_J: f64 = 1e-9; // per-row touch cost, receipted assumption
             let mut best_k = 1usize;
             let mut best_cost = f64::INFINITY;
+            let mut best_terms = (0.0f64, 0.0f64, 0.0f64);
             for &k in &[1usize, 2, 3, 4, 8, 16, 32] {
                 if k > n {
                     continue;
@@ -2309,13 +2357,15 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                     continue;
                 }
                 let qmass = masses[mk - 1];
-                let retrieve = (k as f64).ln().max(1.0);
-                let attend = k as f64;
-                // Variational cost: retrieve+attend minus data-dependent quality (cumulative mass).
-                let cost = retrieve + attend - qmass * 8.0;
+                let complexity = (k as f64).ln().max(1.0) + k as f64;
+                let inaccuracy = -qmass * 8.0;
+                let dissipation = k as f64 * C_ROW_J;
+                // Variational cost: identical arithmetic, now in F units.
+                let cost = complexity + inaccuracy;
                 if cost < best_cost {
                     best_cost = cost;
                     best_k = k;
+                    best_terms = (complexity, inaccuracy, dissipation);
                 }
             }
             let k = args
@@ -2344,6 +2394,8 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 "shortlist_n": short_n,
                 "overlap_with_exact_topk": overlap,
                 "retrieved_ids": top_ids,
+                "fep_terms": {"complexity_nats": best_terms.0, "inaccuracy_nats": best_terms.1,
+                    "dissipation_j": best_terms.2, "bound": best_cost + best_terms.2},
             });
             let rcpt = now_receipt("map.attend", args, &out);
             json!({"result":out,"receipt":rcpt})
@@ -2807,6 +2859,17 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .and_then(|x| x.as_array())
                 .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect())
                 .unwrap_or_default();
+            // DAG edges: keys this conclusion was derived from (may be empty
+            // for leaf derivations). Re-store clears stale (fresh derivation).
+            let depends: Vec<String> = args
+                .get("depends_on")
+                .and_then(|x| x.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
             let out_pre = json!({"status": "stored", "key": key, "producers": produced});
             let rcpt_str = now_receipt("map.kv_store", args, &out_pre)["receipt_sha256"]
                 .as_str()
@@ -2816,13 +2879,15 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 key: key.clone(),
                 value,
                 produced_by: produced,
+                depends_on: depends,
+                stale: false,
                 hits: 0,
                 stored_epoch: state.epoch,
                 receipt: rcpt_str,
             };
             state.kv.insert(key.clone(), entry);
             state.epoch += 1;
-            let out = json!({"status": "stored", "key": key, "kv_entries": state.kv.len()});
+            let out = json!({"status":"stored","key": key,"kv_entries": state.kv.len()});
             let rcpt = now_receipt("map.kv_store", args, &out);
             json!({"result": out, "receipt": rcpt})
         }
@@ -2836,12 +2901,24 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .and_then(|x| x.as_str())
                 .unwrap_or("")
                 .to_string();
-            match state.kv.get_mut(&key) {
-                Some(e) => {
+            // Stale entries report STALE (not silent hit): the caller
+            // re-derives (pays F_recompute once), then re-stores to clear.
+            // Staleness is determined; the missing-branch arm below handles
+            // the borrow safely (get_mut scope ends before tap_hunger).
+            let hit = state.kv.get(&key).map(|e| (e.stale, e.hits));
+            match hit {
+                Some((false, _)) => {
+                    let e = state.kv.get_mut(&key).unwrap();
                     e.hits += 1;
                     let out = json!({"status": "hit", "key": e.key, "value": e.value,
                         "produced_by": e.produced_by, "hits": e.hits,
                         "stored_epoch": e.stored_epoch, "receipt": e.receipt});
+                    let rcpt = now_receipt("map.kv_fetch", args, &out);
+                    json!({"result": out, "receipt": rcpt})
+                }
+                Some((true, _)) => {
+                    let out = json!({"status": "stale", "key": key,
+                        "note": "producer changed downstream; re-derive then re-store to clear"});
                     let rcpt = now_receipt("map.kv_fetch", args, &out);
                     json!({"result": out, "receipt": rcpt})
                 }
@@ -2860,6 +2937,23 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                     json!({"result": out, "receipt": rcpt})
                 }
             }
+        }
+        "map.kv_invalidate" => {
+            // Exact invalidation (Recall-vs-Recompute Law §4): mark + walk.
+            if args.get("key").and_then(|x| x.as_str()).is_none() {
+                return json!({"result": {"status": "error", "error": "schema: key must be string"}});
+            }
+            let key = args
+                .get("key")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
+            let marked = kv_invalidate(state, &key);
+            state.epoch += 1;
+            let out = json!({"status": "invalidated", "key": key,
+                "invalidated_keys": marked, "count": marked.len()});
+            let rcpt = now_receipt("map.kv_invalidate", args, &out);
+            json!({"result": out, "receipt": rcpt})
         }
         "map.carve" => {
             if !args.get("task").map(|x| x.is_string()).unwrap_or(false) {

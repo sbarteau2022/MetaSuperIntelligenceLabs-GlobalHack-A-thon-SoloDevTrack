@@ -25,6 +25,7 @@ pub mod register;
 pub mod rsi;
 pub mod runbook;
 pub mod session;
+pub mod superposition;
 pub mod telemetry;
 pub mod temple;
 
@@ -71,5 +72,9 @@ pub use register::{HypothesisRegister, ProbePlan, rank_probes};
 pub use rsi::{Bundle, BundleDelta, GovernedLibrary, LibraryEntry, ProposeProbeCompose};
 pub use runbook::{JudgeRef, Packet, PacketStatus, Plan, ToolCall};
 pub use session::{SessionEvent, SessionEventKind, SessionLog};
+pub use superposition::{
+    BranchSource, DeliberationBranch, DeliberationOutcome, HoldingState, SeparationBounds,
+    boltzmann_weights, check_separation, deliberate, irecall_check, suppress_isotropic,
+};
 pub use telemetry::TelemetryFrame;
 pub use temple::TempleRecord;
