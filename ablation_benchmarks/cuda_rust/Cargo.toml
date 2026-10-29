@@ -1,0 +1,71 @@
+[package]
+name = "hyperbolic_kv_bench_cuda"
+version = "0.1.0"
+edition = "2021"
+description = "Hyperbolic KV Benchmark for CUDA Rust (FW-A1-CUDA ablation)"
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+
+[profile.bench]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+
+[dependencies]
+# CUDA Rust dependencies (require authentication, loaded via cargo-oxide at build time)
+# cutile-rs: Tile track (reach for first) - crates.io: cutile, cutile-kernels
+# cuda-oxide: SIMT track (escape hatch) - requires cargo-oxide + nightly
+# Shared runtime: cuda-bindings, cuda-core, cuda-async
+
+# Math and utilities
+nalgebra = { version = "0.33", features = ["serde"] }
+rand = { version = "0.9", features = ["small_rng"] }
+rand_distr = "0.5"
+bytemuck = { version = "1.16", features = ["derive"] }
+memmap2 = "0.9"
+parking_lot = "0.12"
+crossbeam = "0.8"
+criterion = { version = "0.5", features = ["html_reports"] }
+toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"
+bitflags = "2.6"
+
+# CUDA math intrinsics
+libm = "0.2"
+half = "2.5"
+
+# CUDA runtime stubs (for compilation without git deps)
+cuda-core = { version = "0.1", optional = true }
+cuda-async = { version = "0.1", optional = true }
+cuda-bindings = { version = "0.1", optional = true }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[build-dependencies]
+cc = "1.0"
+
+[features]
+default = ["stub"]
+stub = [] # CPU-only stub implementation for compilation testing
+cutile-track = [
+  "cuda-core",
+  "cuda-async",
+  "cuda-bindings",
+] # Requires authenticated git access
+# simt-track = ["cuda-oxide"] # Requires cargo-oxide + nightly (commented out)
+# full = ["cutile-track", "simt-track"]
+
+[[bench]]
+name = "hyperbolic_kv_bench"
+path = "src/bench.rs"
+harness = false

@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:,">
+<title>CUDA Rust Articles and Papers — SIMT, cuda-oxide &amp; cutile-rs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f6f5f0; --paper:#fffef9; --ink:#12140f; --muted:#5b6053; --line:#ddd9cb;
+  --green:#3a6b00; --green-bright:#76b900; --green-soft:#eef5d6;
+  --amber:#8a5a00; --amber-soft:#fdf0cd; --red:#8f2a1e; --red-soft:#fde8e3;
+  --code-bg:#10130c; --code-ink:#e8eed9; --chip:#eceade;
+  --radius:14px;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0a0c09; --paper:#11140e; --ink:#ecefe3; --muted:#9aa08f; --line:#262a20;
+    --green:#a8d94a; --green-soft:#1c260e; --amber:#e8b95a; --amber-soft:#2a2110;
+    --red:#f0907e; --red-soft:#2c1712; --code-bg:#070805; --chip:#1c1f18; }
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Archivo",system-ui,sans-serif;line-height:1.55}
+a{color:var(--green);text-underline-offset:3px}
+.mono{font-family:"IBM Plex Mono",monospace}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px 72px}
+
+/* header */
+header{padding:36px 0 0}
+.kicker{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.kicker b{color:var(--ink);background:var(--green-soft);border:1px solid var(--line);padding:5px 9px;border-radius:999px;letter-spacing:.08em}
+h1{font-size:clamp(34px,6vw,64px);line-height:.95;letter-spacing:-.03em;margin:18px 0 14px;font-weight:800;max-width:12ch}
+h1 em{font-family:"Newsreader",serif;font-weight:500;font-style:italic;letter-spacing:-.01em}
+.lede{font-family:"Newsreader",serif;font-size:clamp(19px,2.6vw,24px);line-height:1.45;max-width:760px;color:var(--ink)}
+.lede strong{background:linear-gradient(transparent 62%, var(--green-soft) 62%)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin:28px 0 0}
+.stat{background:var(--paper);padding:16px 18px}
+.stat n{font-size:28px;font-weight:800;letter-spacing:-.03em;display:block;line-height:1}
+.stat span{font-size:12px;color:var(--muted);font-family:"IBM Plex Mono",monospace;text-transform:uppercase;letter-spacing:.08em}
+.alert{margin-top:16px;border:1px solid var(--line);border-left:5px solid var(--amber);background:var(--amber-soft);border-radius:10px;padding:14px 16px;font-size:14px}
+.alert b{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+
+/* nav */
+nav{position:sticky;top:0;z-index:20;background:color-mix(in srgb, var(--bg) 92%, transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);margin:28px -20px 0;padding:10px 20px;display:flex;gap:8px;flex-wrap:wrap}
+nav a{font-size:13px;font-weight:600;text-decoration:none;color:var(--ink);border:1px solid var(--line);background:var(--paper);padding:7px 12px;border-radius:999px}
+nav a:hover{border-color:var(--green)}
+
+/* sections */
+section{padding:36px 0 0}
+.sec-head{display:flex;justify-content:space-between;align-items:end;gap:16px;border-bottom:2px solid var(--ink);padding-bottom:12px;margin-bottom:18px}
+.sec-head h2{margin:0;font-size:clamp(24px,4vw,36px);letter-spacing:-.03em;line-height:1}
+.sec-head p{margin:0;color:var(--muted);font-size:13px;max-width:340px;text-align:right}
+h3{font-size:18px;letter-spacing:-.02em;margin:22px 0 8px}
+p{margin:0 0 12px}
+.small{font-size:13px;color:var(--muted)}
+
+/* two tracks */
+.tracks{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.track{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:22px;position:relative;overflow:hidden}
+.track::before{content:"";position:absolute;inset:0 0 auto 0;height:5px;background:var(--green-bright)}
+.track.tile::before{background:var(--ink)}
+.track .tag{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;display:flex;justify-content:space-between}
+.track h3{font-size:26px;margin:10px 0 6px}
+.track ul{margin:10px 0 0;padding-left:18px;font-size:14px}
+.track li{margin:6px 0}
+.pill{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line)}
+.pill.warn{background:var(--amber-soft);color:var(--amber)} .pill.ok{background:var(--green-soft);color:var(--green)}
+.rule{margin-top:16px;background:var(--ink);color:var(--bg);border-radius:14px;padding:18px 20px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.rule b{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;opacity:.7;display:block;margin-bottom:6px}
+.rule p{margin:0;font-size:15px}
+
+/* code toggle */
+.codebar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.codebar button{font:inherit;font-weight:700;font-size:13px;border:1px solid var(--line);background:var(--paper);color:var(--ink);padding:9px 14px;border-radius:999px;cursor:pointer}
+.codebar button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:14px;padding:18px;overflow:auto;font-family:"IBM Plex Mono",monospace;font-size:12.5px;line-height:1.6;margin:0}
+pre .c{color:#8a9a6b} pre .k{color:#c8e88a}
+.code-note{font-size:13px;color:var(--muted);margin-top:10px}
+
+/* table */
+.tablewrap{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--paper)}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:left;vertical-align:top;padding:12px 14px;border-bottom:1px solid var(--line)}
+th{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;background:var(--chip)}
+tr:last-child td{border-bottom:0}
+td:first-child{font-weight:700;white-space:nowrap}
+
+/* substrate flow */
+.flow{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:10px;align-items:stretch}
+.flowbox{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:16px}
+.flowbox h4{margin:0 0 6px;font-size:15px}
+.flowbox p,.flowbox li{font-size:13px;color:var(--muted)}
+.flowbox ul{margin:6px 0 0;padding-left:16px}
+.arrow{display:grid;place-items:center;font-family:"IBM Plex Mono",monospace;color:var(--muted);font-size:20px}
+.backends{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px}
+.backend{border:1px dashed var(--line);border-radius:12px;padding:14px;background:var(--paper)}
+.backend b{font-size:14px} .backend p{font-size:13px;color:var(--muted);margin:4px 0 0}
+
+/* gives / doesnt */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.panel{border-radius:16px;padding:20px;border:1px solid var(--line);background:var(--paper)}
+.panel.gives{border-top:5px solid var(--green-bright)} .panel.doesnt{border-top:5px solid var(--red)}
+.panel h3{margin-top:0} .panel li{font-size:14px;margin:7px 0} .panel ul{padding-left:18px;margin:8px 0}
+
+/* source library */
+.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.controls input{flex:1;min-width:200px;font:inherit;padding:11px 14px;border-radius:999px;border:1px solid var(--line);background:var(--paper);color:var(--ink)}
+.chipbtn{font:inherit;font-size:13px;font-weight:700;padding:9px 13px;border-radius:999px;border:1px solid var(--line);background:var(--paper);color:var(--ink);cursor:pointer}
+.chipbtn[aria-pressed="true"]{background:var(--green);color:#fff;border-color:var(--green)}
+.count{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--muted)}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:8px}
+.card:hover{border-color:var(--green)}
+.card .meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.badge{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:3px 7px;border-radius:999px;border:1px solid var(--line)}
+.badge.primary{background:var(--green-soft);color:var(--green)} .badge.secondary{background:var(--amber-soft);color:var(--amber)} .badge.paper{background:var(--ink);color:var(--bg)}
+.card h3{margin:2px 0 0;font-size:17px;line-height:1.25}
+.card h3 a{color:var(--ink);text-decoration:none} .card h3 a:hover{text-decoration:underline}
+.card p{font-size:13.5px;margin:0} .card p.rel{color:var(--muted);border-top:1px dashed var(--line);padding-top:8px}
+.card .url{font-family:"IBM Plex Mono",monospace;font-size:11px;word-break:break-all;color:var(--muted)}
+.card .open{margin-top:auto;font-weight:700;font-size:13px}
+.hidden{display:none!important}
+.context-note{font-size:13px;color:var(--muted);margin-bottom:12px}
+
+/* open questions */
+.questions{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:20px}
+.questions li{margin:9px 0;font-size:14px}
+footer{margin-top:44px;border-top:1px solid var(--line);padding-top:18px;font-size:12.5px;color:var(--muted);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+
+@media(max-width:820px){
+  .stats{grid-template-columns:1fr 1fr} .tracks,.rule,.split,.cards{grid-template-columns:1fr}
+  .flow{grid-template-columns:1fr} .arrow{transform:rotate(90deg);padding:2px} .backends{grid-template-columns:1fr}
+  .sec-head{flex-direction:column;align-items:start} .sec-head p{text-align:left}
+  td:first-child{white-space:normal}
+  table,thead,tbody,tr,th,td{display:block} thead{display:none}
+  td{border-bottom:0;padding:8px 14px} tr{border-bottom:1px solid var(--line);padding:6px 0}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="kicker"><b>Research pull · 27 Oct 2026</b><span>NVIDIA CUDA Rust</span><span>·</span><span>Microkernels</span><span>·</span><span>Substrate independence</span></div>
+  <h1>CUDA Rust, <em>read as a substrate problem.</em></h1>
+  <p class="lede">CUDA Rust is not one thing. It is <strong>two Rust tracks over one shared runtime</strong> — <strong>cuda-oxide</strong> for SIMT kernels and <strong>cutile-rs</strong> for tile kernels. The tile is the portable unit. The vendor boundary is not.</p>
+  <div class="stats">
+    <div class="stat"><n>12</n><span>Anchored sources</span></div>
+    <div class="stat"><n>2</n><span>Kernel tracks</span></div>
+    <div class="stat"><n>1,024</n><span>Floats in both vecadds</span></div>
+    <div class="stat"><n>sm_80+</n><span>Minimum GPU · CC 8.0</span></div>
+  </div>
+  <div class="alert"><b>Read this first — Mac limit</b><br>CUDA does not run on Apple Silicon. NVIDIA states CUDA 10.2 was the last release to support macOS; current macOS downloads are host Nsight tools for <em>remote</em> targets only. On a Mac you can design tile kernels and verify the same semantics on Metal — you cannot execute a cuda-oxide PTX kernel or a cutile-rs cubin locally. <a href="https://docs.nvidia.com/cuda/archive/10.2/cuda-toolkit-release-notes/index.html">Release notes</a> · <a href="https://developer.nvidia.com/nvidia-cuda-toolkit-developer-tools-mac-hosts">Mac host tools</a></div>
+</header>
+
+<nav aria-label="Sections">
+  <a href="#tracks">Two tracks</a><a href="#code">Same kernel, two ways</a><a href="#decision">Decision table</a><a href="#substrate">Substrate map</a><a href="#breaks">What breaks</a><a href="#library">Source library</a><a href="#context">Portable context</a><a href="#open">Open questions</a>
+</nav>
+
+<section id="tracks">
+  <div class="sec-head"><h2>Two tracks, one runtime</h2><p>NVIDIA's own rule: Tile first. SIMT when you need the control Tile deliberately hides.</p></div>
+  <div class="tracks">
+    <article class="track tile">
+      <div class="tag"><span>Track 01 — Tile</span><span class="pill ok">Reach for first</span></div>
+      <h3>cutile-rs</h3>
+      <p class="small">You write what <em>one tile block</em> does to a sub-tensor. The host partitions a tensor; CUDA Tile IR JIT-compiles the kernel and decides thread mapping and layout per NVIDIA architecture.</p>
+      <ul>
+        <li><b>Stable Rust 1.89+</b> · CUDA 13.3 recommended · Linux · no nightly, no custom LLVM</li>
+        <li>Published on crates.io — <span class="mono">cargo add cutile</span></li>
+        <li>Safety by <b>partitioning</b>: each tile block exclusively owns its chunk; grid follows from the partition</li>
+        <li>Used in Hugging Face <b>Grout</b> and <b>mistral.rs</b>; cutile README also cites <b>Candle</b> MoE kernels</li>
+        <li>Examples: <span class="mono">hello_world · saxpy · async_gemm</span> + a <span class="mono">cutile-kernels</span> crate</li>
+      </ul>
+      <p style="margin-top:14px"><span class="pill">Further along — still early-stage, not production-ready</span></p>
+    </article>
+    <article class="track">
+      <div class="tag"><span>Track 02 — SIMT</span><span class="pill warn">Early alpha</span></div>
+      <h3>cuda-oxide</h3>
+      <p class="small">You write what <em>one thread</em> does. A custom <span class="mono">rustc</span> codegen backend routes <span class="mono">#[kernel]</span> through Rust MIR → Pliron IR → LLVM IR → PTX. Host and device code in one file.</p>
+      <ul>
+        <li>Explicit thread / block / warp / cluster / TMA control, shared memory, synchronisation</li>
+        <li>Safety by <b>DisjointSlice</b> + typed thread index + <span class="mono">#[launch_contract]</span> validation</li>
+        <li><b>Shared memory still requires <span class="mono">unsafe</span></b> today — NVIDIA calls making it safe “active work”</li>
+        <li>Linux · CUDA 12.x+ · clang / libclang · GPU CC 8.0+</li>
+        <li>Toolchain in flux — see the disagreement flagged below</li>
+      </ul>
+      <p style="margin-top:14px"><span class="pill warn">Assess, do not ship on it</span></p>
+    </article>
+  </div>
+  <div class="rule">
+    <div><b>Use Tile when</b><p>The problem is dense tensor math and you want the compiler to schedule it — and the strongest safety claim of the two.</p></div>
+    <div><b>Use SIMT when</b><p>Porting CUDA C++, or the work is sparse / pointer-chasing, or you need warps, shared memory, TMA or cluster ops directly.</p></div>
+  </div>
+  <p class="small" style="margin-top:12px">⚠ <b>Toolchain disagreement, reported not resolved:</b> the NVIDIA blog (8 Sep 2026) pins <span class="mono">nightly-2026-04-03</span>; the current docs hub (read 27 Oct 2026) says a <b>pinned stable Rust 1.99.1</b> managed by <span class="mono">cargo oxide</span>. Check the cuda-oxide book before scripting any setup. Shared runtime for both tracks: <span class="mono">cuda-bindings · cuda-core · cuda-async</span> — Tile and SIMT kernels interoperate on the same stream over shared buffers.</p>
+</section>
+
+<section id="code">
+  <div class="sec-head"><h2>Same kernel, two ways</h2><p>Both tracks demo the identical 1,024-float vector add — so the abstraction gap is visible in the code itself.</p></div>
+  <div class="codebar" role="group" aria-label="Choose code example">
+    <button id="btn-tile" aria-pressed="true" onclick="showCode('tile')">cutile-rs — Tile</button>
+    <button id="btn-simt" aria-pressed="false" onclick="showCode('simt')">cuda-oxide — SIMT</button>
+  </div>
+  <pre id="code-tile"><code><span class="c">// Tile: no thread indices anywhere. Partitioning IS the safety argument.</span>
+<span class="k">#[cutile::module]</span>
+mod kernel {
+    <span class="k">#[cutile::entry()]</span>
+    fn add&lt;const B: i32&gt;(
+        z: &amp;mut Tensor&lt;f32, { [B] }&gt;,   <span class="c">// exclusive output sub-tensor, B = tile width</span>
+        x: &amp;Tensor&lt;f32, { [-1] }&gt;,      <span class="c">// shared input; -1 = dynamic dim</span>
+        y: &amp;Tensor&lt;f32, { [-1] }&gt;,
+    ) {
+        let tx = load_tile_like(x, z);
+        let ty = load_tile_like(y, z);
+        z.store(tx + ty);               <span class="c">// elementwise across the whole tile</span>
+    }
+}
+<span class="c">// host: api::zeros::&lt;f32&gt;(&amp;[1024]).partition([128])  →  8 tiles, grid follows
+// cargo add cutile, then cargo run  →  PASSED: all 1024 elements correct</span></code></pre>
+  <pre id="code-simt" class="hidden"><code><span class="c">// SIMT: the signature IS the safety argument.</span>
+<span class="k">#[cuda_module]</span>
+mod kernels {
+    <span class="k">#[kernel]</span>
+    <span class="k">#[launch_bounds(256)]</span>
+    <span class="k">#[launch_contract(domain = 1, block = (256, 1, 1))]</span>
+    pub fn vecadd(a: &amp;[f32], b: &amp;[f32], mut c: DisjointSlice&lt;f32&gt;) {
+        let idx = thread::index_1d();   <span class="c">// typed index, not a bare usize</span>
+        if let Some(c_elem) = c.get_mut(idx) {
+            *c_elem = a[idx.get()] + b[idx.get()];
+        }
+    }
+}
+<span class="c">// DisjointSlice splits one &amp;mut into per-thread exclusive pieces —
+// a plain &amp;mut [f32] shared by every thread is what Rust correctly refuses.
+// Aliasing c as its own input fails: error[E0502] cannot borrow as mutable…
+// cargo oxide new vecadd_demo &amp;&amp; cargo oxide doctor &amp;&amp; cargo oxide run</span></code></pre>
+  <p class="code-note">Why cutile's claim is stronger: cuda-oxide checks each launch call; cutile's ownership <em>follows the tensors across the launch boundary</em>. Aliasing the output as an input there fails with <span class="mono">error[E0382]: use of moved value: z</span>. Host ops in cutile are also lazy — nothing runs until <span class="mono">.sync_on(&amp;stream)</span>.</p>
+</section>
+
+<section id="decision">
+  <div class="sec-head"><h2>Decision table</h2><p>From NVIDIA's docs hub comparison, expanded with the report's findings.</p></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th></th><th>cuda-oxide (SIMT)</th><th>cutile-rs (Tile)</th></tr></thead>
+    <tbody>
+      <tr><td>Unit of work</td><td>What one thread does</td><td>What one tile block does to one sub-tensor</td></tr>
+      <tr><td>Feels like</td><td>CUDA C++: threads, blocks, shared memory</td><td>NumPy / PyTorch: tensor ops on tiles</td></tr>
+      <tr><td>Launch geometry</td><td><span class="mono">#[launch_contract]</span> + <span class="mono">#[launch_bounds]</span>, validated by generated <span class="mono">prepare_*</span></td><td>Derived from <span class="mono">.partition([…])</span> — the partition <em>is</em> the grid</td></tr>
+      <tr><td>Mutable-output safety</td><td><span class="mono">DisjointSlice&lt;T&gt;</span> per-thread pieces</td><td>Partition into per-tile exclusive sub-tensors</td></tr>
+      <tr><td>Shared memory / sync</td><td>Programmer-owned; currently <span class="mono">unsafe</span></td><td>Compiler-owned; none exposed (raw Tile IR via <span class="mono">unsafe</span>)</td></tr>
+      <tr><td>Compilation</td><td>Ahead of time: Rust → MIR → Pliron → LLVM → PTX</td><td>JIT at first launch: Rust AST → Tile IR → cubin</td></tr>
+      <tr><td>Portability</td><td>PTX per GPU, but <em>you</em> tune per GPU</td><td>Tile IR tunes per NVIDIA GPU — architecture-agnostic <em>within NVIDIA only</em></td></tr>
+      <tr><td>Maturity</td><td>Early alpha</td><td>crates.io, Grout, mistral.rs, Candle — still not production-ready</td></tr>
+    </tbody></table></div>
+  <p class="small" style="margin-top:10px">Performance evidence — <em>from the cuTile Rust paper, not independently verified:</em> on B200, elementwise at 7 TB/s and f16 GEMM at 2.1 PFlop/s (98% of cuBLAS); Grout batch-1 decode 171 tok/s (Qwen3-4B, RTX 5090) and 82 tok/s (Qwen3-32B, B200), at parity with vLLM and SGLang.</p>
+</section>
+
+<section id="substrate">
+  <div class="sec-head"><h2>The substrate map</h2><p>The microkernel is the tile, not the thread. cutile-rs is one entry in a registry — not the registry itself.</p></div>
+  <div class="flow">
+    <div class="flowbox"><h4>1 · Microkernel spec</h4><p>A small, named, testable unit — fused norm, attention tile, quantised GEMM epilogue — defined only by tensors, shapes, dtypes and tile sizes.</p><ul><li>Input tiles: shared</li><li>Output tile: exclusive</li><li>Tile width: const generic</li></ul></div>
+    <div class="arrow">→</div>
+    <div class="flowbox"><h4>2 · Kernel registry</h4><p>Name → signature, tile-shape parameters, capability requirements, and one implementation per substrate. No ready-made Rust standard for this was found — it is architecture you build.</p><ul><li>Closest analogue: ONNX Runtime's per-provider KernelRegistry</li><li>Closest crate: <span class="mono">cutile-kernels</span></li></ul></div>
+    <div class="arrow">→</div>
+    <div class="flowbox"><h4>3 · Dispatcher</h4><p>Detect the device at runtime, select the backend, autotune per device at first run, and <b>fail loudly</b> on a missing kernel or capability — never silently fall back.</p><ul><li>Tuning does not transfer across substrates, even when source does</li></ul></div>
+  </div>
+  <div class="backends">
+    <div class="backend"><b>NVIDIA — cutile-rs</b><p>Tile IR JIT to cubin. The design reference: kernel body contains no warp, block or tensor-core vocabulary.</p></div>
+    <div class="backend"><b>NVIDIA — cuda-oxide</b><p>The escape hatch inside the same substrate, for warp reductions, TMA pipelines, clusters, sparse structures.</p></div>
+    <div class="backend"><b>Apple Silicon — Metal</b><p>MSL compute kernel (or WGSL via wgpu): threadgroup = block, simdgroup = warp, threadgroup memory = shared memory, <span class="mono">simdgroup_matrix</span> / MPS = tensor cores.</p></div>
+  </div>
+  <h3>Why this stays model-agnostic</h3>
+  <p>A microkernel's contract is tensors, shapes, dtypes and tile sizes — not Qwen, Llama or Mistral. Grout is a Qwen3 engine, but its cutile kernels are generic operators (attention, fused norm, elementwise, embedding, argmax; dense projections go to cuBLAS), and mistral.rs's <span class="mono">cutile</span> feature covers quantised linear layers and MoE. That separation is what lets a product ship over the internet: weights travel in portable formats (safetensors, GGUF), and the binary carries a registry + runtime detection + JIT/autotune, so the machine it lands on picks the implementation that exists there.</p>
+  <div class="split">
+    <div class="panel gives"><h3>✓ What CUDA Rust gives</h3><ul>
+      <li>Rust-native NVIDIA kernels with compile-time aliasing / race rejection</li>
+      <li>A tile-shaped unit whose body holds no hardware vocabulary — the right specification layer</li>
+      <li>A shared runtime and same-stream Tile ↔ SIMT interop: a working example of the registry seam</li>
+      <li>Real adoption signal and near-cuBLAS paper claims for the Tile track</li></ul></div>
+    <div class="panel doesnt"><h3>✕ What it does not give</h3><ul>
+      <li>Production readiness — both tracks early-stage, APIs moving</li>
+      <li>Cross-vendor portability — Tile IR / PTX / cubin are NVIDIA-only</li>
+      <li>A Metal backend, a registry, or a dispatcher — you build those around it</li>
+      <li>Automatic determinism or performance portability — reduction order, TF32/MMA behaviour and per-arch tuning still need explicit design</li></ul></div>
+  </div>
+</section>
+
+<section id="breaks">
+  <div class="sec-head"><h2>What breaks between substrates</h2><p>The honest list. Portability of source is not portability of performance — or of assumptions.</p></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Difference</th><th>What actually changes</th></tr></thead>
+    <tbody>
+      <tr><td>Vendor boundary</td><td>Tile IR portability means across NVIDIA architectures (sm_80–sm_121). There is no Metal target. Cross-vendor is a separate layer's job.</td></tr>
+      <tr><td>Even inside NVIDIA</td><td>An independent CUDA Tile evaluation found the same attention kernel at 2.5× FlashAttention-2 on B200 but only 53% on RTX PRO 6000 (sm_120); GEMM at 52–79% of cuBLAS. Per-arch tuning and measurement remain required. <a href="https://arxiv.org/abs/2604.23466v1">Paper →</a></td></tr>
+      <tr><td>Vocabulary</td><td>Block → threadgroup · warp (32) → simdgroup (32) · <span class="mono">__shared__</span> → threadgroup memory · <span class="mono">__syncthreads()</span> → <span class="mono">threadgroup_barrier</span> · launch → <span class="mono">dispatchThreadgroups</span></td></tr>
+      <tr><td>Memory</td><td>Threadgroup memory has a hard 32 KB limit vs NVIDIA's 48 KB (secondary CUDA→MLX write-up). Apple unified memory removes most host↔device copies NVIDIA requires. Naive ports can be syntactically valid and architecturally wrong.</td></tr>
+      <tr><td>Bandwidth</td><td>H100 ~3.35 TB/s HBM3 vs M3 Max ~400 GB/s unified DRAM (per that write-up) — the optimum itself moves.</td></tr>
+      <tr><td>Matrix units</td><td>Tensor cores via Tile IR / WGMMA / tcgen05 vs Metal <span class="mono">simdgroup_matrix</span> / MPS. FP4 and block-scaled MMA are Tile IR 13.3 + sm_100+ only, with no Metal equivalent in the same API.</td></tr>
+      <tr><td>Numerics</td><td>FP reduction order is not associative. Bitwise reproducibility needs a fixed block–thread mapping, warp-synchronous tree reductions, no FP atomics — and TF32/MMA internals controlled explicitly.</td></tr>
+      <tr><td>Tile IR floors</td><td>Version floor varies by arch: 13.2 for Ampere/Ada/Blackwell sm_100–121, 13.3 for Hopper sm_90, 13.4 for sm_107. GPUs below sm_80 unsupported.</td></tr>
+    </tbody></table></div>
+</section>
+
+<section id="library">
+  <div class="sec-head"><h2>Source library — anchored list</h2><p>Every entry was found and read or indexed by the research pass on 27 Oct 2026. Secondary sources are labelled — verify them against the NVIDIA books before quoting.</p></div>
+  <div class="controls">
+    <input id="q" type="search" placeholder="Search titles, coverage, relevance…" aria-label="Search sources">
+    <button class="chipbtn" data-f="all" aria-pressed="true">All</button>
+    <button class="chipbtn" data-f="primary" aria-pressed="false">Primary</button>
+    <button class="chipbtn" data-f="paper" aria-pressed="false">Papers</button>
+    <button class="chipbtn" data-f="secondary" aria-pressed="false">Secondary</button>
+    <span class="count" id="count"></span>
+  </div>
+  <div class="cards" id="cards">
+    <!-- cards injected by script from the sourced list -->
+  </div>
+  <p class="small" id="empty" style="display:none;padding:18px 0">No sources match that filter. Clear the search or pick “All”.</p>
+</section>
+
+<section id="context">
+  <div class="sec-head"><h2>Context only — the portable side</h2><p>Not CUDA Rust. Included so the substrate picture is complete, and labelled so it never dilutes the anchor list.</p></div>
+  <p class="context-note">These are the cross-vendor / Metal counterparts the report maps cutile-rs against:</p>
+  <div class="cards">
+    <article class="card"><div class="meta"><span class="badge primary">Framework</span></div><h3><a href="https://docs.rs/crate/cubecl/latest">CubeCL</a></h3><p>Rust <span class="mono">#[cube]</span> kernels compiling to CUDA / HIP / Metal / SPIR-V / WGSL / CPU SIMD, with JIT + autotune.</p><p class="rel">The closest Rust-native example of the registry + codegen-per-substrate shape cutile-rs lacks cross-vendor. Feature gaps per platform surface as runtime compilation errors, not silent fallbacks.</p><span class="url">docs.rs/crate/cubecl/latest</span></article>
+    <article class="card"><div class="meta"><span class="badge primary">Runtime</span></div><h3><a href="https://docs.rs/wgpu/0.19.1/wgpu/?search=index.html">wgpu</a></h3><p>WebGPU in Rust; the Metal backend is the default on macOS / iOS.</p><p class="rel">The pragmatic Metal path for a Mac build — one WGSL shader source for Metal / Vulkan / DX12, at the cost of the WebGPU feature subset.</p><span class="url">docs.rs/wgpu</span></article>
+    <article class="card"><div class="meta"><span class="badge secondary">Secondary</span></div><h3><a href="http://bair.berkeley.edu/blog/2026/07/29/cuda-to-mlx-k-search/">CUDA → MLX / Metal translation notes (BAIR)</a></h3><p>Concept map for porting CUDA kernels to MLX/Metal: the 32 KB threadgroup limit and bandwidth reshaping.</p><p class="rel">The clearest statement of what breaks in a naive port — wrong tile sizes, wrong primitives, wrong memory assumptions.</p><span class="url">bair.berkeley.edu/blog/2026/07/29/cuda-to-mlx-k-search</span></article>
+    <article class="card"><div class="meta"><span class="badge paper">Papers</span></div><h3><a href="https://arxiv.org/html/2511.17826v1">Deterministic kernel work</a></h3><p>TBIK tree-invariant kernels and EigenAI fixed-reduction invariants for bitwise-reproducible GPU kernels.</p><p class="rel">The determinism invariants a microkernel registry should enforce if reproducibility matters. Second paper: <a href="https://arxiv.org/html/2602.00182v1">arXiv 2602.00182</a>.</p><span class="url">arxiv.org/html/2511.17826v1</span></article>
+    <article class="card"><div class="meta"><span class="badge secondary">Analogue</span></div><h3><a href="https://deepwiki.com/onnxruntime/onnxruntime-qnn/5-operator-kernels-and-contrib-ops">ONNX Runtime KernelRegistry</a></h3><p>Per-provider registry mapping an op schema to an implementation, matched at model load (DeepWiki summary).</p><p class="rel">The registry pattern to copy. No canonical Rust microkernel registry standard was found — this is the honest substitute.</p><span class="url">deepwiki.com/onnxruntime/onnxruntime-qnn</span></article>
+    <article class="card"><div class="meta"><span class="badge primary">Docs</span></div><h3><a href="https://nvidia.github.io/cuda-rust/cutile/latest/">cutile-rs documentation</a></h3><p>The live cutile book, alongside the monorepo at <span class="mono">NVIDIA/cuda-rust</span>.</p><p class="rel">Where to check current requirements and APIs — both tracks' APIs are still moving.</p><span class="url">nvidia.github.io/cuda-rust/cutile/latest</span></article>
+  </div>
+</section>
+
+<section id="open">
+  <div class="sec-head"><h2>Could not verify</h2><p>Open questions from the research pass, stated plainly rather than smoothed over.</p></div>
+  <div class="questions"><ul style="margin:0;padding-left:18px">
+    <li><b>Toolchain:</b> whether pinned stable 1.99.1 (docs hub) has fully replaced the blog's pinned nightly for cuda-oxide, and what the current <span class="mono">cargo oxide</span> install command is. The two primary sources disagree by date.</li>
+    <li><b>Secondary-only claims:</b> the three-tier safety model, the <span class="mono">gemm_sol</span> example at 868 TFLOPS on B200 (58% of cuBLAS solution), <span class="mono">index_2d(stride)</span> documented unsound in 0.x, and cutile 0.3.1 / <span class="mono">deny_in_kernel_checks</span> — none confirmed against the NVIDIA books in this pass.</li>
+    <li><b>Mac cross-compile:</b> whether CUDA Rust host code can be cross-compiled from macOS for a remote NVIDIA target without a local GPU — no source found. Do not assume it.</li>
+    <li><b>Ready-made registry:</b> whether any Rust crate today provides a cross-substrate microkernel registry (name → CUDA Tile + Metal + WGSL) — none found. CubeCL is the closest pattern, not a drop-in registry.</li>
+    <li><b>Named standards:</b> “kernel registry” and “deterministic kernel” as Rust-ecosystem standards — no canonical standard found.</li>
+  </ul></div>
+</section>
+
+<footer>
+  <span>Built from the 27 Oct 2026 research pull on NVIDIA CUDA SIMT, cuda-oxide and cutile-rs. Primary = NVIDIA / arXiv source opened in full; index = search-result text; secondary = labelled as such.</span>
+  <span class="mono">Tile = specification · SIMT = escape hatch · Registry = yours to build</span>
+</footer>
+</div>
+
+<script>
+var SOURCES=[
+{n:1,t:"Introducing CUDA Rust: Two Tracks for Writing GPU Kernels",s:"NVIDIA Technical Blog · 8 Sep 2026",k:"primary",b:"Primary · Opened",u:"https://developer.nvidia.com/blog/introducing-cuda-rust-two-tracks-for-writing-gpu-kernels/",c:"The announcement: SIMT vs Tile, both tracks' vecadd programs, safety arguments, requirements, maturity.",r:"The single best side-by-side of the two tracks; defines the Tile-first / SIMT-escape-hatch rule for a microkernel library."},
+{n:2,t:"CUDA Rust — Docs Hub",s:"NVIDIA Docs",k:"primary",b:"Primary · Opened",u:"https://nvidia.github.io/cuda-rust/index.html",c:"Picking a model, both tracks, the shared runtime, and the comparison table (feel, safety, indexing, compilation, toolchain, portability).",r:"The authoritative decision table — and the source of the toolchain update (pinned stable 1.99.1) vs the blog's nightly pin."},
+{n:3,t:"CUDA Programming Guide — Programming Model",s:"NVIDIA Docs",k:"primary",b:"Primary · Index",u:"https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/programming-model.html",c:"Thread / block / grid hierarchy; 32-thread warps; SIMT execution and warp divergence.",r:"Defines the substrate model cuda-oxide exposes — the vocabulary any Metal mapping must translate from."},
+{n:4,t:"NVIDIA/cuda-rust Monorepo",s:"NVIDIA · GitHub",k:"primary",b:"Primary · Opened via redirect",u:"https://github.com/NVIDIA/cuda-rust/tree/main/cutile-rs",c:"Live home of cutile-rs and, by layout, cuda-oxide, cuda-bindings, cuda-core and cuda-async.",r:"Where to actually clone and check today. The old NVlabs repos are archived or historical."},
+{n:5,t:"NVlabs/cutile-rs (Archived)",s:"NVlabs · GitHub",k:"primary",b:"Primary · Opened",u:"https://github.com/NVlabs/cutile-rs",c:"Archived repo: requirements matrix, examples (hello_world, saxpy, async_gemm), cutile-kernels, related projects (Candle, mistral.rs, TileGym).",r:"Proves the move to the monorepo; its README is still the fullest requirements / feature matrix for cutile-rs."},
+{n:6,t:"Fearless Concurrency on the GPU — Elibol, Roesch, Gelado, Buehler, Garland (2026)",s:"arXiv Paper",k:"paper",b:"Paper · Abstract opened",u:"https://arxiv.org/abs/2606.15991",c:"cuTile Rust's ownership-across-launch design, Tile IR memory-model proof, bounds-check strategy, and the Grout evaluation.",r:"The safety proof and performance evidence for the tile microkernel unit; §3.4 partitioning is the registry contract in miniature. Full PDF: arxiv.org/pdf/2606.15991."},
+{n:7,t:"CUDA Tile IR — Introduction & Stability",s:"NVIDIA Docs",k:"primary",b:"Primary · Index",u:"https://docs.nvidia.com/cuda/tile-ir/latest/13.1/sections/introduction.html",c:"Tile IR goals — a performance-portable tile ISA abstracting tensor cores, threads and memory — and its portability guarantees and limits.",r:"Shows Tile IR portability is within NVIDIA — the key scope limit for any substrate-independence claim. Stability: docs.nvidia.com/cuda/tile-ir/latest/sections/stability.html."},
+{n:8,t:"Evaluating CUDA Tile for AI Workloads on Hopper and Blackwell GPUs",s:"Independent Paper",k:"paper",b:"Paper · Index",u:"https://arxiv.org/abs/2604.23466v1",c:"Cross-architecture CuTile benchmarks vs cuBLAS / Triton / WMMA on H100, B200 and RTX PRO 6000.",r:"Counterweight to “tile = portable”: same source, 2.5× on B200 vs 53% on sm_120 — tuning and measurement per arch are still required."},
+{n:9,t:"CUDA Rust: What the Two GPU Kernel Tracks Actually Guarantee",s:"Independent Analysis · dev.to",k:"secondary",b:"Secondary · Index",u:"http://dev.to/chenyuan20509/cuda-rust-what-the-two-gpu-kernel-tracks-actually-guarantee-22f0",c:"Line-by-line reading of both safety arguments: launch-call checks (oxide) vs ownership across launch (cutile).",r:"Sharpest statement of why cutile's guarantee is stronger and where SIMT's unsafe remains."},
+{n:10,t:"NVIDIA AI Just Released cuda-oxide",s:"MarkTechPost · 9 May 2026",k:"secondary",b:"Secondary · Index",u:"https://www.marktechpost.com/2026/05/09/nvidia-ai-just-released-cuda-oxide-an-experimental-rust-to-cuda-compiler-backend-that-compiles-simt-gpu-kernels-directly-to-ptx/",c:"Three safety tiers, the gemm_sol example, the index_2d unsoundness note, and host + PTX output layout.",r:"Only source found for the tier model and the SIMT GEMM number — useful, but verify in the cuda-oxide book before quoting."},
+{n:11,t:"NVIDIA Announces CUDA Rust with cuda-oxide (SIMT) and cutile-rs (Tile)",s:"MarkTechPost · 8 Sep 2026",k:"secondary",b:"Secondary · Index",u:"https://www.marktechpost.com/2026/09/08/nvidia-announces-cuda-rust-with-cuda-oxide-simt-and-cutile-rs-tile-for-compile-time-safe-gpu-kernels/",c:"Straight summary of the NVIDIA blog, with requirements and adoption (Grout, mistral.rs).",r:"Corroborates the blog's maturity split from an independent outlet."},
+{n:12,t:"Rust & AI Weekly #12: CUDA Rust",s:"Newsletter · 14 Sep 2026",k:"secondary",b:"Secondary · Index",u:"https://decebaldobrica.com/blog/2026-09-14-rust-ai-weekly-12",c:"cutile 0.3.1 assessment, the proof-ladder / deny_in_kernel_checks claim, and a cuda-oxide “Assess, do not ship” verdict.",r:"Only source for the 0.3.1 version and the check-elimination claim — flag as secondary, not NVIDIA-confirmed."}
+];
+var cards=document.getElementById('cards'),count=document.getElementById('count'),empty=document.getElementById('empty');
+var filter='all',query='';
+function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+function render(){
+  var shown=0;cards.innerHTML='';
+  SOURCES.forEach(function(x){
+    var okF=(filter==='all'||x.k===filter);
+    var hay=(x.t+' '+x.s+' '+x.c+' '+x.r).toLowerCase();
+    var okQ=(!query||hay.indexOf(query)>-1);
+    if(!okF||!okQ)return;shown++;
+    var el=document.createElement('article');el.className='card';
+    el.innerHTML='<div class="meta"><span class="badge '+(x.k==='paper'?'paper':x.k)+'">'+esc(x.b)+'</span><span class="mono" style="font-size:11px;color:var(--muted)">#'+x.n+' · '+esc(x.s)+'</span></div>'
+      +'<h3><a href="'+x.u+'" target="_blank" rel="noopener">'+esc(x.t)+'</a></h3>'
+      +'<p>'+esc(x.c)+'</p><p class="rel"><b>Relevance:</b> '+esc(x.r)+'</p>'
+      +'<span class="url">'+esc(x.u.replace('https://',''))+'</span>'
+      +'<a class="open" href="'+x.u+'" target="_blank" rel="noopener">Open source →</a>';
+    cards.appendChild(el);
+  });
+  count.textContent=shown+' of '+SOURCES.length+' sources';
+  empty.style.display=shown?'none':'block';
+}
+document.querySelectorAll('.chipbtn').forEach(function(b){
+  b.addEventListener('click',function(){
+    document.querySelectorAll('.chipbtn').forEach(function(o){o.setAttribute('aria-pressed','false')});
+    b.setAttribute('aria-pressed','true');filter=b.getAttribute('data-f');render();
+  });
+});
+document.getElementById('q').addEventListener('input',function(e){query=e.target.value.trim().toLowerCase();render();});
+function showCode(which){
+  document.getElementById('code-tile').classList.toggle('hidden',which!=='tile');
+  document.getElementById('code-simt').classList.toggle('hidden',which!=='simt');
+  document.getElementById('btn-tile').setAttribute('aria-pressed',which==='tile'?'true':'false');
+  document.getElementById('btn-simt').setAttribute('aria-pressed',which==='simt'?'true':'false');
+}
+render();
+</script>
+</body>
+</html>

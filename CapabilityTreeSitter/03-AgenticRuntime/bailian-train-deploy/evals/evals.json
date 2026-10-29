@@ -1,0 +1,61 @@
+{
+  "skill_name": "bailian-train-deploy",
+  "evals": [
+    {
+      "id": 0,
+      "name": "deploy-existing-finetuned",
+      "prompt": "我之前在百炼微调了一个模型，输出名是 qwen3-8b-ft-202606241852-a100，帮我部署成我自己的推理服务，并调用一次验证效果。",
+      "expected_output": "创建 lora 部署，等待 RUNNING，用响应里的 deployed_model（而非 qwen3-8b-ft-...）调用 text chat 成功",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "dataset-not-ready",
+      "prompt": "我想在百炼上微调一个模型，但数据集我还没准备好，你看怎么办？",
+      "expected_output": "给出数据来源的可选方案：本地文件 / 列出已上传数据集(bl dataset list) / 生成示例数据，并自然向用户确认，不擅自创建训练任务",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "linkb-base-deploy-plan",
+      "prompt": "我不想训练，直接把 qwen3-8b 部署成我自己的推理服务。先帮我看清楚可用方案再动手。",
+      "expected_output": "识别为链路B（用户明确跳过训练），查 bl deploy models --source base，指出基座不能用 lora、需 ptu/mu，给出带必填参数的命令；不盲目 --plan lora",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "audio-tts-finetune",
+      "prompt": "我想用百炼微调一个 CosyVoice 语音合成模型，用我自己的声音数据。",
+      "expected_output": "识别为音频 TTS 链路，查阅 references/audio.md，指出数据格式为 ZIP(data.jsonl+train/*.wav)、training-type 固定 sft-lora、模型用 cosyvoice-v3-flash、超参 CLI 自动注入、部署只支持 mu plan、推理用 speech synthesize --voice default",
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "audio-tts-deploy-plan",
+      "prompt": "我在百炼微调了一个 CosyVoice TTS 模型，输出名 cosyvoice-v3-flash-ft-202607071040-b6da，帮我部署。",
+      "expected_output": "识别音频 TTS 只支持 mu plan（不能用 lora），用 bl deploy models --source custom 查可用 deploy-spec，创建 mu 部署（带 --deploy-spec），等待 RUNNING，用 speech synthesize --voice default 测试推理",
+      "files": []
+    },
+    {
+      "id": 5,
+      "name": "modality-dispatch",
+      "prompt": "帮我训练一个模型，我有一些数据。",
+      "expected_output": "先确认模态（文本、音频 TTS 还是图像生成），不假设默认是文本；问清楚数据格式和模型用途后再进入对应流程",
+      "files": []
+    },
+    {
+      "id": 6,
+      "name": "image-generation-finetune",
+      "prompt": "我想用百炼微调一个文生图模型，用我自己的图片数据训练出特定风格。",
+      "expected_output": "识别为图像生成链路，查阅 references/image.md，指出数据格式为 ZIP(data.jsonl+图像文件平铺)、training-type 固定 sft-lora、模型用 wan2.7-image-pro/wan2.7-image、超参 CLI 自动注入（generation_type/max_pixels 等从数据自动推断）、部署只支持 lora plan、推理用异步 API + 触发词",
+      "files": []
+    },
+    {
+      "id": 7,
+      "name": "image-generation-i2i",
+      "prompt": "我有一个图生图的任务，想用输入图片生成风格化后的输出图片，在百炼上怎么做？",
+      "expected_output": "识别为图像生成 I2I 模式，指出 CLI 会从数据自动推断（首行有 input_img → I2I，自动调整 max_pixels/val_img_size 为 1k），JSONL 每行需包含 input_img 字段（输入图）和 img_path 字段（输出图），无需额外 --generation-type flag",
+      "files": []
+    }
+  ]
+}

@@ -263,3 +263,50 @@ The fused launch costs ~1 dispatch (~200us) regardless of k — amortization is
 8-9.3x at k=8 and grows linearly with k. The GPU crossover vs CPU (dispatch-bound
 below n=256) is unchanged per-step, but fused-K moves the crossover in
 trajectory-terms: an 8-step trajectory at n=64 costs one dispatch instead of eight.
+
+## 14. Integer coherence kernel (2026-10-28 — CERTIFIED d<=256, traj_rel<=5.6e-6, 5/5 runs)
+
+Kernel: `core_lm/src/tpe_coherence_int.metal::tpe_coherence_fused` — INTEGER-ONLY
+port of `TorPhaseEncoder::evolve_vector` (no float ops; declared input-quant boundary
+`rint(x*2^31)` once per element + documented f32-mean drive adjudication). Gate:
+`core_lm/tests/tpe_coherence_verify.rs`. Spec parent: AttentionEconomicsAndActiveInference-Spec §9 gate 1.
+
+Measured (VERIFIED, M5 Pro, 5 consecutive runs bit-identical):
+
+| config | phase drift (info) | traj rel err (gated) | bound |
+|---|---|---|---|
+| d=64 batch=4 | 4 LSB | 5.549e-6 | 1e-4 |
+| d=128 batch=8 | 10 LSB | 5.451e-6 | 1e-4 |
+| d=256 batch=4 | 14 LSB | 6.433e-7 | 1e-4 |
+
+Full core_lm suite: 33 lib + all integration targets, 0 failed.
+tpe_phase gate still green (bitwise phases + damp<=6e-7); known_answers test_phi
+relaxed to an 8-LSB CORDIC envelope (documents the staged torus.rs retrofit's
+bounded special-angle error; res[2] stays exact).
+
+Corrections appended (each PROVED on silicon before patching — no replica math):
+1. Dropped ×phi in ha port (2026-10-28): int kernel computed ha=ab_red+r*pi/4,
+   truth ha=ab_red*phi+r*pi/4 — cos sign-flipped at ab=1 (0.54 vs -0.047).
+   Fixed with Q32_PHI_OVER_PI constant (round(phi/pi*2^31)). traj 204 -> 42.7.
+2. Doubled quotient in exact-T reduction (2026-10-28): kernel qq used
+   (ab*2^32+T/2)/T — every quotient doubled (159/160 wrong 0..160). Fixed to
+   ((ab<<31)+T/2)/T, verified 0 mismatches to ab=12800. (Folded into fix 1.)
+3. q32_sqrt u64 overflow (2026-10-28, DOMINANT bug): inner q32_div does (s<<31),
+   overflows for s > ~2^33. Hit twice: one_plus (~5.5e11, w_rope stuck at 1.0)
+   and bnorm sums (~1.2e11, basis 0.22x of truth). Fixed with >>8/<<4 scale
+   pattern at both sites (+ normalize + basis outputs). traj 42.7 -> 3.5 -> 5.6e-6.
+4. ln1p 8-bit mantissa truncation (2026-10-28): LOG2MANT lerp with dropped low
+   bits cost 1.06e-4 in rapidity via ln1p — over budget alone. Fixed with
+   adjacent-entry interpolation (error ~2e-6 log2). rap 1.087212 -> 1.087336.
+5. Phase-bitwise adjudication (2026-10-28): per-pair walk PROVED kernel
+   q32_div_round computes round() of the TRUE quantized quotient while the
+   oracle rounds f32-input/f64-accumulate quotients pre-quant — 1-LSB input
+   divergence on ~97% of pairs, ORACLE-side representation gap, accumulates to
+   4-14 LSB phase drift over 32-128 pairs. Trajectory output is INSENSITIVE
+   (5.6e-6). Gate enforces traj<=1e-4 + drift envelope<=32 LSB (informational);
+   bitwise restoration = oracle-onto-quantized-drives follow-up (preregistered).
+6. known_answers test_phi (2026-10-28): pre-existing exact-equality vs staged
+   CORDIC retrofit (off by 4 LSB at theta=0). Relaxed to 8-LSB envelope with
+   the bound documented, not silent.
+
+Deferred (NOT started): d>256 scope, CUDA/WASM backends, A41/A39 harnesses.

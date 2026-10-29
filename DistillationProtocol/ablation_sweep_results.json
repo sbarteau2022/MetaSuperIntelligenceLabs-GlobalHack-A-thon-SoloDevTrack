@@ -1,0 +1,219 @@
+{
+  "probe": {
+    "N": 1000,
+    "k": 64,
+    "s": 1.0,
+    "greedy": 0.633746492649761,
+    "stride": 0.17478031159422663,
+    "ratio": 3.6259604235119984
+  },
+  "rows": [
+    {
+      "model": "Muse-Glimmer",
+      "L": 52,
+      "B": 64,
+      "bands_layers": {
+        "early": 17,
+        "mid": 17,
+        "late": 18
+      },
+      "band_budget": {
+        "early": 13,
+        "mid": 32,
+        "late": 19
+      },
+      "k_per_layer": {
+        "early": 1,
+        "mid": 2,
+        "late": 1
+      },
+      "walks_max": 51,
+      "greedy_retained": 0.13359213049244015,
+      "stride_retained": 0.13359213049244015
+    },
+    {
+      "model": "Muse-Glimmer",
+      "L": 52,
+      "B": 96,
+      "bands_layers": {
+        "early": 17,
+        "mid": 17,
+        "late": 18
+      },
+      "band_budget": {
+        "early": 19,
+        "mid": 48,
+        "late": 29
+      },
+      "k_per_layer": {
+        "early": 1,
+        "mid": 3,
+        "late": 2
+      },
+      "walks_max": 51,
+      "greedy_retained": 0.13359213049244015,
+      "stride_retained": 0.13359213049244015
+    },
+    {
+      "model": "Muse-Glimmer",
+      "L": 52,
+      "B": 128,
+      "bands_layers": {
+        "early": 17,
+        "mid": 17,
+        "late": 18
+      },
+      "band_budget": {
+        "early": 26,
+        "mid": 64,
+        "late": 38
+      },
+      "k_per_layer": {
+        "early": 2,
+        "mid": 4,
+        "late": 2
+      },
+      "walks_max": 51,
+      "greedy_retained": 0.20038819573866024,
+      "stride_retained": 0.1338587814515069
+    },
+    {
+      "model": "Nemotron-30B",
+      "L": 52,
+      "B": 64,
+      "bands_layers": {
+        "early": 17,
+        "mid": 17,
+        "late": 18
+      },
+      "band_budget": {
+        "early": 13,
+        "mid": 32,
+        "late": 19
+      },
+      "k_per_layer": {
+        "early": 1,
+        "mid": 2,
+        "late": 1
+      },
+      "walks_max": 51,
+      "greedy_retained": 0.13359213049244015,
+      "stride_retained": 0.13359213049244015
+    },
+    {
+      "model": "Nemotron-30B",
+      "L": 52,
+      "B": 96,
+      "bands_layers": {
+        "early": 17,
+        "mid": 17,
+        "late": 18
+      },
+      "band_budget": {
+        "early": 19,
+        "mid": 48,
+        "late": 29
+      },
+      "k_per_layer": {
+        "early": 1,
+        "mid": 3,
+        "late": 2
+      },
+      "walks_max": 51,
+      "greedy_retained": 0.13359213049244015,
+      "stride_retained": 0.13359213049244015
+    },
+    {
+      "model": "Nemotron-30B",
+      "L": 52,
+      "B": 128,
+      "bands_layers": {
+        "early": 17,
+        "mid": 17,
+        "late": 18
+      },
+      "band_budget": {
+        "early": 26,
+        "mid": 64,
+        "late": 38
+      },
+      "k_per_layer": {
+        "early": 2,
+        "mid": 4,
+        "late": 2
+      },
+      "walks_max": 51,
+      "greedy_retained": 0.20038819573866024,
+      "stride_retained": 0.1338587814515069
+    },
+    {
+      "model": "Qwen3.6-MoE",
+      "L": 40,
+      "B": 48,
+      "bands_layers": {
+        "early": 13,
+        "mid": 13,
+        "late": 14
+      },
+      "band_budget": {
+        "early": 10,
+        "mid": 24,
+        "late": 14
+      },
+      "k_per_layer": {
+        "early": 1,
+        "mid": 2,
+        "late": 1
+      },
+      "walks_max": 39,
+      "greedy_retained": 0.13359213049244015,
+      "stride_retained": 0.13359213049244015
+    },
+    {
+      "model": "Qwen3.6-MoE",
+      "L": 40,
+      "B": 64,
+      "bands_layers": {
+        "early": 13,
+        "mid": 13,
+        "late": 14
+      },
+      "band_budget": {
+        "early": 13,
+        "mid": 32,
+        "late": 19
+      },
+      "k_per_layer": {
+        "early": 1,
+        "mid": 2,
+        "late": 1
+      },
+      "walks_max": 39,
+      "greedy_retained": 0.13359213049244015,
+      "stride_retained": 0.13359213049244015
+    },
+    {
+      "model": "Qwen3.6-MoE",
+      "L": 40,
+      "B": 96,
+      "bands_layers": {
+        "early": 13,
+        "mid": 13,
+        "late": 14
+      },
+      "band_budget": {
+        "early": 19,
+        "mid": 48,
+        "late": 29
+      },
+      "k_per_layer": {
+        "early": 1,
+        "mid": 4,
+        "late": 2
+      },
+      "walks_max": 39,
+      "greedy_retained": 0.20038819573866024,
+      "stride_retained": 0.1338587814515069
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+ "atoms": 40,
+ "queries": {
+  "physics": {
+   "k_star": 1,
+   "hits": 1,
+   "precision_at_kstar": 1.0,
+   "retrieved_topics": [
+    "physics"
+   ]
+  },
+  "cooking": {
+   "k_star": 1,
+   "hits": 1,
+   "precision_at_kstar": 1.0,
+   "retrieved_topics": [
+    "cooking"
+   ]
+  },
+  "programming": {
+   "k_star": 1,
+   "hits": 0,
+   "precision_at_kstar": 0.0,
+   "retrieved_topics": [
+    "history"
+   ]
+  },
+  "history": {
+   "k_star": 1,
+   "hits": 0,
+   "precision_at_kstar": 0.0,
+   "retrieved_topics": [
+    "physics"
+   ]
+  }
+ },
+ "wall_s": 0.5380089580139611,
+ "mean_precision_at_kstar": 0.5
+}

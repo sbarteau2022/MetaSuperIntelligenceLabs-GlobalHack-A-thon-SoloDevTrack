@@ -300,4 +300,39 @@ No ablation runs without a filed hash. Before any NeuralNet gate run, file a pre
 
 ---
 
+## 19. Diagram — N³ Nested Neural Net DB/RAG tree (handwritten sketch)
+
+**Source.** Stewart's handwritten sketch on graph paper, shared 2026-10-27 ~22:40 CDT. Transcribed verbatim below; readings that could not be resolved from the photo are flagged, not guessed. [TRANSCRIPTION — not a new claim.]
+
+```
+(N³) Nested Neural Net DB/RAG tree
+
+  Vetted RAG                          Active Memory DB
+  - Research Preprints               - Session Summaries
+  - Autonomous Runbooks              - Active production / task tracking
+  - Proofs / Formalisms              - Telemetry Must Knows
+  - Implementations
+  - Indexes — Compiled & Vetted Sourcing
+
+        \                              /
+         Pinned Invariants
+         Tactical Reasoning Skill [as read from sketch]
+         Tree Sitter
+                \                    /
+                 Capability
+
+EXAMPLE — Web Development MCP Server
+  - Front End Design Plug-In
+  - Middleware Plug-In
+  - Backend Design Plug-In
+  Inputs from below: Hooks, Skills
+  Outputs to the right: labelled "Taking" in the sketch [UNRESOLVED —
+    handwriting could not be read cleanly from the photo; do not
+    quote this label until Stewart confirms it.]
+```
+
+**Reading of the shape [PROPOSED — interpretation of the sketch, not a measured result].** The tree has two roots, not one: a vetted, compiled RAG side (preprints, runbooks, proofs, implementations, indexes) and a live active-memory side (session summaries, active production/task tracking, telemetry must-knows). Capability comes out of the middle, where pinned invariants, tactical reasoning, and Tree Sitter parsing meet. The Web Development MCP Server is the worked example of that shape: three plug-ins, with hooks and skills as inputs.
+
+---
+
 _Atom substrate pre-spec — NeuralNet. Draft only. Not built._

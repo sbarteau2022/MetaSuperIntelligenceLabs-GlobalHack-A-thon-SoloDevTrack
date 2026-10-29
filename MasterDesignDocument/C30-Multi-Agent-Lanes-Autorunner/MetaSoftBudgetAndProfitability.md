@@ -1,4 +1,4 @@
-# C30.8 — Meta Soft-Budget, Profitability, and Hidden-Variational Control
+soft j# C30.8 — Meta Soft-Budget, Profitability, and Hidden-Variational Control
 
 **Status.** PROPOSED economic/active-inference contract. **Date:** 2026-10-27. **Parent:** C21 Performance Budgets, C30 Lanes, C31 Telemetry, C06.21 Carving.
 
@@ -21,15 +21,19 @@ For an assigned task `T` and agent/branch `a`:
 - `π_a(t) = b_tok·unit_tok + b_tools·unit_tool + ...`? — profit function.
 
 **Profit (Meta perspective):**
+
 $$
 \Pi_a = \text{value}(B_a^{\text{soft}}) - \text{cost}(x_a^{\text{final}})
 $$
+
 where value is a function of quality, security, and adaptability targets (higher is better), and cost is token/tool/time spend (lower is better). A positive `Π_a` is “profitable”; zero/negative is not.
 
 **Agent objective (local, unaware of `B`):**
+
 $$
 \min_{\pi_{\text{agent}}} \mathbb{E}[F_a(t)] + \lambda_{\text{cost}} \cdot \text{resource\_cost}(x)
 $$
+
 The agent minimizes its own free energy plus an intrinsic resource cost. It does **not** target the Meta’s soft budget, and must not be able to infer it.
 
 ## 3. Information asymmetry (anti-gaming)
@@ -69,6 +73,7 @@ Meta adjustments affect **future** tasks/allocations and scope, never the agent�
 ## 6. Telemetry fields (counts/ids/ratios only)
 
 Meta needs at least:
+
 - `tokens_used`, `tool_calls`, `retries`, `elapsed_ms`
 - `pass_rate`, `quality_score`, `security_violations`, `adaptation_events`
 - `free_energy_proxy` (scalar trend)

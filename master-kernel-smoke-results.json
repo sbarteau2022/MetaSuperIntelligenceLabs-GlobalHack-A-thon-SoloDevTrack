@@ -1,0 +1,96 @@
+{
+  "substrate": {
+    "system": "Darwin",
+    "machine": "arm64",
+    "processor": "arm",
+    "python": "3.14.7",
+    "cpu_count": 18,
+    "metal_framework_present": true,
+    "active": [
+      "TILE_LOAD",
+      "MMA",
+      "SFU_EXP",
+      "PERSISTENT_SCHED",
+      "TREE_REDUCE",
+      "KV_TRAVERSE",
+      "INT_PATH"
+    ],
+    "inactive": [
+      "TMEM_STAGE",
+      "TWO_CTA_MMA"
+    ]
+  },
+  "gemm": {
+    "v1_s": 0.005510667018825188,
+    "v2_s": 0.009709792007924989,
+    "speedup": 0.5675370815695602,
+    "v1_bitwise": true,
+    "v2_bitwise": true
+  },
+  "attention": {
+    "v1_s": 0.000428165978519246,
+    "v2_s": 0.00028466599178500473,
+    "speedup": 1.5040995091630764,
+    "v2_maxdiff_oracle": 7.216449660063518e-16
+  },
+  "self_opt": {
+    "receipts": [
+      {
+        "tile": 32,
+        "time_s": 0.005406875017797574,
+        "pass": true
+      },
+      {
+        "tile": 64,
+        "time_s": 0.005635124980472028,
+        "pass": true
+      },
+      {
+        "tile": 128,
+        "time_s": 0.009717000008095056,
+        "pass": true
+      },
+      {
+        "tile": 256,
+        "time_s": 0.011481499997898936,
+        "pass": true
+      }
+    ],
+    "best_tile": 32,
+    "healed_tile_after_fault": 64,
+    "healed_bitwise_oracle": true
+  },
+  "rotation": [
+    {
+      "profile": "mac_real",
+      "digest": "701a1a6945de680d",
+      "bitwise_oracle": true,
+      "dispatch_share_pct": 0.37010804196923647
+    },
+    {
+      "profile": "cpu_scalar",
+      "digest": "701a1a6945de680d",
+      "bitwise_oracle": true,
+      "dispatch_share_pct": 0.12858224880248978
+    },
+    {
+      "profile": "cpu_vector",
+      "digest": "701a1a6945de680d",
+      "bitwise_oracle": true,
+      "dispatch_share_pct": 0.2282934766671833
+    },
+    {
+      "profile": "metal_sim",
+      "digest": "701a1a6945de680d",
+      "bitwise_oracle": true,
+      "dispatch_share_pct": 0.1263513269544419
+    },
+    {
+      "profile": "cuda_sim",
+      "digest": "701a1a6945de680d",
+      "bitwise_oracle": true,
+      "dispatch_share_pct": 0.12358447075777705
+    }
+  ],
+  "rotation_drift": "0 (all identical)"
+}

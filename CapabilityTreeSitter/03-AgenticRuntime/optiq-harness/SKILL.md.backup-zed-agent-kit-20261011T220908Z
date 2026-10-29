@@ -1,0 +1,31 @@
+---
+name: optiq-harness
+description: Work safely in the local Rust and TypeScript OptiQ agent harness, using its jailed host, skill tree, and deterministic workflows.
+---
+
+# OptiQ harness workflow
+
+Target repository: `/Users/stewartbarteau/Desktop/old-q4-extras/agent-harness`.
+
+Read its `AGENTS.md` before every change. It is a local Rust tool host with a TypeScript agent loop and existing skills/workflows. Use its owned tools and workflows rather than creating parallel, unrestricted equivalents.
+
+Required constraints:
+
+- Keep Cargo offline: use `cargo build --offline` or `cargo test --offline`.
+- Do not run `npm install`, `pip`, `brew`, `sudo`, remote clients, disk tools, or arbitrary network tooling inside the harness.
+- Do not load a model or import MLX. OptiQ already serves on `127.0.0.1:8000`; preserve its sampler card and do not start another server.
+- Keep `ts/agent.mjs` free of request-level sampler fields.
+- Keep the session root jailed. New tools must be owned by a skill and be bounded like the Rust host.
+
+Use the existing workflows before ad hoc steps:
+
+```sh
+# agent-harness/README.md — discovery and smoke verification
+export PATH="/opt/homebrew/bin:$PATH"
+node ts/cli.mjs workflow orient
+node ts/cli.mjs workflow fix-and-verify
+cargo test --offline
+node ts/smoke.mjs
+```
+
+For browser checks, keep Playwright outside the harness and point it only at a local test surface. Record that separation in the test report.

@@ -540,3 +540,59 @@ recovery, and a baseline gate; booting "from nothing" is a tested path, not an a
 
 _Label policy: claims in this document are PROPOSED unless explicitly VERIFIED/INFERRED above.
 Measured numbers require a filed ablation hash and a passing receipt before citation._
+
+---
+
+## Appendix P — CodeBasePressureTest audit of HyperMind + Nested KV v1 (dated record, 2026-10-28)
+
+Pressure audit run against `hypermind-nested-kv` (Rust 2021, vendored `atomadb` engine),
+release binary + `cargo test -- --test-threads=1`. All verdicts below are evidence from this pass.
+
+| ID | Surface | Pressure | Expected | Observed | Verdict |
+|----|---------|----------|----------|----------|---------|
+| PA-01 | Build | `cargo build --release` | 0 errors, binary produced | Release build finishes, 2 pre-existing warnings (unused var, AtomaDB dead code) | VERIFIED PASS |
+| PA-02 | Test suite | `cargo test -- --test-threads=1` | 11/11 pass | 11/11 pass (geometry, depth bound, snapshot/recover, VP-tree exactness, 6 gate tests) | VERIFIED PASS |
+| PA-03 | VP-tree exactness | 16-atom ingest, 5-NN vs brute force | Identical result sets | `vp_tree_matches_brute_force` passes | VERIFIED PASS |
+| PA-04 | Depth gate | 5 atoms, attend k=3 | `depth_k ≤ n`, data-dependent | `depth_k` selected from score-mass curve, bounded ≤ n | VERIFIED PASS |
+| PA-05 | Geometry | Any text, any salience | `⟨x,x⟩_L = 1` and radius ∝ (1−salience) | `hyperboloid_constraint`, `salience_sets_radius` pass | VERIFIED PASS |
+| PA-06 | Receipts | All mutating tools | receipt sha256 + timestamp | ingest/query/attend/compact/snapshot/recover/health all receipted (recover fixed this pass) | VERIFIED PASS (was FAIL, fixed) |
+| PA-07 | Health honesty | `map.health` | No unmeasured superlatives | Reports `exact_attention_measured: false`, VP-string corrected to exact-prune semantics (was FAIL, fixed) | VERIFIED PASS (was FAIL, fixed) |
+| PA-08 | Storage integrity | snapshot → corrupt 1 byte → recover | `hash-mismatch`, no silent load | Stored sha256 `538842c1…` vs corrupted `432abde8…` → `hash-mismatch` returned, vault untouched | VERIFIED PASS |
+| PA-09 | WAL shape | snapshot | Atomic tmp+rename, length-prefixed bincode WAL | 1 record, len 104, clean parse, 0 trailing bytes | VERIFIED PASS |
+| PA-10 | Malformed input | `text: 42`, `qtext: [..]`, unknown tool, unknown method, garbage line | Structured errors / JSON-RPC errors, no crash | `schema: … must be string`, `unknown tool`, `-32601 method not found`, `-32700 parse error`, blank lines skipped, stderr empty | VERIFIED PASS |
+| PA-11 | Path confinement | `subpath: ../etc` | Reject | `path traversal rejected` | VERIFIED PASS |
+| PA-12 | Role gating | `HYPERMIND_ROLE=ingest` → write | Deny | `role may not deposit to mind` | VERIFIED PASS |
+| PA-13 | Concurrency | 6 sequential ingests + 8-thread mutexed test | No loss, no panic | 6 ids assigned; `concurrency_smoke` 8/8 atoms present | VERIFIED PASS (lock-level, see PA-18) |
+| PA-14 | Oversized payload | 200 KB text ingest | Accept with receipt (bounded by disk) | Accepted, receipted | VERIFIED PASS (capacity unbounded by config — see PA-19) |
+| PA-15 | Replay | snapshot twice, no change | Identical digest | Same digest `18500b32…` both times | VERIFIED PASS |
+| PA-16 | Portability | `ATOMA_WORKSPACE_ROOT` redirect | Works under new root | `portability_smoke` passes | VERIFIED PASS |
+| PA-17 | HTTP transport | JSON-RPC POST to loopback server | Same results as stdio | ingest + health return receipted content | VERIFIED PASS |
+| PA-18 | True parallelism | 8 OS processes writing one vault | IPC-safe isolation | **Not claimed.** Mutex covers in-process threads only; multi-process writers share `mind.jsonl` without locking. | OPEN GAP G-HM-08 |
+| PA-19 | Budgets | Per-caller rate limits, token budgets, k cap, DB size ceiling | Enforced | **Absent.** Only `k` naturally bounds retrieval width; no rate/token/size limits exist. | OPEN GAP G-HM-09 |
+| PA-20 | Complexity honesty | Health/advertised complexity | Match implementation | Was `O(N) brute-force … VP-tree planned` while code already ran VP-tree. Corrected to exact-prune VP semantics; average `O(log N)` stated with bounded-expansion condition per C05.12. | VERIFIED PASS (was FAIL, fixed) |
+
+## Appendix C — CertifyOrProposeGaps verdict (2026-10-28)
+
+**Certified to ship as a local plugin (PROVEN):** build, 11/11 tests, VP-tree exactness,
+data-dependent depth gate, hyperboloid geometry + salience-radius, receipted tools,
+hash-verified binary snapshots, tamper-visible recovery, malformed/traversal/role
+rejections, stdio + HTTP JSON-RPC, portability, replay-stable digests.
+
+**Blocked from certified claims (OPEN, with owner and what each waits on):**
+- **G-HM-08 multi-process write isolation** — waits on a file lock or single-writer service around `mind.jsonl` + a 2-process writer test. Owner: hypermind core.
+- **G-HM-09 budgets** — waits on per-caller rate limits, `k` cap, and DB size ceiling in config + denial receipts. Owner: hypermind core.
+- **G-HM-10 Cedar policy** — waits on wiring the policy engine instead of hardcoded roles. Owner: compliance lane.
+- **G-HM-11 TLS/auth for HTTP** — waits on auth + TLS/reverse-proxy posture and an auth-negative test. Owner: security lane.
+- **G-HM-12 measured performance** — waits on the A1 ablation (fixed corpus, same hardware) before any throughput claim. Owner: evaluation lane.
+- **G-HM-13 external geometry retraining claims** — unchanged from the A40 null result; v1 makes no retraining claims and earns none. Owner: research lane.
+- **Pre-existing AtomaDB warnings** (unused import/var in engine, `AnchorVec.text` dead) — cosmetic, evidence they do not affect v1 paths. Owner: vendored engine.
+
+**Next steps (dependency order):**
+1. File-lock `mind.jsonl` appends; add the 2-process writer test (closes G-HM-08).
+2. Add config budgets + denial receipts (closes G-HM-09).
+3. Wire Cedar over the three roles; keep the denial test (closes G-HM-10).
+4. Document the HTTP trust model (loopback-only) or add auth (closes G-HM-11).
+5. Run A1 + clustered stress + cross-hardware replication; only then cite performance (closes G-HM-12/G-HM-13).
+
+**Single next command to run:** `cargo test -- --test-threads=1` in `hypermind-nested-kv`
+(then `cargo build --release`), repeating the PA-01/PA-02 evidence after any change.

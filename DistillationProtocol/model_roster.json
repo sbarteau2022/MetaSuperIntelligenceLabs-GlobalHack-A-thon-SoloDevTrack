@@ -1,0 +1,62 @@
+{
+  "models": [
+    {
+      "name": "Muse-Glimmer",
+      "path": "/Users/stewartbarteau/models/Muse-Glimmer-q4km-gs128-MLX",
+      "quant": "4-bit MLX (group_size 128)",
+      "num_layers": 52,
+      "hidden_size": 6656,
+      "gqa": "32/2",
+      "model_type": "muse_glimmer",
+      "fingerprint": "sha256:48a6c13cea903c9f05b77619dcdf5069d7e407bad29c6c73c1dd240c03fb59de",
+      "fingerprint_source": "DistillationProtocol/muse_fingerprint_receipt.json",
+      "scope": "shared"
+    },
+    {
+      "name": "Qwen3.6-35B-MoE",
+      "path": "/Users/stewartbarteau/models/fused/Qwen3.6-MoE-Combined",
+      "quant": "4-bit (group_size 64; router/gates 8-bit)",
+      "num_layers": 40,
+      "hidden_size": 2048,
+      "gqa": "16/2",
+      "experts": "8 active / 256 total",
+      "model_type": "qwen3_5_moe",
+      "fingerprint": "compute",
+      "scope": "shared"
+    },
+    {
+      "name": "Qwen3.8-27B",
+      "path": "/Users/stewartbarteau/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/snapshots/3e6447f082e89cc7f0bc6e5441afd38dfce760ff",
+      "quant": "4-bit MLX",
+      "num_layers": 64,
+      "hidden_size": 5120,
+      "gqa": "24/4",
+      "model_type": "qwen3_5_text",
+      "fingerprint": "compute",
+      "scope": "shared"
+    },
+    {
+      "name": "Nemotron-3.5-Lightning",
+      "path": "/Users/stewartbarteau/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit-Abliterated",
+      "quant": "4-bit (group_size 64, affine)",
+      "num_layers": 52,
+      "hidden_size": 2688,
+      "gqa": "32/2",
+      "experts": "6 active / 128 routed + 1 shared",
+      "model_type": "nemotron_h",
+      "fingerprint": "compute",
+      "scope": "shared"
+    },
+    {
+      "name": "QwQ-32B",
+      "path": "/Volumes/WD Drive/models/QwQ-32B-4bit",
+      "quant": "4-bit (group_size 64)",
+      "num_layers": 64,
+      "hidden_size": 5120,
+      "gqa": "40/8",
+      "model_type": "qwen2",
+      "fingerprint": "compute",
+      "scope": "shared"
+    }
+  ]
+}

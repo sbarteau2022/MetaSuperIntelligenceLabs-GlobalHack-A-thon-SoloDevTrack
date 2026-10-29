@@ -310,7 +310,7 @@ What was NOT checked here: A36/A37 preregistration text (to be written before an
 
 #### Problem addressed
 
-[VERIFIED by reading C24, C05, C29, and C31] The workspace already defines a structured pre-compaction checkpoint, geometric memory, tool receipts, and privacy-safe telemetry, but it does not define one small, exact state object that crosses compaction and restart while retaining proof of where supporting context came from. [INFERRED from that gap] The 10-day sprint can therefore win on a coherent systems thesis without requiring the full ACFT/TwisterAttention kernel path: **continuity under bounded context, with auditable recall and a one-switch fallback**.
+everything [VERIFIED by reading C24, C05, C29, and C31] The workspace already defines a structured pre-compaction checkpoint, geometric memory, tool receipts, and privacy-safe telemetry, but it does not define one small, exact state object that crosses compaction and restart while retaining proof of where supporting context came from. [INFERRED from that gap] The 10-day sprint can therefore win on a coherent systems thesis without requiring the full ACFT/TwisterAttention kernel path: **continuity under bounded context, with auditable recall and a one-switch fallback**.
 
 #### Name and novelty boundary
 

@@ -1,0 +1,4 @@
+{
+  "git": {"disable_git": false},
+  "project_panel": {"git_status_indicator": true}
+}

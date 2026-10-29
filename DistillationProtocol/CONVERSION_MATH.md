@@ -1,16 +1,21 @@
 # Conversion Math — Distillation to Capability (without fine-tuning)
 
-**Stance.** Capability throughput DOES NOT REQUIRE FINE-TUNING. VERIFIED doctrine from vault docs: frozen weights read-only; capability arises from 30B-distilled trajectories (0/1/2-cells) stored in the carved swarm map and recalled by retrieval. No weight update occurs. A model is converted *to capability* by replacing recomputation with recalled, judge-passed reasoning arcs. This is PROPOSED as a claim; certification pending prereg.
+**Stance.** Capability throughput DOES NOT REQUIRE FINE-TUNING. VERIFIED doctrine from vault docs: frozen weights read-only; capability arises from 30B-distilled trajectories (0/1/2-cells) stored in the carved swarm map and recalled by retrieval. No weight update occurs. A model is converted _to capability_ by replacing recomputation with recalled, judge-passed reasoning arcs. This is PROPOSED as a claim; certification pending prereg.
 
-## 1. Distillation operator
+**Steward directive (binding, 2026-10-27).** Distilled knowledge is INVARIANT to the state space (`PROTOCOL.md` §8): knowledge and reasoning are separated from the model at absolute depth. Retrieval never consults teacher identity; the atom is a learned symbol to inherit. The math below is therefore teacher-free by construction — no equation takes a teacher argument.
+
+## 1. Distillation operator (teacher-free)
 
 Let a teacher trajectory be a sequence of steps s_i with hidden states h_i ∈ R^d and next-op distribution p_i. The projector (MGS-orthogonalized, ε=0.08) maps each step into a global atom `a_i` carrying:
-- coordinate in (H³ × T²)/Γ₁₂ (lorentz vector),
+
+- coordinate in (H³ × T²)/Γ₁₂ (lorentz vector) — function of CONTENT ONLY (§8: no teacher argument),
 - tangent slots (top-k directions),
-- certainty / teacher entropy,
+- certainty / teacher entropy — entropy of the DISTRIBUTION, not identity of the teacher,
 - payload fingerprint.
 
-Novelty gate: an atom mints only if its nearest existing atom distance ≥ δ (novel) OR it raises retained energy of an existing well (reinforcement).
+Formally the mint map factors as `mint = carve(project(content)) × audit(teacher)`: the coordinate half is teacher-invariant, the audit half (lineage + `origin_model_fingerprint` field) is teacher-tagged and execution-invisible. Any implementation where `∂(coordinate)/∂(teacher) ≠ 0` is non-conformant.
+
+Novelty gate: an atom mints only if its nearest existing atom distance ≥ δ (novel) OR it raises retained energy of an existing well (reinforcement). Distance is computed over (coordinate, invariant) ONLY — teacher tag excluded, so cross-teacher duplicates coalesce (§8).
 
 ## 2. Capability conversion
 
@@ -29,6 +34,7 @@ Cap(T) = Cap0(T) + α * cov(T) * R̄
 ```
 
 where
+
 - Cap0 = baseline capability of the frozen 8B model (measured, not asserted),
 - α = conversion coefficient (PROPOSED, must be calibrated),
 - R̄ = mean retained energy of minted atoms (receipted).
@@ -45,6 +51,7 @@ where p_useful = fraction of minted atoms that cover a required sub-problem (mea
 ## 3. One-pass distillation to capability
 
 Single pass conditions:
+
 - teacher provides trajectories OR weight modes,
 - projector + novelty + judge gates fire online,
 - atoms mint into carved wells,
