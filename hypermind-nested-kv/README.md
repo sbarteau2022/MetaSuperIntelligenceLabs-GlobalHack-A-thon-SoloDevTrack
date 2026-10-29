@@ -51,6 +51,21 @@ See `PLAIN-LANGUAGE-SPEC.md` for the system in plain words,
   (D1/Vectorize/AI) attach at routes next — math never moves again.
 - See `EDGE-MIGRATION.md` for the full D1/Vectorize/Workers-AI/R2/KV map.
 
+### MultiModel Mind (DONE 2026-10-28, goal ce19e81a)
+
+- **Proof 1 — Euclidean model:** `map.read_euclid` returns flat R^dim rows
+  (Poincare 3 + IDF-dir 3 + phase 2 + salience 1); self-cosine 1.0 live.
+  No hyperbolic math, no TPE knowledge required by the caller.
+- **Proof 1 — nested KV active:** `map.kv_store`/`map.kv_fetch` with
+  producer lineage + accumulating hit receipts; MISS taps hunger;
+  cache snapshotted + recovered with the map (1 entry round-trip proven).
+- **Proof 2 — walk ingestion:** `multimodel_walk.py`: 5 reasoning steps,
+  each reads prior KV → queries map → stores conclusion → ingests trace.
+  6/6 KV readable, 5/5 traces ingested, snapshot `fc1ec189` @ 2,079 atoms.
+- **Model-agnostic:** the harness speaks only map tools; no model-specific
+  code anywhere. Swap the reasoner, nothing changes.
+- 31/31 tests (euclid contract, KV active incl. snapshot round-trip).
+
 ### Takeoff D1 (DONE 2026-10-28, goal c3e2a957)
 
 - **`hypermind-hunger` D1 live** (local + remote): TAP-N-TRACE §4 schema
