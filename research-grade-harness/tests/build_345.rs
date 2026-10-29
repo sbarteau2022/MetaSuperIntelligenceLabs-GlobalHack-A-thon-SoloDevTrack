@@ -7,9 +7,7 @@ use rgah::{
         ParetoPoint, leakage_critic, noise_band_accept, pareto_frontier, prune_dominated,
         regularized_adopt,
     },
-    lanes::{
-        ContributorLane, ContributorLaneMuse, DualLaneRun, LaneVerdict, NativeLane, TaskPacket,
-    },
+    lanes::{ContributorLaneMuse, DualLaneRun, LaneVerdict, NativeLane, TaskPacket},
     plugins::{PluginRegistry, PluginSpec},
     rag::{MockMap, RealVector, rag_coverage},
     session::{SessionEventKind, SessionLog},

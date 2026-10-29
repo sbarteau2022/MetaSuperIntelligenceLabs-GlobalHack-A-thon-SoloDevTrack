@@ -70,12 +70,30 @@ impl PluginRegistry {
         Ok(r)
     }
 
-    /// Unload: fully undoes the plugin. Inverse executes, dependents block.
+    fn provided_elsewhere(&self, cap: &str, except: &str) -> bool {
+        self.active
+            .values()
+            .any(|a| a.name != except && (a.provides.iter().any(|p| p == cap) || &a.name == cap))
+    }
+
+    /// Unload: fully undoes the plugin. Blocked when any active dependent
+    /// needs a capability only this plugin provides (capability match, not
+    /// name match — dependents declare what they need, not who provides it).
     pub fn unload(&mut self, name: &str) -> Result<PluginReceipt, String> {
+        let provided: Vec<String> = self
+            .active
+            .get(name)
+            .map(|s| s.provides.clone())
+            .unwrap_or_default();
         let dependents: Vec<String> = self
             .active
             .values()
-            .filter(|a| a.depends_on.iter().any(|d| d == name))
+            .filter(|a| a.name != name)
+            .filter(|a| {
+                a.depends_on.iter().any(|d| {
+                    d == name || (provided.contains(d) && !self.provided_elsewhere(d, name))
+                })
+            })
             .map(|a| a.name.clone())
             .collect();
         if !dependents.is_empty() {

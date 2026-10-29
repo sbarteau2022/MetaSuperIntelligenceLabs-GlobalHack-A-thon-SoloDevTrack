@@ -88,10 +88,13 @@ pub fn pareto_frontier(points: &[ParetoPoint]) -> Vec<usize> {
     keep
 }
 
-/// Regularized adoption: all four regulators must agree.
-/// Returns (adopt, reasons). A gate-relaxing quality gain fails at the
-/// Pareto step: higher functionality + lower security = dominated by the
-/// base (which has equal functionality at higher security) → rejected.
+/// Regularized adoption: all FIVE regulators must agree (four + floor).
+/// Returns (adopt, reasons).
+///
+/// The security floor is the actual "can't buy pass with gate relax" gate:
+/// a candidate whose security drops more than max_sec_drop below base is
+/// rejected even when Pareto-non-dominated. Pareto alone permits tradeoffs;
+/// the floor bounds them. Default max_sec_drop = 0.10.
 pub fn regularized_adopt(
     candidate_quality: f64,
     base_quality: f64,
@@ -99,6 +102,26 @@ pub fn regularized_adopt(
     candidate_security: f64,
     base_security: f64,
     noise_band: f64,
+) -> (bool, Vec<String>) {
+    regularized_adopt_bounded(
+        candidate_quality,
+        base_quality,
+        candidate,
+        candidate_security,
+        base_security,
+        noise_band,
+        0.10,
+    )
+}
+
+pub fn regularized_adopt_bounded(
+    candidate_quality: f64,
+    base_quality: f64,
+    candidate: &Bundle,
+    candidate_security: f64,
+    base_security: f64,
+    noise_band: f64,
+    max_sec_drop: f64,
 ) -> (bool, Vec<String>) {
     let mut reasons = vec![];
     let leaks = leakage_critic(candidate);
@@ -110,6 +133,13 @@ pub fn regularized_adopt(
         reasons.push(format!(
             "noise band: gain {:.4} <= band {:.4}",
             gain, noise_band
+        ));
+    }
+    let sec_drop = base_security - candidate_security;
+    if sec_drop > max_sec_drop {
+        reasons.push(format!(
+            "security floor: drop {:.2} > max {:.2} (gate relaxation cannot buy the pass)",
+            sec_drop, max_sec_drop
         ));
     }
     let frontier = pareto_frontier(&[
@@ -124,14 +154,18 @@ pub fn regularized_adopt(
             security: candidate_security,
         },
     ]);
-    // Candidate adopts iff it is ON the frontier AND not dominated by base.
-    // Frontier has 2 entries when neither dominates; candidate must be one.
-    let candidate_on_frontier = frontier.len() == 2;
+    // Candidate adopts iff it is ON the frontier: index 1 present.
+    // len 2 = mutual non-domination (tradeoff, floor decides);
+    // len 1 with [1] = strict domination (adopt); len 1 with [0] = dominated.
+    let candidate_on_frontier = frontier.contains(&1);
     if !candidate_on_frontier {
         reasons.push(
             "pareto: candidate dominated (gate relaxation without functionality gain)".into(),
         );
     }
-    let adopt = leaks.is_empty() && noise_band_accept(gain, noise_band) && candidate_on_frontier;
+    let adopt = leaks.is_empty()
+        && noise_band_accept(gain, noise_band)
+        && sec_drop <= max_sec_drop
+        && candidate_on_frontier;
     (adopt, reasons)
 }
