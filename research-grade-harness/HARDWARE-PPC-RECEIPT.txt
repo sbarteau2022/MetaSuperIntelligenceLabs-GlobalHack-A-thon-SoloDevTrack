@@ -5,14 +5,15 @@ machine=Stewarts-MacBook-Pro (Apple Silicon, macOS)
 toolchain=cargo 1.99.0 / rustc 1.99.0 (Homebrew)
 model=Qwen3.6-MoE-Combined
 server=http://127.0.0.1:8000/v1/chat/completions (omlx-server, live on this Mac)
-cargo_test=release: lib 18 pass, build_345 10 pass, implementation 8 pass, longtask_bench 1 pass, pressure 10 pass, 0 fail
+task_set=v2 (8 discriminating probe + 4 held-out; word problems with distractor numbers and answer-then-explain traps; v1 elementary set saturated 8/8 and is superseded)
+cargo_test=release: lib 35 pass, build_345 10 pass, engine_n3 3 pass (1 live ignored), implementation 8 pass, longtask_bench 1 pass, pressure 10 pass, 0 fail
 cargo_test_note=unit tests use deterministic stub probes only; they license compilation, not quality
 real_probe=true
 k=1 rollouts=4 sessions=3
 adopted_version=0 adopted_fingerprint=f89f0c78a15767f4d8d99d486271936b8d5e221f7ad5fb625e7dbbafe187f8e7
 kept_base=true abstained=true
 quality_gain=0.0000
-energy_spent_j=2.0825
+energy_spent_j=3.7620
 judges=last_number_eq
 regulators:
 regulator leakage_critic passed=true
@@ -20,14 +21,14 @@ regulator noise_band_0.02 passed=false
 regulator security_floor passed=true
 regulator pareto_frontier passed=true
 proposals:
-proposal fp=f89f0c78a15767f4d8d99d486271936b8d5e221f7ad5fb625e7dbbafe187f8e7 v=0 passes=8/8 quality=1.0000 tokens=1181 energy_j=0.5905
-proposal fp=e3a5bed9fa8b5ec7e6aba6254e4561c0b7b7cadade2516acf266d94e3d862cdd v=1 passes=8/8 quality=1.0000 tokens=1214 energy_j=0.6070
-proposal fp=fbce94c0fdf31196c34ca5bf741c7a5ff03b605d3885aa9177d1c147836b012e v=1 passes=8/8 quality=1.0000 tokens=1222 energy_j=0.6110
-heldout passes=4/4 tokens=548
-heldout task=held-01 target=81 pass=true why=last number 81 == 81
-heldout task=held-02 target=83 pass=true why=last number 83 == 83
-heldout task=held-03 target=121 pass=true why=last number 121 == 121
-heldout task=held-04 target=12 pass=true why=last number 12 == 12
-verdict_explanation=ALL bundles (base + 2 candidates) scored 8/8 on live model probes with last_number_eq judges; gain 0.00 is inside the 0.02 noise band so noise_band_0.02 correctly reports passed=false (no adoptable delta) and the gate holds KEEP_BASE. This is an honest abstention on measured signal, not a synthetic pass.
-ceiling_note=task set is elementary arithmetic; the model solves all items regardless of bundle wording, so the task set cannot discriminate prompt quality. Next escalation (material change per failure doctrine): harder probe tasks where base and candidates separate. No quality claim beyond the ledger above.
-source=6 probe tasks + 4 held-out tasks authored for this run (VM prototype task list not present in this repo; NOT the VM prototype set)
+proposal fp=f89f0c78a15767f4d8d99d486271936b8d5e221f7ad5fb625e7dbbafe187f8e7 v=0 passes=8/8 quality=1.0000 tokens=1911 energy_j=0.9555
+proposal fp=e3a5bed9fa8b5ec7e6aba6254e4561c0b7b7cadade2516acf266d94e3d862cdd v=1 passes=8/8 quality=1.0000 tokens=1886 energy_j=0.9430
+proposal fp=fbce94c0fdf31196c34ca5bf741c7a5ff03b605d3885aa9177d1c147836b012e v=1 passes=8/8 quality=1.0000 tokens=1899 energy_j=0.9495
+heldout passes=4/4 tokens=914
+heldout task=held-01 target=102 pass=true
+heldout task=held-02 target=130 pass=true
+heldout task=held-03 target=10 pass=true
+heldout task=held-04 target=212 pass=true
+verdict_explanation=ALL bundles (base + 2 candidates) scored 8/8 on live model probes with last_number_eq judges on the HARDER v2 set; gain 0.00 is inside the 0.02 noise band so noise_band_0.02 correctly reports passed=false (no adoptable delta) and the gate holds KEEP_BASE. Honest abstention on measured signal, second consecutive run.
+ceiling_note=Even trap-laden word problems saturate: the model answers all items regardless of bundle wording. Per analysis, candidates differ from base only by appended junk phrases with no instructional mechanism to improve formatting discipline. Next material change (failure doctrine): candidates that differ in instructional content (e.g. weaken the FINAL line) to test whether the gate ADOPTS a genuine win as well as abstains on ties. Until then no quality claim beyond the ledger.
+source=v2 task set authored for this run (python3-verified targets); VM prototype task list not present in this repo; NOT the VM prototype set

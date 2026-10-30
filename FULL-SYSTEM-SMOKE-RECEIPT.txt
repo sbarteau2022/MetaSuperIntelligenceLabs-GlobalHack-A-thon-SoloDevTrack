@@ -1,0 +1,27 @@
+full-system smoke receipt
+date=2026-10-29 (run start Thu Oct 29 23:46 UTC)
+head=feb1cdb + uncommitted (engine.rs N3 path, capability.rs, sqlite_sink.rs, mcp_client.rs, tests/engine_n3.rs, hardware_ppc.rs v2 tasks)
+toolchain=cargo 1.99.0 rustc 1.99.0 (Homebrew) python=3.14.7
+model_server=omlx http://127.0.0.1:8000 live (Bearer dummy, 6 models listed)
+ppc_model=Qwen3.6-MoE-Combined
+mcp_bin=hypermind-nested-kv/target/debug/hypermind-mcp (present, 5031776 bytes; no rebuild needed)
+
+stage preconditions: PASS exit=0 (cargo/rustc recorded, :8000 /v1/models ok, debug binary present)
+stage a rgah cargo test --offline: PASS exit=0 (lib 35 + build_345 10 + engine_n3 3 + implementation 8 + longtask 1 + pressure 10 = 67 passed, 0 failed, 1 ignored)
+stage b hmnkv cargo test --offline --all-targets: PASS exit=0 (lib 3 + bin 42 + transducer_pressure 8 = 53 passed, 0 failed)
+stage c live engine_n3 --ignored: PASS exit=0 (live_n3_round_trip ok: seed ingest + query kuramoto both PASSED, sink chain verified; HYPERMIND_MCP_BIN=<repo>/hypermind-nested-kv/target/debug/hypermind-mcp)
+stage d hardware_ppc PPC_K=1: PASS exit=0 (real_probe=true kept_base=true abstained=true quality_gain=0.0000 energy_spent_j=3.2860)
+  per-bundle: base fp=f89f0c78 v=0 passes=8/8 quality=1.0000 tokens=1911; cand fp=e3a5bed9 v=1 passes=8/8 quality=1.0000 tokens=1886; cand fp=fbce94c0 v=1 passes=8/8 quality=1.0000 tokens=1899
+  regulators: leakage=true noise_band_0.02=false(separation guard held) security=true pareto=true
+  heldout=4/4 tokens=876 (held-01 102, held-02 130, held-03 10, held-04 212)
+  SATURATION: yes — all bundles 8/8 on probe tasks again despite v2 multi-step word problems, zero measurable gain; noise_band correctly abstained, base kept. Tasks NOT massaged.
+stage e wire_proof.py (old receipt/db deleted first): PASS exit=0 (events=10 integrity=ok tools=22 merkle_roots=0 last_event_hash=853e3b86... bench_query_mean_ms=0.25 n=20, all 6 accepts True)
+stage f pressure_test.py HYPERMIND_ROOT=/tmp/n3-smoke: PASS exit=0 (ingest 200 atoms 639.0ms 313/s, query 3.3ms, snapshot/recover epoch=201 atoms=200, bulk 500 in 5273.5ms 95/s, query-under-load 4.4ms, compact ok)
+
+verdict=FULL-SYSTEM SMOKE PASS (all 6 stages exit 0; rgah 67 + hmnkv 53 = 120 green, 0 fail; live N3 seed+query judged PASS; PPC kept base on saturation; wire 10 events + 0.25ms bench; pressure PASS)
+
+NOT-VERIFIED (this smoke does NOT prove):
+- daemon mode (every run here used short-lived stdio children; no long-lived server process)
+- live write-through continuity (no live sqlite writer path exercised end-to-end against a running daemon)
+- DAG execution (run_parallel_n3 / multi-packet dependency graphs beyond the 2-packet sequential seed->query chain)
+- prompt-driven PPC separation (v2 tasks still saturate: every bundle 8/8, gain 0.0000; the gate abstains but has not yet demonstrated a positive adoption)

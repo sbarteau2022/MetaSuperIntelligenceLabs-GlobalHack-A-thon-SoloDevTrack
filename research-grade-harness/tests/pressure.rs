@@ -102,7 +102,6 @@ fn rsi_budget_enforced_no_record() {
 #[test]
 fn rsi_leakage_blocks_adopt() {
     // A candidate that wins on pass rate but smuggles an answer key must not adopt.
-    let base = Bundle::base();
     let mut budget = EnergyBudget::new(100.0);
     let ppc = ProposeProbeCompose::new(1);
     let stub = |b: &Bundle| {

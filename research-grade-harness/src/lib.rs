@@ -2,6 +2,7 @@ pub mod active_inference;
 pub mod bench;
 pub mod cache;
 pub mod calibration;
+pub mod capability;
 pub mod cordis;
 pub mod cpp_bridge;
 pub mod distill_judge;
@@ -28,6 +29,7 @@ pub mod registry;
 pub mod rsi;
 pub mod runbook;
 pub mod session;
+pub mod sqlite_sink;
 pub mod superposition;
 pub mod telemetry;
 pub mod temple;
@@ -38,6 +40,10 @@ pub use cache::Cache;
 pub use calibration::{
     HyperMapIngest, QualityReading, QualitySource, TwinResult, WattCalibration,
     twin_fingerprint_check,
+};
+pub use capability::{
+    CapabilityDag, CapabilityGate, CapabilityNode, KNOWN_FAMILIES,
+    check_mutation as capability_check_mutation, family_edges,
 };
 pub use cordis::{Coeffect, Component, HmrGate, ReversibleEffect};
 pub use cpp_bridge::{bridge_version, shell_dist_batch, shell_dist_rs};
@@ -77,6 +83,7 @@ pub use register::{HypothesisRegister, ProbePlan, rank_probes};
 pub use rsi::{Bundle, BundleDelta, GovernedLibrary, LibraryEntry, ProposeProbeCompose};
 pub use runbook::{JudgeRef, Packet, PacketStatus, Plan, ToolCall};
 pub use session::{SessionEvent, SessionEventKind, SessionLog};
+pub use sqlite_sink::{SinkEvent, TelemetrySink};
 pub use superposition::{
     BranchSource, DeliberationBranch, DeliberationOutcome, HoldingState, SeparationBounds,
     boltzmann_weights, check_separation, deliberate, irecall_check, suppress_isotropic,

@@ -10,7 +10,8 @@
 // Nothing here is JSON-schema parsing; the receipt is plain text.
 //
 // What it does:
-// - 6 probe tasks + 4 held-out tasks (arithmetic, last_number_eq judges).
+// - 8 probe tasks + 4 held-out tasks (multi-step word problems,
+//   last_number_eq judges; task set v2, discriminating — see below).
 // - Each bundle is probed by rendering its components into the system prompt;
 //   the base bundle and each candidate face the SAME tasks, so quality deltas
 //   are measured, not word-counted.
@@ -38,86 +39,96 @@ struct Task {
     held_out: bool, // ledger tag: PROBE_TASKS=false, HELDOUT_TASKS=true
 }
 
-// 6 probe tasks: small arithmetic with distinct answers (no shared target
-// that a prompt could memorize across tasks).
+// TASK SET v2 (discriminating), 2026-10-29.
+// v1 (single-op arithmetic) saturated: every bundle scored 8/8 on the k=1 run
+// recorded in HARDWARE-PPC-RECEIPT.txt, so the gate could not separate base
+// from candidates. v2 replaces both sets with multi-step word problems that
+// carry distractor numbers: every intermediate result is a plausible wrong
+// LAST number, so a model that stops one step early (or closes on an
+// intermediate) fails the last_number_eq judge. All 8 probe targets are
+// distinct single integers; all answers python3-verified before check-in.
+// Trap tasks (salient intermediate invited into the output): probe-03
+// (quotient 11 vs remainder 5), probe-04 (pre-tax 160 vs final 168),
+// probe-07 (Monday 58 stated in the prompt vs Tuesday remainder 33).
 const PROBE_TASKS: &[Task] = &[
     Task {
         id: "probe-01",
-        prompt: "What is 37 plus 48?",
-        target: "85",
+        prompt: "A warehouse stocks 240 crates, ships 84 on Monday and half the remainder on Tuesday. How many remain?",
+        target: "78",
         held_out: false,
     },
     Task {
         id: "probe-02",
-        prompt: "What is 112 minus 57?",
-        target: "55",
+        prompt: "A film runs 2 hours, plus a 37-minute featurette and a 15-minute intermission. How many minutes is that in total?",
+        target: "172",
         held_out: false,
     },
     Task {
         id: "probe-03",
-        prompt: "What is 13 times 7?",
-        target: "91",
+        prompt: "137 marbles are packed into boxes holding 12 each. How many marbles are left over unpacked?",
+        target: "5",
         held_out: false,
     },
     Task {
         id: "probe-04",
-        prompt: "What is 144 divided by 12?",
-        target: "12",
+        prompt: "A jacket costs 200 dollars, is marked down 20 percent, then the sale price is taxed 5 percent. What is the final price in dollars?",
+        target: "168",
         held_out: false,
     },
     Task {
         id: "probe-05",
-        prompt: "What is 29 plus 71 minus 15?",
-        target: "85",
+        prompt: "A truck drives 100 km in the first hour and 120 km over the next 3 hours. What is its average speed in km/h across the whole trip?",
+        target: "55",
         held_out: false,
     },
-    // Same answer as probe-01 via a different path: catches copy-the-answer
-    // prompts that a leakage probe would flag, not reward.
+    // 3-step ledger: 340, 127, 58, 96 are all distractors.
     Task {
         id: "probe-06",
-        prompt: "What is 9 times 9 plus 4?",
-        target: "85",
+        prompt: "Maya has 340 dollars, spends 127 on rent, earns 58 babysitting, then spends 96 on groceries. How much money is left?",
+        target: "175",
         held_out: false,
     },
-    // Multi-step + distractor resistance: the answer must survive working.
+    // Answer-then-explain trap: Monday's 58 is stated in the prompt, so a
+    // model that confirms it and stops — or closes restating it — fails.
     Task {
         id: "probe-07",
-        prompt: "A train goes 60 km in 1 hour, then 90 km in the next 1.5 hours. What is the total distance?",
-        target: "150",
+        prompt: "A depot holds 96 crates. 38 ship out Monday, leaving 58. Then 25 more ship Tuesday. First confirm Monday's count of 58, then give Tuesday's remainder. How many remain after Tuesday?",
+        target: "33",
         held_out: false,
     },
     Task {
         id: "probe-08",
-        prompt: "Maya had 45 stickers, gave away 17, then bought 23 more. How many does she have now?",
-        target: "51",
+        prompt: "A library holds 210 books, lends out 86, receives 47 donations, then lends out 59 more. How many books are on the shelves now?",
+        target: "112",
         held_out: false,
     },
 ];
 
-// 4 held-out tasks: different operands/answers, run ONCE after adoption.
+// 4 held-out tasks (set v2): same families as the probes, different
+// numbers/stories. Run ONCE on the adopted bundle after adoption.
 const HELDOUT_TASKS: &[Task] = &[
     Task {
         id: "held-01",
-        prompt: "What is 53 plus 28?",
-        target: "81",
+        prompt: "A depot stocks 300 pallets, ships 96 on Monday and half the remainder on Tuesday. How many remain?",
+        target: "102",
         held_out: true,
     },
     Task {
         id: "held-02",
-        prompt: "What is 200 minus 117?",
-        target: "83",
+        prompt: "A roast cooks for 1 hour, rests 52 minutes, then reheats for 18 minutes. How many minutes is that in total?",
+        target: "130",
         held_out: true,
     },
     Task {
         id: "held-03",
-        prompt: "What is 11 times 11?",
-        target: "121",
+        prompt: "154 bolts are packed into bags holding 12 each. How many bolts are left over unpacked?",
+        target: "10",
         held_out: true,
     },
     Task {
         id: "held-04",
-        prompt: "What is 96 divided by 8?",
-        target: "12",
+        prompt: "A bicycle costs 250 dollars, is marked down 20 percent, then the sale price is taxed 6 percent. What is the final price in dollars?",
+        target: "212",
         held_out: true,
     },
 ];

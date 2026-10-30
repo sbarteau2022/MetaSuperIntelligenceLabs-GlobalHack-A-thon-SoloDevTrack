@@ -10,9 +10,9 @@ Nothing from the VM prototype ships on VM evidence alone.
 ## Current state, verified 2026-10-29 from the Mac file system
 
 - Repo: ~/Desktop/GitHub/MetaSuperIntelligenceLabs-GlobalHack-A-thon-SoloDevTrack/research-grade-harness/
-- src/rsi.rs: still the word-count score() — 0.5 plus 0.05 for improve/verified, plus 0.03 for optimize, cap 0.99. The G6 fix is still needed here.
+- src/rsi.rs: fixed PPC LANDED (probe-fn parameter, fingerprint dedup, budget enforcement, leakage_critic + 0.02 noise band + regularized_adopt wired, score() retained as labelled synthetic fallback per runbook §2). Runbook staging item §2 CLOSED 2026-10-29; receipt `HARDWARE-PPC-RECEIPT.txt` (v2 task set 2026-10-29: 8 discriminating + 4 held-out, KEEP_BASE, gain 0.0000).
 - src/evolution.rs: already has the frontier fix (candidate_on_frontier = frontier.contains(&1)) plus a security floor. Do NOT reapply the old frontier fix from the VM audit copy; that copy was stale on this point.
-- Cargo on this Mac, previously verified: 1.98.1.
+- Cargo on this Mac, verified 2026-10-30: 1.99.0 (rustc 1.99.0, Homebrew).
 - No rgah source was changed by staging this runbook.
 
 ## Hardware run, in order
