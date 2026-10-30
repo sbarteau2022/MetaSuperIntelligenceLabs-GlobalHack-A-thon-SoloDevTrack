@@ -84,17 +84,22 @@ impl Engine {
         let mut degraded: Option<String> = None;
         let mut transport_error: Option<String> = None;
 
-        for tc in &packet.tool_calls {
+        for (call_idx, tc) in packet.tool_calls.iter().enumerate() {
             if !tc.tool.starts_with("map.") {
                 continue; // non-map tools keep the legacy path (caller appends it)
             }
+            // GAP-1 (C-RUN-04 follow-up): idempotency keys carry the per-packet
+            // call index (packet:attempt:tool#index) so multi-same-tool packets
+            // record every call as its own row. Previously the seed's two
+            // ingests collapsed to one row on the (packet,attempt,tool) key.
+            let call_key = format!("{}:{}:{}#{}", packet.id, attempt, tc.tool, call_idx);
             if gate.admit(&tc.tool).is_err() {
                 let denial = gate.dag.deny_unknown(&tc.tool);
                 outputs.push(denial.clone());
                 all_pass = false;
                 degraded = Some(format!("capability-denied:{}", tc.tool));
                 let _ = sink.record_call(
-                    &format!("{}:{}:{}:gate", packet.id, attempt, tc.tool),
+                    &format!("{}:gate", call_key),
                     &tc.tool,
                     &tc.args_json,
                     0,
@@ -112,7 +117,7 @@ impl Engine {
                     erased += (packet.declared_context_tokens as u64) * 4;
                     receipt_present = receipt_present && has_receipt;
                     let _ = sink.record_call(
-                        &format!("{}:{}:{}", packet.id, attempt, tc.tool),
+                        &call_key,
                         &tc.tool,
                         &tc.args_json,
                         dt_ns,
@@ -120,11 +125,17 @@ impl Engine {
                         if has_receipt { Some("present") } else { None },
                     );
                     outputs.push(inner.clone());
-                    let (pass, mut ids) = self.judge_output(packet, &inner, 0);
-                    judge_ids.append(&mut ids);
-                    if !pass {
-                        all_pass = false;
-                        degraded = Some(format!("judge-fail:{}", tc.tool));
+                    // GAP-2: per-call conjunctive judging is the DEFAULT
+                    // semantic (judge_joined=false). judge_joined=true packets
+                    // skip per-call judging; the joined output is judged once
+                    // after the loop (each call still records its sink row).
+                    if !packet.judge_joined {
+                        let (pass, mut ids) = self.judge_output(packet, &inner, 0);
+                        judge_ids.append(&mut ids);
+                        if !pass {
+                            all_pass = false;
+                            degraded = Some(format!("judge-fail:{}", tc.tool));
+                        }
                     }
                 }
                 Err(e) => {
@@ -132,7 +143,7 @@ impl Engine {
                     all_pass = false;
                     degraded = Some(format!("transport-error:{}", tc.tool));
                     let _ = sink.record_call(
-                        &format!("{}:{}:{}:transport", packet.id, attempt, tc.tool),
+                        &format!("{}:transport", call_key),
                         &tc.tool,
                         &tc.args_json,
                         0,
@@ -144,7 +155,10 @@ impl Engine {
             }
         }
         let mut out = outputs.join("\n");
-        if let Some(e) = transport_error {
+        // transport_error is consumed by reference here; the GAP-2 block below
+        // re-checks it via as_deref (no move — the tuple return needs no ownership).
+        let had_transport = transport_error.is_some();
+        if let Some(e) = transport_error.as_deref() {
             out.push_str(&format!("\ntransport error: {}", e));
         }
         // Packets with no map.* calls produce no N3 output: fall back to the
@@ -153,6 +167,19 @@ impl Engine {
         if outputs.is_empty() {
             out = format!("PASS packet={} attempt={}", packet.id, attempt);
             degraded = Some("n3-not-invoked".into());
+        }
+        // GAP-2: joined-output judging (opt-in). The packet's judges run once
+        // over the aggregate output — the semantic for multi-contract packets
+        // (gate+collect in one) that per-call judging cannot express without
+        // gutting a judge. transport_error short-circuits: a broken pipe is
+        // not a judge verdict (caller escalates on transport separately).
+        if packet.judge_joined && !had_transport && !outputs.is_empty() {
+            let (pass, ids) = self.judge_output(packet, &out, 0);
+            judge_ids = ids;
+            if !pass {
+                all_pass = false;
+                degraded = Some("judge-fail:joined".into());
+            }
         }
         let _ = swarm_run_id;
         (

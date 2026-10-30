@@ -36,6 +36,8 @@ fn packet(id: &str, tool_calls: Vec<ToolCall>) -> Packet {
         },
         status: PacketStatus::Pending,
         attempts: 0,
+
+        judge_joined: false,
     }
 }
 
@@ -119,7 +121,69 @@ fn spawn_missing_binary_fails_explained() {
     );
 }
 
-// Gate denial: unknown map.* tool fails the N3 attempt with a named denial
+// GAP-1 (C-RUN-04 follow-up, hermetic): sink records every call of a
+// multi-same-tool packet as its own row. Two record_call rows with indexed
+// keys (packet:attempt:tool#0 / #1) both persist and the chain verifies —
+// the (packet,attempt,tool) collapse that cost C-RUN-03 its 11th row.
+#[test]
+fn sink_records_indexed_same_tool_calls() {
+    let db_path = std::env::temp_dir().join(format!(
+        "rgah-engine-n3-test-{}-gap1.sqlite3",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&db_path);
+    let mut sink = TelemetrySink::open(&db_path).expect("sink opens");
+    let s0 = sink
+        .record_call(
+            "seed:1:map.ingest#0",
+            "map.ingest",
+            "{\"text\":\"a\"}",
+            5,
+            true,
+            Some("r0"),
+        )
+        .expect("row 0");
+    let s1 = sink
+        .record_call(
+            "seed:1:map.ingest#1",
+            "map.ingest",
+            "{\"text\":\"b\"}",
+            6,
+            true,
+            Some("r1"),
+        )
+        .expect("row 1");
+    assert_ne!(s0, s1, "indexed keys must yield distinct rows");
+    // The OLD unindexed key still collapses (idempotent-hit = tested sink
+    // behavior, preserved — callers must index; the sink must not guess).
+    let s_dup = sink
+        .record_call(
+            "seed:1:map.ingest#0",
+            "map.ingest",
+            "{\"text\":\"a\"}",
+            5,
+            true,
+            Some("r0"),
+        )
+        .expect("idempotent re-record");
+    assert_eq!(s_dup, s0, "same key returns original seq");
+    assert!(sink.verify().is_ok());
+    assert_eq!(sink.len().expect("len"), 2);
+    let _ = std::fs::remove_file(&db_path);
+}
+
+// GAP-2 (C-RUN-04 follow-up, hermetic contract): judge_joined=false (the
+// default) preserves per-call conjunctive judging. The `packet()` helper
+// builds per-call packets; the joined mode is proved live below (merged
+// gate+collect packet). Serde compat (`#[serde(default)]` on the field —
+// old plan JSON without the key deserializes to false by serde's documented
+// contract) is code-verified; serde_json is not a dependency of this crate
+// (doctrine) so no JSON round-trip test is written here.
+#[test]
+fn per_call_judging_stays_default() {
+    let p = packet("m", vec![]);
+    assert!(!p.judge_joined, "helper builds per-call packets");
+}
 // and the packet escalates (no silent execution, no identical retry loop).
 #[test]
 fn gate_denial_fails_packet_without_transport() {
@@ -391,4 +455,78 @@ fn live_n3_round_trip() {
     assert_eq!(report.passed, vec!["seed".to_string(), "q".to_string()]);
     assert!(sink.verify().is_ok());
     assert!(!sink.is_empty().unwrap());
+}
+
+// GAP-2 live (ignored unless HYPERMIND_MCP_BIN is set): merged gate+collect
+// packet with judge_joined=true — the exact v2-join shape that FAILED under
+// per-call conjunctive judging (attend output can never satisfy a text
+// needle). Under joined judging the packet passes: attend runs the gate,
+// query returns the text, judges run once over the aggregate.
+#[test]
+#[ignore]
+fn live_joined_judging_merged_join() {
+    let bin = std::env::var("HYPERMIND_MCP_BIN").expect("HYPERMIND_MCP_BIN required");
+    let root = std::env::temp_dir().join(format!("rgah-joined-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&root);
+    let mut eng = Engine::new();
+    eng.register_judge(judge_pass("jr", "receipt_sha256"));
+    // GAP-2 needle matches the corpus text ("joined ... seven"): the query
+    // call returns it; the attend call carries IDs. Joined output contains
+    // "seven" iff the query arm retrieved the seed text.
+    eng.register_judge(judge_pass("jj", "seven"));
+    let manifest = r#"[{"source_root":"r","source_path":"vault/map.ingest","category":"03-AgenticRuntime","dest_path":"d/map.ingest"},{"source_root":"r","source_path":"vault/map.query","category":"03-AgenticRuntime","dest_path":"d/map.query"},{"source_root":"r","source_path":"vault/map.attend","category":"03-AgenticRuntime","dest_path":"d/map.attend"}]"#;
+    let gate = CapabilityGate::from_manifest(manifest).expect("manifest loads");
+    let mut seed = packet(
+        "seed",
+        vec![map_call(
+            "map.ingest",
+            "{\"text\":\"joined packet alpha bravo seven\"}",
+        )],
+    );
+    seed.judges = vec![JudgeRef {
+        id: "jr".into(),
+        kind: "contains".into(),
+    }];
+    let mut join = packet(
+        "join",
+        vec![
+            map_call("map.attend", "{\"qtext\":\"joined alpha\",\"k\":3}"),
+            map_call("map.query", "{\"qtext\":\"joined alpha\",\"k\":3}"),
+        ],
+    );
+    // THE flag: joined-output judging over the aggregate.
+    join.judge_joined = true;
+    join.judges = vec![JudgeRef {
+        id: "jj".into(),
+        kind: "contains".into(),
+    }];
+    join.depends_on = vec!["seed".to_string()];
+    let mut plan = Plan {
+        id: "joined".into(),
+        objective: "joined".into(),
+        packets: vec![seed, join],
+    };
+    let mut receipts = ReceiptLog::default();
+    let mut budget = EnergyBudget::new(100.0);
+    let db_path = root.join("joined.sqlite3");
+    let mut sink = TelemetrySink::open(&db_path).expect("sink opens");
+    let mut mcp = McpChild::spawn(&bin, root.to_str().unwrap()).expect("binary spawns");
+    let report = eng.run_sequential_n3(
+        &mut plan,
+        &mut receipts,
+        &mut budget,
+        &mut mcp,
+        &mut sink,
+        &gate,
+        "swarm-joined",
+    );
+    mcp.close();
+    assert_eq!(
+        report.passed,
+        vec!["seed".to_string(), "join".to_string()],
+        "joined packet must pass under joined judging, got {:?}",
+        report
+    );
+    assert!(sink.verify().is_ok());
+    eprintln!("GAP-2 live: merged join passes under judge_joined=true");
 }

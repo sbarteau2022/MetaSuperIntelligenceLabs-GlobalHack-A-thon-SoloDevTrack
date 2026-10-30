@@ -43,6 +43,13 @@ pub struct Packet {
     pub retry_policy: RetryPolicy,
     pub status: PacketStatus,
     pub attempts: u32,
+    /// GAP-2 (C-RUN-04 follow-up): when true, `execute_packet_n3` skips
+    /// per-call conjunctive judging and judges the JOINED output once.
+    /// Default false = per-call stays THE semantic. Opt-in per packet;
+    /// multi-contract packets (gate+collect in one) use this instead of
+    /// splitting. Serde-defaulted so existing plan JSON still loads.
+    #[serde(default)]
+    pub judge_joined: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

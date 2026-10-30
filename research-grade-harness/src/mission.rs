@@ -66,6 +66,8 @@ pub fn geometry_mission() -> MissionInput {
         },
         status: PacketStatus::Pending,
         attempts: 0,
+
+        judge_joined: false,
     };
     MissionInput {
         plan: Plan {
@@ -175,6 +177,8 @@ mod tests {
                 },
                 status: PacketStatus::Pending,
                 attempts: 0,
+
+                judge_joined: false,
             }],
         }
     }

@@ -24,6 +24,8 @@ fn plan_requires_judges() {
             },
             status: PacketStatus::Pending,
             attempts: 0,
+
+            judge_joined: false,
         }],
     };
     assert!(p.validate().is_err());

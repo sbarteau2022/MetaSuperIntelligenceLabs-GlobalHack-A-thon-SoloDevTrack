@@ -35,6 +35,8 @@ fn engine_sequential_passes() {
             },
             status: PacketStatus::Pending,
             attempts: 0,
+
+            judge_joined: false,
         }],
     };
     let mut eng = Engine::new();
@@ -74,6 +76,8 @@ fn engine_parallel_runs() {
                 },
                 status: PacketStatus::Pending,
                 attempts: 0,
+
+                judge_joined: false,
             },
             Packet {
                 id: "b".into(),
@@ -92,6 +96,8 @@ fn engine_parallel_runs() {
                 },
                 status: PacketStatus::Pending,
                 attempts: 0,
+
+                judge_joined: false,
             },
         ],
     };

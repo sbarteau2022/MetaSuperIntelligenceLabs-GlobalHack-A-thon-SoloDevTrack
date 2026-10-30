@@ -37,7 +37,8 @@ fn build_longtask_plan() -> Plan {
         retry_policy: std_retry.clone(),
         status: PacketStatus::Pending,
         attempts: 0,
-    };
+
+        judge_joined: false,    };
     packets.push(add("p00-recon", vec![], vec![pass_judge.clone()]));
     packets.push(add("p01-plan", vec!["p00-recon"], vec![pass_judge.clone()]));
     for lane in ["a", "b", "c", "d", "e"] {
