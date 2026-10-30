@@ -21,6 +21,7 @@ pub mod mission;
 pub mod mode;
 pub mod plugins;
 pub mod policy_kernel;
+pub mod ppc_probe;
 pub mod rag;
 pub mod receipt;
 pub mod recursive;
@@ -73,6 +74,10 @@ pub use mcp_client::{McpChild, esc, has_receipt_sha256, sfield, unwrap_content};
 pub use mode::{Command, TacticalLevel, allowed_commands, authorize, raise_level};
 pub use plugins::{PluginReceipt, PluginRegistry, PluginSpec};
 pub use policy_kernel::FrozenPolicyKernel;
+pub use ppc_probe::{
+    HELDOUT_TASKS, PROBE_TASKS, PpcTask, bundle_system_prompt, bundle_text, chat_once, extract_str,
+    extract_u64, jstr, last_number_eq, split_url,
+};
 pub use rag::{MockMap, RagQuery, RealVector, rag_coverage};
 pub use receipt::{Receipt, ReceiptLog};
 pub use recursive::{

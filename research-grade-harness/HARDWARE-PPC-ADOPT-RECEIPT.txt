@@ -1,0 +1,31 @@
+hardware_ppc_adopt_receipt
+runbook=research-grade-harness/HARDWARE-GATE-RUNBOOK.md
+manifest=MasterDesignDocument/C09-Ablations-Proofs-Claims/PPC-ADOPT-RUN-01-Manifest.md
+model=Qwen3.6-MoE-Combined
+server=http://127.0.0.1:8000/v1/chat/completions
+real_probe=true
+base passes=8/8 quality=1.0000 tokens=1911
+candidate name=WIN fp=c7df049855a1672065a65015d0750b9900f407bcf79eaf0c9190ef445663b28b passes=7/8 quality=0.8750 tokens=2142 adopt=false reasons=noise band: gain -0.1250 <= band 0.0200; pareto: candidate dominated (gate relaxation without functionality gain) instruction=system prompt baseline + show-work discipline: Show each calculation step on its own line, then double-check the last step before answering. | guardrails guidance | memory baseline | tool guidance baseline | subagents baseline | skills baseline | scripts baseline | plugins baseline
+regulators:
+regulator leakage_critic passed=true
+regulator noise_band_0.02 passed=false
+regulator security_floor passed=true
+regulator pareto_frontier passed=false
+candidate name=LOSE fp=3ff8b9572798278e0c65fe176a2cbb1dc0d09ec1b3d1c8b63f597a7d42e322a6 passes=8/8 quality=1.0000 tokens=1881 adopt=false reasons=leakage critic: flagged components [0]; noise band: gain 0.0000 <= band 0.0200 instruction=system prompt baseline. A plain answer is fine; formatting does not matter. | guardrails guidance | memory baseline | tool guidance baseline | subagents baseline | skills baseline | scripts baseline | plugins baseline
+regulators:
+regulator leakage_critic passed=false
+regulator noise_band_0.02 passed=false
+regulator security_floor passed=true
+regulator pareto_frontier passed=true
+candidate name=JUNK fp=e3a5bed9fa8b5ec7e6aba6254e4561c0b7b7cadade2516acf266d94e3d862cdd passes=8/8 quality=1.0000 tokens=1886 adopt=false reasons=noise band: gain 0.0000 <= band 0.0200 instruction=system prompt baseline + improve invariant | guardrails guidance | memory baseline | tool guidance baseline | subagents baseline | skills baseline | scripts baseline | plugins baseline
+regulators:
+regulator leakage_critic passed=true
+regulator noise_band_0.02 passed=false
+regulator security_floor passed=true
+regulator pareto_frontier passed=true
+adopted=BASE kept_base=true quality_gain=0.0000
+heldout task=held-01 target=102 pass=true why=last number 102 == 102
+heldout task=held-02 target=130 pass=true why=last number 130 == 130
+heldout task=held-03 target=10 pass=true why=last number 10 == 10
+heldout task=held-04 target=212 pass=true why=last number 212 == 212
+heldout passes=4/4 tokens=914 adopted_tokens=1911
