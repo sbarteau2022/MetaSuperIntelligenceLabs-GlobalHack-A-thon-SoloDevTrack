@@ -89,6 +89,16 @@ P-CORR-1 through P-CORR-18 (Muse, 2026-10-26): hook-count audit, generated-manif
 - ADR for distributed Atlas sync (C06.10).
 - ADR for telemetry identity rotation (C34).
 
+## Authored Doctrine DD-01 — Necessity Is Earned, Never Declared (Stewart, 2026-10-30 — agent-formatted, PENDING Stewart ratification)
+
+> Nothing's "the only way" — until the math shows us that this way is necessary because it's optimal, and even then, the more complex and diverse a thing becomes, the ability to reconsider and refine are necessary. Otherwise it would be like running my Apple MacBook M5 Pro on a pre-'98 OS. No bueno.
+
+**Standing rule (binds every claim in this repo, including agent proposals):**
+
+1. **No necessity by assertion.** A design, name, gate, or ablation is never "the only way" because someone said so. Necessity is earned when measurement shows the way is optimal — and the measurement is filed with its hardware, workload, and comparison number, or it didn't happen.
+2. **Earned necessity still expires.** As the system grows in complexity and diversity, every settled decision stays reconsiderable and refinable. A frozen decision that can't be revisited rots: new hardware, new evidence, or new scale reopens it. Staleness is a defect, not stability.
+3. **Enforcement.** Any text in this repo claiming "only way," "must," or "required" without a filed measurement (per C09.3) or without a reconsideration path is a fileable defect — same as an unlabeled claim (docs standards §7). Co-authorship means both voices get this protection: Stewart's directives and the agent's proposals clear the same bar.
+
 ## Naming Decision ND-01 (2026-10-30, Stewart directive — agent-recorded, PENDING Stewart ratification)
 
 - **N³** = "Nested Neural Net": the nested retrieval layer (vetted RAG + hyperbolic memory + capability DAG + telemetry sink). Substrate only. Binary `hypermind-mcp`. UNCHANGED.
