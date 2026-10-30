@@ -376,6 +376,12 @@ struct State {
     root: PathBuf,
     db: Db,
     role: Role,
+    /// F2 (NN-G-v2): fail-closed posture for PRESENT-but-unparseable
+    /// HYPERMIND_ROLE. Distinct from a legitimate low role: every
+    /// read-path denial carries `role-denied-unparseable` instead of
+    /// `role may not read mind`. Plain bool (State has no serde derive;
+    /// posture recomputed at boot/create).
+    role_denied: bool,
     atoms: BTreeMap<u64, Atom>,
     basins: BTreeMap<u64, Basin>,
     fibers: BTreeMap<String, FiberView>,
@@ -1795,8 +1801,25 @@ fn open_or_create(root: PathBuf) -> State {
             }
         }
     }
-    let role = std::env::var("HYPERMIND_ROLE")
-        .ok()
+    // F2 (NN-G-v2 prereg): fail-closed role parse. Unset HYPERMIND_ROLE
+    // retains the historical PanelAdmin default (single-user flows keep
+    // working). A PRESENT-but-unparseable value sets role_denied: the
+    // process boots with Role::Ingest (least privilege — cannot read,
+    // deposit, or mutate mind per atomadb gates) AND every read-path
+    // tool denies with a `role-denied-unparseable` receipt (F1). The
+    // posture is observable via map.health server_role, never silent.
+    // role_denied is distinct from a legitimate Ingest role: ingest-role
+    // denial says `role may not read mind`; unparseable-role denial says
+    // `role-denied-unparseable` — the G7 retest distinguishes them.
+    let raw_role = std::env::var("HYPERMIND_ROLE").ok();
+    let role_denied = matches!(&raw_role, Some(s) if Role::parse(s).is_err());
+    if role_denied {
+        eprintln!(
+            "hypermind-mcp: HYPERMIND_ROLE={:?} unparseable — deny-all posture (fail-closed per NN-G-v2 F2)",
+            raw_role
+        );
+    }
+    let role = raw_role
         .and_then(|s| Role::parse(&s).ok())
         .unwrap_or(Role::PanelAdmin);
     let points: Vec<Atom> = atoms.values().cloned().collect();
@@ -1823,6 +1846,7 @@ fn open_or_create(root: PathBuf) -> State {
         idf: None,
         hunger: std::collections::BTreeMap::new(),
         kv: std::collections::BTreeMap::new(),
+        role_denied,
     };
     // Item a: auto-calibrate IDF on open when atoms exist and no table is
     // stored yet. O(N) once — every embed after this is O(1) weighted.
@@ -1970,6 +1994,24 @@ fn now_receipt(op: &str, input: &Value, output: &Value) -> Value {
     })
 }
 
+/// F1 (NN-G-v2 prereg): role gate for read-path tools. Returns Some(denial
+/// response) when the call must NOT proceed: deny-all posture
+/// (`role-denied-unparseable`) or a legitimate role that cannot read mind
+/// (`role may not read mind`). None = admit. Every denial carries a receipt.
+fn deny_read(state: &State, op: &str, args: &Value) -> Option<Value> {
+    if state.role_denied {
+        let out = json!({"status": "error", "error": "role-denied-unparseable"});
+        let rcpt = now_receipt(op, args, &out);
+        return Some(json!({"result": out, "receipt": rcpt}));
+    }
+    if !state.role.can_read_mind() {
+        let out = json!({"status": "error", "error": "role may not read mind"});
+        let rcpt = now_receipt(op, args, &out);
+        return Some(json!({"result": out, "receipt": rcpt}));
+    }
+    None
+}
+
 fn respond(id: &Value, result: Value) {
     let resp = json!({"jsonrpc":"2.0","id":id,"result":result});
     let mut stdout = std::io::stdout();
@@ -1989,6 +2031,7 @@ fn tools_list() -> Value {
         "tools": [
             {"name":"map.ingest","description":"Ingest text as an atom with hyperbolic coordinate (reuses AtomaDB mind store). rank 0 = chunk (default); rank 1 = document (requires children: [atom ids] for partition-and-aggregate).","inputSchema":{"type":"object","properties":{"text":{"type":"string"},"salience":{"type":"number"},"provenance":{"type":"string"},"taint":{"type":"string"},"rank":{"type":"integer"},"children":{"type":"array"}},"required":["text"]}},
             {"name":"map.query","description":"k-NN recall in hyperbolic H3 x T2. rank 0 = chunk-space (default); rank 1 = document-space (query rotated into aggregate space).","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"},"rank":{"type":"integer"}},"required":["qtext"]}},
+            {"name":"map.query_flat","description":"F3 REFERENCE (NN-G-v2): flat full-scan score()+BM25 fusion over ALL atoms, same binary/process. MEASUREMENT ONLY — never a serving path. Mirror-test flat_matches_vp_top1 enforces fusion parity with map.query.","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"},"rank":{"type":"integer"}},"required":["qtext"]}},
             {"name":"map.attend","description":"Nested KV attention: retrieves then applies depth gate k*. rank 0 = chunk-space (default); rank 1 = document-space.","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"},"rank":{"type":"integer"}},"required":["qtext"]}},
             {"name":"map.traverse","description":"Symplectic envelope: form + energy + frame checks before dispatch; fail-explained, never fail-silent.","inputSchema":{"type":"object","properties":{"from_atom":{"type":"integer"},"to_atom":{"type":"integer"},"mlir_op":{"type":"integer"},"energy_budget":{"type":"number"},"form_tol":{"type":"number"},"frame_eps":{"type":"number"}},"required":["from_atom","to_atom"]}},
             {"name":"map.reweight","description":"Recalibrate IDF on live atom texts and reembed all coordinates (item a). O(N) once.","inputSchema":{"type":"object","properties":{}}},
@@ -2026,8 +2069,12 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             let r = workspace_root().join(sub);
             std::fs::create_dir_all(&r).ok();
             state.root = r.clone();
-            state.role = std::env::var("HYPERMIND_ROLE")
-                .ok()
+            // F2 (NN-G-v2): map.create re-reads the role AND the deny-all
+            // posture (same fail-closed rule as boot — create must not
+            // silently clear a deny-all posture set at boot).
+            let raw = std::env::var("HYPERMIND_ROLE").ok();
+            state.role_denied = matches!(&raw, Some(s) if Role::parse(s).is_err());
+            state.role = raw
                 .and_then(|s| Role::parse(&s).ok())
                 .unwrap_or(Role::PanelAdmin);
             let db_root = r.join("db");
@@ -2283,6 +2330,10 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             json!({"result":out,"receipt":rcpt})
         }
         "map.query" => {
+            // F1 (NN-G-v2): role gate BEFORE any atom access.
+            if let Some(denial) = deny_read(state, "map.query", args) {
+                return denial;
+            }
             if !args.get("qtext").map(|x| x.is_string()).unwrap_or(false) {
                 return json!({"result": {"status": "error", "error": "schema: qtext must be string"}});
             }
@@ -2446,7 +2497,145 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             let rcpt = now_receipt("map.query", args, &out);
             json!({"result":out,"receipt":rcpt})
         }
+        "map.query_flat" => {
+            // F3 (NN-G-v2 prereg): in-binary flat reference arm. MEASUREMENT
+            // ONLY — never a serving path. Same preamble + same fusion tail
+            // as map.query; the ONLY fork is `scored` built by full-scan
+            // score() sort over ALL atoms instead of the VP shortlist.
+            // Mirror-test `flat_matches_vp_top1` enforces tail parity: any
+            // fusion change that updates one arm but not the other fails
+            // the suite. F1 gate applies (read path).
+            if let Some(denial) = deny_read(state, "map.query_flat", args) {
+                return denial;
+            }
+            if !args.get("qtext").map(|x| x.is_string()).unwrap_or(false) {
+                return json!({"result": {"status": "error", "error": "schema: qtext must be string"}});
+            }
+            let qtext = args
+                .get("qtext")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
+            let k = args.get("k").and_then(|x| x.as_u64()).unwrap_or(8) as usize;
+            let qs = 0.5f64;
+            let qrank: u8 = args
+                .get("rank")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0)
+                .min(1) as u8;
+            let (qcoord, qphase) = coord_from_text_idf(&qtext, qs, state.idf.as_ref(), qrank);
+            let qatom = Atom {
+                id: 0,
+                coord: qcoord,
+                phase: qphase,
+                text: qtext.clone(),
+                salience: qs,
+                provenance: "query".into(),
+                taint: "none".into(),
+                rank: qrank,
+                domain: "query".into(),
+                pinned: false,
+                symplectic: symplectic_from_triple(&qcoord, &qphase, qs),
+            };
+            // THE fork (2 lines): full-scan score() over ALL atoms, sorted.
+            // No VP tree touch — no ensure_vp, no knn.
+            let mut scored: Vec<(u64, f64)> = state
+                .atoms
+                .iter()
+                .map(|(id, a)| (*id, score(&qatom, a)))
+                .collect();
+            scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            // Fusion tail: byte-identical logic to map.query (mirror-test
+            // enforced). Candidate set = full corpus, not shortlist.
+            let qterms = atomadb::tokenize(&qtext);
+            let n = scored.len().max(1) as f64;
+            let mut df: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            let mut doc_tf: Vec<std::collections::HashMap<String, u32>> = Vec::new();
+            let mut doc_len: Vec<usize> = Vec::new();
+            for (id, _) in &scored {
+                if let Some(a) = state.atoms.get(id) {
+                    let toks = atomadb::tokenize(&a.text);
+                    doc_len.push(toks.len().max(1));
+                    let mut m: std::collections::HashMap<String, u32> =
+                        std::collections::HashMap::new();
+                    for t in toks {
+                        *m.entry(t.clone()).or_default() += 1;
+                    }
+                    for k2 in m.keys() {
+                        *df.entry(k2.clone()).or_default() += 1;
+                    }
+                    doc_tf.push(m);
+                } else {
+                    doc_len.push(1);
+                    doc_tf.push(std::collections::HashMap::new());
+                }
+            }
+            let avgdl = doc_len.iter().sum::<usize>() as f64 / n;
+            let mut bm: Vec<f64> = vec![0.0; scored.len()];
+            for term in &qterms {
+                let dft = match df.get(term) {
+                    Some(d) => *d as f64,
+                    None => continue,
+                };
+                let idf = ((n - dft + 0.5) / (dft + 0.5) + 1.0).ln();
+                for (i, m) in doc_tf.iter().enumerate() {
+                    let f = *m.get(term).unwrap_or(&0) as f32 as f64;
+                    if f == 0.0 {
+                        continue;
+                    }
+                    let dl = doc_len[i] as f64;
+                    bm[i] +=
+                        idf * (f * 2.5) / (f + 1.5 * (1.0 - 0.75 + 0.75 * dl / avgdl.max(1.0)));
+                }
+            }
+            let g_max = scored.iter().map(|x| x.1).fold(f64::NEG_INFINITY, f64::max);
+            let g_min = scored.iter().map(|x| x.1).fold(f64::INFINITY, f64::min);
+            let b_max = bm.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let fused: Vec<(u64, f64, f64, f64)> = scored
+                .iter()
+                .enumerate()
+                .map(|(i, (id, g))| {
+                    let gn = if (g_max - g_min).abs() < 1e-12 {
+                        0.5
+                    } else {
+                        (g - g_min) / (g_max - g_min)
+                    };
+                    let bn = if b_max < 1e-12 { 0.0 } else { bm[i] / b_max };
+                    let (gw, bw) = if b_max > 0.5 { (0.2, 0.8) } else { (0.8, 0.2) };
+                    (*id, gw * gn + bw * bn, *g, bm[i])
+                })
+                .collect();
+            let mut fused = fused;
+            fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            let top: Vec<Value> = fused
+                .into_iter()
+                .take(k.max(1))
+                .filter_map(|(id, f, g, b)| {
+                    state.atoms.get(&id).map(|a| {
+                        json!({
+                            "id": a.id,
+                            "score": f,
+                            "geo_score": g,
+                            "bm25_score": b,
+                            "text": a.text,
+                            "coord_lorentz": a.coord,
+                            "coord_poincare": poincare(&a.coord),
+                            "salience": a.salience,
+                            "rank": a.rank,
+                            "provenance": a.provenance,
+                        })
+                    })
+                })
+                .collect();
+            let out = json!({"status":"ok","k":k,"hits":top,"count":state.atoms.len(),"retrieval":"flat full-scan + BM25 fusion (F3 reference, measurement only)","query_rank":qrank,"pami":"rotate-then-fold"});
+            let rcpt = now_receipt("map.query_flat", args, &out);
+            json!({"result":out,"receipt":rcpt})
+        }
         "map.attend" => {
+            // F1 (NN-G-v2): role gate BEFORE any atom access.
+            if let Some(denial) = deny_read(state, "map.attend", args) {
+                return denial;
+            }
             ensure_vp(state);
             let qtext = args
                 .get("qtext")
@@ -2559,6 +2748,10 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             json!({"result":out,"receipt":rcpt})
         }
         "map.traverse" => {
+            // F1 (NN-G-v2): role gate BEFORE any atom access.
+            if let Some(denial) = deny_read(state, "map.traverse", args) {
+                return denial;
+            }
             // Symplectic envelope: checks form + energy + frame BEFORE dispatch.
             // Fail-explained (cost/budget/residual named) instead of fail-silent.
             ensure_vp(state);
@@ -2896,6 +3089,10 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             json!({"result":out,"receipt":rcpt})
         }
         "map.lexical" => {
+            // F1 (NN-G-v2): role gate BEFORE any atom access.
+            if let Some(denial) = deny_read(state, "map.lexical", args) {
+                return denial;
+            }
             // Document-heavy arm: pure BM25 over ALL atoms with corpus IDF.
             // O(N) per query (tokenize + score) — the price of full-corpus
             // lexical recall. Geometric tools stay O(log N); use lexical
@@ -2985,6 +3182,10 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             json!({"result":out,"receipt":rcpt})
         }
         "map.read_euclid" => {
+            // F1 (NN-G-v2): role gate BEFORE any atom access.
+            if let Some(denial) = deny_read(state, "map.read_euclid", args) {
+                return denial;
+            }
             // Euclidean reader (proof 1): the map as flat R^n rows. Each hit
             // is [poincare(3) | idf-direction(3) | phase(2) | salience(1)]
             // = dim 9 by default, truncated/padded to requested dim. A
@@ -3342,10 +3543,11 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 "geometry": "Lorentz H3 canonical",
                 "projection": "Poincare B3",
                 "server_role": format!("{:?}", state.role),
+                "role_denied": state.role_denied,
                 "retrieval_complexity": "VP-tree exact-prune kNN (average O(log N), worst case O(N)) thick under bounded expansion constant; tests: vp_tree_matches_brute_force, vp_lazy_matches_brute_force; measured: 50/50 exact-text top-1 N=500 p50~2.6ms k=1 (NN-G run 2026-10-29, debug, single-process)",
                 "exact_attention_path": "built-in-oracle (full scan)",
                 "exact_attention_measured": false,
-                "nng_status": "G1/G3/G4/G5/G6 PASS (single-machine, debug); G2 speed + G7 leak audit OPEN; prereg NN-G-v1 sha256:9e1da197; replica per C09.4 required before EVIDENCED",
+                "nng_status": "G1/G3/G4/G5/G6 PASS (single-machine, debug); G2+G7 re-run under NN-G-v2 (F1/F2/F3); prereg NN-G-v1 sha256:9e1da197; replica per C09.4 required before EVIDENCED",
                 "ingest_complexity": "O(1) id + O(1) append; lazy vp rebuild O(N log N) once per query burst; test: vp_lazy_matches_brute_force",
             });
             let rcpt = now_receipt("map.health", args, &out);
@@ -4609,6 +4811,114 @@ mod gate_tests {
             &json!({"text": "role probe distinct tokens packet"}),
         );
         assert_eq!(r["result"]["status"], "ok");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn f1_read_paths_deny_without_read_mind() {
+        // F1 (NN-G-v2): every read-path tool denies when the role cannot
+        // read mind — with receipt, before any atom access. Construct the
+        // denied state directly (no env mutation in tests, Edition 2024).
+        let dir = std::env::temp_dir().join("hm_f1_deny");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        st.role = atomadb::Role::Ingest; // cannot read mind per atomadb gate
+        st.role_denied = false; // legitimate low role, NOT unparseable posture
+        for tool in [
+            "map.query",
+            "map.lexical",
+            "map.attend",
+            "map.traverse",
+            "map.read_euclid",
+        ] {
+            let r = handle_tool(
+                &mut st,
+                tool,
+                &json!({"qtext": "probe", "k": 3, "from_atom": 1, "to_atom": 2, "mlir_op": 26}),
+            );
+            assert_eq!(r["result"]["status"], "error", "{tool} must deny");
+            assert_eq!(
+                r["result"]["error"], "role may not read mind",
+                "{tool} wrong denial"
+            );
+            assert!(
+                r["receipt"]["receipt_sha256"].is_string(),
+                "{tool} denial must carry receipt"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn f1_unparseable_posture_denies_distinctly() {
+        // F2 (NN-G-v2): deny-all posture denies with the DISTINCT error
+        // `role-denied-unparseable` — distinguishable from legitimate
+        // low-role denial (G7 retest tells them apart).
+        let dir = std::env::temp_dir().join("hm_f1_unparse");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        st.role_denied = true;
+        let r = handle_tool(&mut st, "map.query", &json!({"qtext": "probe", "k": 1}));
+        assert_eq!(r["result"]["status"], "error");
+        assert_eq!(r["result"]["error"], "role-denied-unparseable");
+        assert!(r["receipt"]["receipt_sha256"].is_string());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn f1_holder_path_unaffected() {
+        // F1/F2 must not break the holder path (v2 prereg gate (c)).
+        let dir = std::env::temp_dir().join("hm_f1_holder");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        assert!(!st.role_denied);
+        let r = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": "holder probe distinct tokens"}),
+        );
+        assert_eq!(r["result"]["status"], "ok");
+        let q = handle_tool(
+            &mut st,
+            "map.query",
+            &json!({"qtext": "holder probe distinct tokens", "k": 1}),
+        );
+        assert_eq!(q["result"]["status"], "ok");
+        assert!(!q["result"]["hits"].as_array().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn f3_flat_matches_vp_top1() {
+        // F3 mirror-test (NN-G-v2): flat arm and VP arm agree top-1 on
+        // exact-text queries. Enforces fusion-tail parity: any future
+        // fusion change that updates one arm but not the other FAILS here.
+        let dir = std::env::temp_dir().join("hm_f3_mirror");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        for i in 0..30 {
+            let r = handle_tool(
+                &mut st,
+                "map.ingest",
+                &json!({"text": format!("mirror packet {i} topic{t} marker {m}", t = i % 4, m = i * i + 7)}),
+            );
+            assert_eq!(r["result"]["status"], "ok");
+        }
+        for i in [0, 7, 15, 23, 29] {
+            let q = format!(
+                "mirror packet {i} topic{t} marker {m}",
+                t = i % 4,
+                m = i * i + 7
+            );
+            let v = handle_tool(&mut st, "map.query", &json!({"qtext": q, "k": 5}));
+            let f = handle_tool(&mut st, "map.query_flat", &json!({"qtext": q, "k": 5}));
+            assert_eq!(v["result"]["status"], "ok");
+            assert_eq!(f["result"]["status"], "ok");
+            assert_eq!(
+                v["result"]["hits"][0]["id"], f["result"]["hits"][0]["id"],
+                "VP vs flat top-1 disagreement on exact-text query {q}"
+            );
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
