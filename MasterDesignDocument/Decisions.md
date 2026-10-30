@@ -88,3 +88,12 @@ P-CORR-1 through P-CORR-18 (Muse, 2026-10-26): hook-count audit, generated-manif
 - ADR for curvature self-tuning (C06.7).
 - ADR for distributed Atlas sync (C06.10).
 - ADR for telemetry identity rotation (C34).
+
+## Naming Decision ND-01 (2026-10-30, Stewart directive — agent-recorded, PENDING Stewart ratification)
+
+- **N³** = "Nested Neural Net": the nested retrieval layer (vetted RAG + hyperbolic memory + capability DAG + telemetry sink). Substrate only. Binary `hypermind-mcp`. UNCHANGED.
+- **Nested KV** = the key-ordered storage shape (`BTreeMap` + snapshot/WAL + SQLite sink). UNCHANGED.
+- **Multi-Model Mind** = the single unified object: the multi-model knowledge map with atoms + Nested KV as 1 object. CANONICAL NAME for the unified object going forward. Source: C06 Brigade text ("carved out of the single Multi-Model Mind knowledge map (the Atlas)") — the only candidate with a frozen design definition.
+- **Deprecated (do not use):** "Hyperbolic Global Mind" (agent-coined 2026-10-30, no source in repo — withdrawn same session), "HyperMind" as the unified-object name (collides with the N³-side binary/crate prefix; reserved for the substrate side).
+- **Conversion note:** the Multi-Model Mind is to become an updateable MCP server. This entry records the name only; the conversion is unscoped work.
+- **The dissolve rule:** N³ ≠ Multi-Model Mind ≠ Nested KV in every doc, receipt, and prereg going forward. Any text equating them is a defect to be filed, not edited silent (corrections are entries).
