@@ -1,16 +1,61 @@
-//! Coherence gate versions (staged).
+//! Coherence gate — ENGLISH PIN (Stewart directive 2026-10-30).
+//!
+//! `is_coherent_english` (ex-V1) is the serving gate: ASCII prompt +
+//! allowlist; rejects foreign scripts. `is_coherent_multilingual_v1` stays
+//! COMPILED + TESTED as staged phase-2 capital (byte-layer multilingual
+//! totality), but no serving path selects it until language-two is ordered.
+//! The `GateVersion` selector enum is DELETED: with one serving gate there
+//! is nothing to select. Reintroduce a selector only if a second gate ships.
 
-pub enum GateVersion { V1, MultilingualV1 }
-
-/// V1: verbatim vault behavior (ASCII prompt + allowlist; rejects foreign scripts).
-pub fn is_coherent_v1(prompt: &str, decoded: &str) -> bool {
+/// Serving gate (English-only): verbatim vault behavior.
+pub fn is_coherent_english(prompt: &str, decoded: &str) -> bool {
     let trimmed = decoded.trim();
-    if trimmed.is_empty() || decoded.contains('\u{FFFD}') || trimmed.contains("<atoma.") || trimmed.contains("analyzed via carved") { return false; }
-    if trimmed.len() == 1 && !trimmed.chars().next().unwrap().is_ascii_digit() { return false; }
-    if decoded.chars().any(|c| c.is_control() && !matches!(c,'\n'|'\r'|'\t')) { return false; }
+    if trimmed.is_empty()
+        || decoded.contains('\u{FFFD}')
+        || trimmed.contains("<atoma.")
+        || trimmed.contains("analyzed via carved")
+    {
+        return false;
+    }
+    if trimmed.len() == 1 && !trimmed.chars().next().unwrap().is_ascii_digit() {
+        return false;
+    }
+    if decoded
+        .chars()
+        .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
+    {
+        return false;
+    }
     if prompt.is_ascii() {
-        let foreign = decoded.chars().any(|c| !c.is_ascii() && !matches!(c,'—'|'–'|'’'|'‘'|'“'|'”'|'…'|'×'|'÷'|'±'|'≤'|'≥'|'≠'|'≈'|'°'|'µ'|'π'|'²'|'³'|'•'|'·'));
-        if foreign { return false; }
+        let foreign = decoded.chars().any(|c| {
+            !c.is_ascii()
+                && !matches!(
+                    c,
+                    '—' | '–'
+                        | '’'
+                        | '‘'
+                        | '“'
+                        | '”'
+                        | '…'
+                        | '×'
+                        | '÷'
+                        | '±'
+                        | '≤'
+                        | '≥'
+                        | '≠'
+                        | '≈'
+                        | '°'
+                        | 'µ'
+                        | 'π'
+                        | '²'
+                        | '³'
+                        | '•'
+                        | '·'
+                )
+        });
+        if foreign {
+            return false;
+        }
     }
     true
 }
@@ -18,8 +63,15 @@ pub fn is_coherent_v1(prompt: &str, decoded: &str) -> bool {
 /// multilingual-v1: script-aware; accept well-formed UTF-8 in prompt's script family; reject only control chars, U+FFFD, empty.
 pub fn is_coherent_multilingual_v1(_prompt: &str, decoded: &str) -> bool {
     let trimmed = decoded.trim();
-    if trimmed.is_empty() || decoded.contains('\u{FFFD}') { return false; }
-    if decoded.chars().any(|c| c.is_control() && !matches!(c,'\n'|'\r'|'\t')) { return false; }
+    if trimmed.is_empty() || decoded.contains('\u{FFFD}') {
+        return false;
+    }
+    if decoded
+        .chars()
+        .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
+    {
+        return false;
+    }
     true
 }
 
@@ -33,17 +85,17 @@ mod tests {
     const CODE: &[&str] = &["fn main() {}", "let x = 1;", "if (a) { b(); }"];
     const MATH: &[&str] = &["E=mc^2", "a^2+b^2=c^2", "π r^2"];
 
-    fn reject_rate(gate: fn(&str,&str)->bool, corpus: &[&str]) -> f64 {
+    fn reject_rate(gate: fn(&str, &str) -> bool, corpus: &[&str]) -> f64 {
         let n = corpus.len() as f64;
         let rej = corpus.iter().filter(|s| !gate("English prompt", s)).count() as f64;
-        rej/n
+        rej / n
     }
 
     #[test]
     fn v1_baseline_high_reject() {
         // V1 should reject ~100% of CJK/Arabic
-        assert!(reject_rate(is_coherent_v1, CJK) >= 0.9);
-        assert!(reject_rate(is_coherent_v1, AR) >= 0.9);
+        assert!(reject_rate(is_coherent_english, CJK) >= 0.9);
+        assert!(reject_rate(is_coherent_english, AR) >= 0.9);
     }
 
     #[test]

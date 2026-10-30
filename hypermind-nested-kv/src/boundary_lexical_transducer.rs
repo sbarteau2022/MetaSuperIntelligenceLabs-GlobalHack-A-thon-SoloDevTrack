@@ -2,7 +2,6 @@
 //! No silent drops: checked expansion, strict UTF-8, explicit drop receipts.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug, Default, Clone)]
 pub struct DropReceipt {
@@ -15,7 +14,15 @@ pub struct BoundaryLexicalTransducer {
     vocab_decode: HashMap<u32, Vec<u8>>,
     base_vocab_size: u32,
     multi_atoms: Vec<(u32, Vec<u32>)>,
-    silent: AtomicU64,
+    // 2026-10-30: the `silent: AtomicU64` loss counter is DELETED, not
+    // exposed. It had no reader (no getter, no health/sink export) and its
+    // function is fully covered by the replacements: per-call DropReceipt
+    // counts + expand_checked Err naming the carrier ID (both pinned by
+    // f1_silent_drop_probe) aggregate-side into policy_events (gate=egress)
+    // + telemetry_delivery/dropped_count per the 76-table schema. Exposing
+    // it would have created a second, non-receipted loss channel — F-1's
+    // ghost. DropReceipt.expand_unknown_ids is reserved (always 0) until a
+    // wiring caller translates expand_checked failures into the receipt.
 }
 
 impl BoundaryLexicalTransducer {
@@ -31,7 +38,6 @@ impl BoundaryLexicalTransducer {
             vocab_decode,
             base_vocab_size: 256,
             multi_atoms: vec![],
-            silent: AtomicU64::new(0),
         }
     }
 
@@ -117,7 +123,6 @@ impl BoundaryLexicalTransducer {
             } else if let Some((_, exp)) = self.multi_atoms.iter().find(|(a, _)| *a == id) {
                 out.extend_from_slice(exp);
             } else {
-                self.silent.fetch_add(1, Ordering::Relaxed);
                 return Err(format!("unknown Atomic-IR carrier {id}"));
             }
         }

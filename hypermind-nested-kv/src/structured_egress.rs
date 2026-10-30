@@ -1,9 +1,13 @@
 //! Structured egress: grammar validation (post-hoc) + receipt.
-
-use serde_json::Value as JsonValue;
+//!
+//! 2026-10-30 (English-only pin, Stewart directive): `Grammar::Json` DELETED.
+//! A JSON wellformedness gate at egress contradicts the repo JSON ban
+//! (model I/O boundary: no JSON). Only the Qwen3Xml grammar check remains.
 
 #[derive(Debug, Clone, Copy)]
-pub enum Grammar { Json, Qwen3Xml }
+pub enum Grammar {
+    Qwen3Xml,
+}
 
 #[derive(Debug, Clone)]
 pub struct EgressReceipt {
@@ -13,10 +17,12 @@ pub struct EgressReceipt {
 
 pub fn validate(grammar: Grammar, text: &str) -> EgressReceipt {
     let wellformed = match grammar {
-        Grammar::Json => serde_json::from_str::<JsonValue>(text).is_ok(),
         Grammar::Qwen3Xml => validate_qwen3_xml(text),
     };
-    EgressReceipt { grammar, wellformed }
+    EgressReceipt {
+        grammar,
+        wellformed,
+    }
 }
 
 fn validate_qwen3_xml(text: &str) -> bool {
@@ -27,17 +33,24 @@ fn validate_qwen3_xml(text: &str) -> bool {
     while i < bytes.len() {
         if bytes[i] == b'<' {
             // find closing >
-            let end = match text[i..].find('>') { Some(e) => i+e+1, None => return false };
-            let tag = &text[i+1..end-1];
+            let end = match text[i..].find('>') {
+                Some(e) => i + e + 1,
+                None => return false,
+            };
+            let tag = &text[i + 1..end - 1];
             if tag.starts_with('/') {
                 let name = tag.trim_start_matches('/');
-                if stack.pop().as_deref() != Some(name) { return false; }
+                if stack.pop().as_deref() != Some(name) {
+                    return false;
+                }
             } else if tag.ends_with('/') {
                 // self-closing ok
             } else {
                 // tag name
                 let name = tag.split_whitespace().next().unwrap_or("");
-                if name.is_empty() { return false; }
+                if name.is_empty() {
+                    return false;
+                }
                 stack.push(name.to_string());
             }
             i = end;
@@ -51,12 +64,13 @@ fn validate_qwen3_xml(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // 2026-10-30: Json-arm tests deleted with Grammar::Json (JSON ban).
     #[test]
-    fn json_valid() { assert!(validate(Grammar::Json, r#"{"a":1}"#).wellformed); }
+    fn xml_valid() {
+        assert!(validate(Grammar::Qwen3Xml, "<think>x</think>").wellformed);
+    }
     #[test]
-    fn json_invalid() { assert!(!validate(Grammar::Json, r#"{a:1}"#).wellformed); }
-    #[test]
-    fn xml_valid() { assert!(validate(Grammar::Qwen3Xml, "<think>x</think>").wellformed); }
-    #[test]
-    fn xml_invalid() { assert!(!validate(Grammar::Qwen3Xml, "<a><b></a>").wellformed); }
+    fn xml_invalid() {
+        assert!(!validate(Grammar::Qwen3Xml, "<a><b></a>").wellformed);
+    }
 }
