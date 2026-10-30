@@ -173,6 +173,154 @@ fn gate_denial_fails_packet_without_transport() {
     let _ = std::fs::remove_file(&db_path);
 }
 
+// C-RUN-04 (supersedes v1/v2/v3 before execution): daemon DAG (ignored unless HYPERMIND_MCP_BIN is set). ONE held-open
+// child for a 4-packet fan-out/fan-in DAG through run_parallel_n3 + live sink
+// read-back. Closes the three FULL-SMOKE NOT-VERIFIEDs: (1) daemon mode —
+// many sequential calls, one stdin/stdout pair, state accumulates; (2) live
+// write-through sink — verify() + len() + replay read-back after the run;
+// (3) multi-packet DAG beyond 2-packet chains — seed → {qa,qb} → join.
+#[test]
+#[ignore]
+fn live_daemon_dag_c_run01() {
+    let bin = std::env::var("HYPERMIND_MCP_BIN").expect("HYPERMIND_MCP_BIN required");
+    let root = std::env::temp_dir().join(format!("rgah-daemon-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&root);
+    let mut eng = Engine::new();
+    eng.register_judge(judge_pass("jr", "receipt_sha256"));
+    eng.register_judge(judge_pass("ja", "bravo seven"));
+    eng.register_judge(judge_pass("jb", "charlie nine"));
+    eng.register_judge(judge_pass("jg", "retrieved_ids"));
+    eng.register_judge(judge_pass("jj", "daemon"));
+    let manifest = r#"[{"source_root":"r","source_path":"vault/map.ingest","category":"03-AgenticRuntime","dest_path":"d/map.ingest"},{"source_root":"r","source_path":"vault/map.query","category":"03-AgenticRuntime","dest_path":"d/map.query"},{"source_root":"r","source_path":"vault/map.attend","category":"03-AgenticRuntime","dest_path":"d/map.attend"}]"#;
+    let gate = CapabilityGate::from_manifest(manifest).expect("manifest loads");
+    let mut plan = Plan {
+        id: "daemon".into(),
+        objective: "daemon-dag".into(),
+        packets: vec![
+            Packet {
+                depends_on: vec![],
+                judges: vec![JudgeRef {
+                    id: "jr".into(),
+                    kind: "contains".into(),
+                }],
+                ..packet(
+                    "seed",
+                    vec![
+                        map_call(
+                            "map.ingest",
+                            "{\"text\":\"daemon packet alpha bravo seven\"}",
+                        ),
+                        map_call(
+                            "map.ingest",
+                            "{\"text\":\"daemon packet alpha charlie nine\"}",
+                        ),
+                    ],
+                )
+            },
+            Packet {
+                depends_on: vec!["seed".to_string()],
+                judges: vec![JudgeRef {
+                    id: "ja".into(),
+                    kind: "contains".into(),
+                }],
+                ..packet(
+                    "qa",
+                    vec![map_call("map.query", "{\"qtext\":\"alpha bravo\",\"k\":2}")],
+                )
+            },
+            Packet {
+                depends_on: vec!["seed".to_string()],
+                judges: vec![JudgeRef {
+                    id: "jb".into(),
+                    kind: "contains".into(),
+                }],
+                ..packet(
+                    "qb",
+                    vec![map_call(
+                        "map.query",
+                        "{\"qtext\":\"alpha charlie\",\"k\":2}",
+                    )],
+                )
+            },
+            Packet {
+                depends_on: vec!["qa".to_string(), "qb".to_string()],
+                judges: vec![JudgeRef {
+                    id: "jg".into(),
+                    kind: "contains".into(),
+                }],
+                // gate runs the depth gate over the fan-in (contract: IDs +
+                // gate metadata with receipt). Judged on its own contract key.
+                ..packet(
+                    "gate",
+                    vec![map_call(
+                        "map.attend",
+                        "{\"qtext\":\"daemon alpha\",\"k\":3}",
+                    )],
+                )
+            },
+            Packet {
+                depends_on: vec!["gate".to_string()],
+                judges: vec![JudgeRef {
+                    id: "jj".into(),
+                    kind: "contains".into(),
+                }],
+                // collect returns the joined branch content as text.
+                ..packet(
+                    "collect",
+                    vec![map_call(
+                        "map.query",
+                        "{\"qtext\":\"daemon alpha\",\"k\":3}",
+                    )],
+                )
+            },
+        ],
+    };
+    let mut receipts = ReceiptLog::default();
+    let mut budget = EnergyBudget::new(100.0);
+    let db_path = root.join("daemon.sqlite3");
+    let mut sink = TelemetrySink::open(&db_path).expect("sink opens");
+    // ONE child for the whole DAG — the daemon under test. No respawn.
+    let mut mcp = McpChild::spawn(&bin, root.to_str().unwrap()).expect("daemon spawns");
+    let report = eng.run_parallel_n3(
+        &mut plan,
+        &mut receipts,
+        &mut budget,
+        &mut mcp,
+        &mut sink,
+        &gate,
+        "swarm-daemon",
+    );
+    mcp.close();
+    // (3) DAG: all four pass — fan-out level + fan-in join, judged live.
+    assert_eq!(
+        report.passed.len(),
+        5,
+        "all 5 DAG packets must pass, got {:?}",
+        report
+    );
+    // (1) daemon: every packet ran through the single child — receipts carry
+    // the shared swarm id and the plan advanced past the 2-stage join.
+    assert!(receipts.entries.iter().all(|r| r.outcome == "PASS"));
+    assert!(
+        plan.packets
+            .iter()
+            .all(|p| p.status == PacketStatus::Passed)
+    );
+    // (2) live sink (C-RUN-04): hash chain verifies, 10 rows = 5 distinct
+    // call-keys (seed's two ingests collapse on the (packet,attempt,tool)
+    // idempotency key — tested sink behavior) + 5 verdicts. Replay reads back.
+    assert!(sink.verify().is_ok(), "sink chain must verify");
+    let n = sink.len().expect("sink len");
+    assert!(
+        n >= 10,
+        "sink must hold >=10 events (5 distinct call-rows + 5 verdicts, C-RUN-04), got {}",
+        n
+    );
+    eprintln!(
+        "C-RUN-04: 5/5 DAG pass, sink events={} chain=ok (db={:?})",
+        n, db_path
+    );
+}
 // Live round-trip (ignored unless HYPERMIND_MCP_BIN is set): real binary,
 // real map.query judged on returned text, receipt + sink chain verified.
 #[test]
