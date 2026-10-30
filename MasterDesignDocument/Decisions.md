@@ -99,6 +99,21 @@ P-CORR-1 through P-CORR-18 (Muse, 2026-10-26): hook-count audit, generated-manif
 2. **Earned necessity still expires.** As the system grows in complexity and diversity, every settled decision stays reconsiderable and refinable. A frozen decision that can't be revisited rots: new hardware, new evidence, or new scale reopens it. Staleness is a defect, not stability.
 3. **Enforcement.** Any text in this repo claiming "only way," "must," or "required" without a filed measurement (per C09.3) or without a reconsideration path is a fileable defect — same as an unlabeled claim (docs standards §7). Co-authorship means both voices get this protection: Stewart's directives and the agent's proposals clear the same bar.
 
+## Authored Doctrine DD-02 — Short-Term Is a Scratchpad Until the Mind Proves Portable (Stewart, 2026-10-30 — agent-formatted, PENDING Stewart ratification)
+
+> For now, maybe we take a page out of the pagedAttention playbook and make the short term a scratchpad-like space until the Multi-Model Mind shows that it can be copy/pasted for subsequent applications.
+
+**Direction (Stewart-authored, PROPOSED):**
+
+1. **Session memory is block-paged scratch.** Short-term memory is working space with no durability promise — allocated for the live window, evictable, scoped to the session lifecycle. Like pagedAttention's non-contiguous KV blocks, the shape is pages in and out on demand, not a log with a future.
+2. **The graduation bar is copy/paste.** Short-term stays scratch until the Multi-Model Mind demonstrates portability: export (passport) → fresh session/app → import → judged recall/behavior parity. Until that passes, no session content graduates to long-term on any path except the explicit judged deposit (N³ intake gate, `judge_text` — unchanged).
+3. **Scope consequence.** C07's canonical-home ambitions (mandatory summaries into the home store, CRDT merge, linearizable log) stay scoped to vetted long-term. Session scratch is explicitly excluded until graduation. This simplifies what must be built now: the scratchpad serves the live window (compaction checkpoint stays), nothing more.
+
+**Agent pushback (labeled mine, not Stewart's — decided by probe, per DD-01):**
+
+- The graduation test may already be runnable: `map.export_passport` exists and NN-G4 (passport digest stability) passed. "Until it shows" could be weeks, not someday — propose running the passport round-trip probe before treating portability as distant.
+- Carve-out stands as written in §3, but it needs teeth: if scratchpad framing is read as license to drop session continuity, the anti-lobotomy work (`map.compact`/`map.checkpoint`) loses its mandate. The compact checkpoint is load-bearing for the live window regardless of scratch status.
+
 ## Naming Decision ND-01 (2026-10-30, Stewart directive — agent-recorded, PENDING Stewart ratification)
 
 - **N³** = "Nested Neural Net": the nested retrieval layer (vetted RAG + hyperbolic memory + capability DAG + telemetry sink). Substrate only. Binary `hypermind-mcp`. UNCHANGED.
