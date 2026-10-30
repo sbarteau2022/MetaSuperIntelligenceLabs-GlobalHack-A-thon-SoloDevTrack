@@ -75,8 +75,9 @@ pub use mode::{Command, TacticalLevel, allowed_commands, authorize, raise_level}
 pub use plugins::{PluginReceipt, PluginRegistry, PluginSpec};
 pub use policy_kernel::FrozenPolicyKernel;
 pub use ppc_probe::{
-    HELDOUT_TASKS, PROBE_TASKS, PpcTask, bundle_system_prompt, bundle_text, chat_once, extract_str,
-    extract_u64, jstr, last_number_eq, split_url,
+    ADOPT_RUN02_BOUNDARY, ADOPT_RUN02_DISCRIMINATOR, ADOPT_RUN02_GUARDS_EXTRA, HELDOUT_TASKS,
+    PROBE_TASKS, PpcTask, bundle_system_prompt, bundle_text, chat_once, extract_str, extract_u64,
+    jstr, last_number_eq, split_url,
 };
 pub use rag::{MockMap, RagQuery, RealVector, rag_coverage};
 pub use receipt::{Receipt, ReceiptLog};

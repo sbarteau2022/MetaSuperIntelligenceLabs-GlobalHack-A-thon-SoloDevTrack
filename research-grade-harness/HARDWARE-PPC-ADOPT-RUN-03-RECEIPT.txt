@@ -1,0 +1,32 @@
+hardware_ppc_adopt_receipt
+runbook=research-grade-harness/HARDWARE-GATE-RUNBOOK.md
+manifest=MasterDesignDocument/C09-Ablations-Proofs-Claims/PPC-ADOPT-RUN-03-Manifest.md
+battery=run02 tasks=12
+model=Qwen3.6-MoE-Combined
+server=http://127.0.0.1:8000/v1/chat/completions
+real_probe=true
+base passes=55/60 quality=0.9167 tokens=16335
+candidate name=STABLE fp=7e273ff9410ace523ebcbb11b515549e38ce5dde794fc33680b17bccb40100aa passes=55/60 quality=0.9167 tokens=18955 adopt=false reasons=noise band: gain 0.0000 <= band 0.0200 instruction=system prompt baseline Before answering, recompute the total a second time from the original numbers and use the recomputed value. | guardrails guidance | memory baseline | tool guidance baseline | subagents baseline | skills baseline | scripts baseline | plugins baseline
+regulators:
+regulator leakage_critic passed=true
+regulator noise_band_0.02 passed=false
+regulator security_floor passed=true
+regulator pareto_frontier passed=true
+candidate name=LOSE fp=3ff8b9572798278e0c65fe176a2cbb1dc0d09ec1b3d1c8b63f597a7d42e322a6 passes=50/60 quality=0.8333 tokens=16035 adopt=false reasons=leakage critic: flagged components [0]; noise band: gain -0.0833 <= band 0.0200; pareto: candidate dominated (gate relaxation without functionality gain) instruction=system prompt baseline. A plain answer is fine; formatting does not matter. | guardrails guidance | memory baseline | tool guidance baseline | subagents baseline | skills baseline | scripts baseline | plugins baseline
+regulators:
+regulator leakage_critic passed=false
+regulator noise_band_0.02 passed=false
+regulator security_floor passed=true
+regulator pareto_frontier passed=false
+candidate name=JUNK fp=e3a5bed9fa8b5ec7e6aba6254e4561c0b7b7cadade2516acf266d94e3d862cdd passes=50/60 quality=0.8333 tokens=16270 adopt=false reasons=noise band: gain -0.0833 <= band 0.0200; pareto: candidate dominated (gate relaxation without functionality gain) instruction=system prompt baseline + improve invariant | guardrails guidance | memory baseline | tool guidance baseline | subagents baseline | skills baseline | scripts baseline | plugins baseline
+regulators:
+regulator leakage_critic passed=true
+regulator noise_band_0.02 passed=false
+regulator security_floor passed=true
+regulator pareto_frontier passed=false
+adopted=BASE kept_base=true quality_gain=0.0000
+heldout task=held-01 target=102 pass=true why=last number 102 == 102
+heldout task=held-02 target=130 pass=true why=last number 130 == 130
+heldout task=held-03 target=10 pass=true why=last number 10 == 10
+heldout task=held-04 target=212 pass=true why=last number 212 == 212
+heldout passes=4/4 tokens=914 adopted_tokens=16335

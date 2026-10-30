@@ -22,8 +22,8 @@
 use rgah::energy::EnergyBudget;
 use rgah::evolution::regularized_adopt;
 use rgah::ppc_probe::{
-    HELDOUT_TASKS, PROBE_TASKS, bundle_system_prompt, bundle_text, chat_once, last_number_eq,
-    split_url,
+    ADOPT_RUN02_BOUNDARY, ADOPT_RUN02_DISCRIMINATOR, ADOPT_RUN02_GUARDS_EXTRA, HELDOUT_TASKS,
+    PROBE_TASKS, PpcTask, bundle_system_prompt, bundle_text, chat_once, last_number_eq, split_url,
 };
 use rgah::rsi::Bundle;
 
@@ -65,38 +65,68 @@ fn junk_bundle(base: &Bundle) -> Bundle {
     }
 }
 
-fn probe(
+fn stable_bundle(base: &Bundle) -> Bundle {
+    // PPC-ADOPT-RUN-02 WIN candidate (pressure-proven): recompute discipline.
+    // h-06 BASE 0/15 vs STABLE 15/15 across 3 sessions (2026-10-30).
+    let mut c = base.components.clone();
+    c[0] = format!(
+        "{} Before answering, recompute the total a second time from the original numbers and use the recomputed value.",
+        base.components[0]
+    );
+    Bundle {
+        version: 1,
+        components: c,
+    }
+}
+
+/// Probe any task slice (RUN-02 battery composes discriminator + guards +
+/// boundary from shared consts; default battery = v2 PROBE_TASKS).
+/// RUN-03: PPC_REPEATS (env, default 1) repeats each task; passes count per
+/// repeat, quality is a pass RATE. Default 1 = RUN-01/RUN-02 behavior.
+fn probe_tasks(
     b: &Bundle,
     host: &str,
     port: u16,
     path: &str,
     model: &str,
     key: &str,
-) -> (usize, u64, Vec<String>) {
+    tasks: &[PpcTask],
+) -> (usize, usize, u64, Vec<String>) {
     let sys = bundle_system_prompt(b);
+    // RUN-03: in-run repeats (PPC_REPEATS env, default 1). Each task probed
+    // N times; passes/tokens accumulate; quality is a rate. Default 1
+    // preserves RUN-01/RUN-02 single-pass behavior exactly.
+    let repeats: usize = std::env::var("PPC_REPEATS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
     let mut passes = 0usize;
+    let mut total = 0usize;
     let mut tokens = 0u64;
     let mut rows: Vec<String> = vec![];
-    for t in PROBE_TASKS {
-        match chat_once(host, port, path, model, key, &sys, t.prompt) {
-            Ok((text, tok)) => {
-                tokens += tok;
-                let (ok, why) = last_number_eq(&text, t.target);
-                if ok {
-                    passes += 1;
+    for t in tasks {
+        for rep in 0..repeats.max(1) {
+            total += 1;
+            match chat_once(host, port, path, model, key, &sys, t.prompt) {
+                Ok((text, tok)) => {
+                    tokens += tok;
+                    let (ok, why) = last_number_eq(&text, t.target);
+                    if ok {
+                        passes += 1;
+                    }
+                    rows.push(format!(
+                        "probe task={} rep={} target={} pass={} why={}",
+                        t.id, rep, t.target, ok, why
+                    ));
                 }
-                rows.push(format!(
-                    "probe task={} target={} pass={} why={}",
-                    t.id, t.target, ok, why
-                ));
+                Err(e) => rows.push(format!("probe task={} rep={} ERROR {}", t.id, rep, e)),
             }
-            Err(e) => rows.push(format!("probe task={} ERROR {}", t.id, e)),
         }
     }
     for r in &rows {
         eprintln!("  {}", r);
     }
-    (passes, tokens, rows)
+    (passes, total, tokens, rows)
 }
 
 fn main() -> std::process::ExitCode {
@@ -125,33 +155,66 @@ fn main() -> std::process::ExitCode {
     }
 
     let base = Bundle::base();
-    let cands: Vec<(&str, Bundle)> = vec![
-        ("WIN", win_bundle(&base)),
-        ("LOSE", lose_bundle(&base)),
-        ("JUNK", junk_bundle(&base)),
-    ];
+    // Battery select (PPC-ADOPT-RUN-02-Manifest §4): PPC_BATTERY=run02 runs
+    // the discriminator + guards + boundary battery with the STABLE candidate;
+    // default (unset/anything else) = RUN-01 battery byte-identical.
+    let battery = std::env::var("PPC_BATTERY").unwrap_or_else(|_| "run01".into());
+    let is_run02 = battery == "run02";
+    // Composed RUN-02 task list: discriminator + v2 probes + extra guards +
+    // boundary (diagnostic). Owned vec because it spans const slices.
+    let run02_tasks: Vec<PpcTask> = ADOPT_RUN02_DISCRIMINATOR
+        .iter()
+        .chain(PROBE_TASKS.iter())
+        .chain(ADOPT_RUN02_GUARDS_EXTRA.iter())
+        .chain(ADOPT_RUN02_BOUNDARY.iter())
+        .cloned()
+        .collect();
+    let probe_battery: &[PpcTask] = if is_run02 { &run02_tasks } else { PROBE_TASKS };
+    let cands: Vec<(&str, Bundle)> = if is_run02 {
+        vec![
+            ("STABLE", stable_bundle(&base)),
+            ("LOSE", lose_bundle(&base)),
+            ("JUNK", junk_bundle(&base)),
+        ]
+    } else {
+        vec![
+            ("WIN", win_bundle(&base)),
+            ("LOSE", lose_bundle(&base)),
+            ("JUNK", junk_bundle(&base)),
+        ]
+    };
     let mut budget = EnergyBudget::new(50.0);
     // Base probe first (KEEP_BASE competes on real signal, same as run()).
-    eprintln!("probing base ...");
-    let (base_passes, base_tokens, _) = probe(&base, &host, port, &path, &model, &key);
-    let base_q = base_passes as f64 / PROBE_TASKS.len() as f64;
+    eprintln!("probing base (battery={}) ...", battery);
+    let (base_passes, base_total, base_tokens, _) =
+        probe_tasks(&base, &host, port, &path, &model, &key, probe_battery);
+    let base_q = base_passes as f64 / base_total as f64;
     budget.charge(base_tokens as f64 * 0.0005, base_tokens * 4);
 
     let mut out = String::new();
     out.push_str("hardware_ppc_adopt_receipt\n");
     out.push_str("runbook=research-grade-harness/HARDWARE-GATE-RUNBOOK.md\n");
-    out.push_str(
-        "manifest=MasterDesignDocument/C09-Ablations-Proofs-Claims/PPC-ADOPT-RUN-01-Manifest.md\n",
-    );
+    // Manifest pointer: PPC_MANIFEST env overrides (RUN-03+); default derives
+    // from the battery (run01->01, run02->02). A wrong pointer voids traceability
+    // (C09.3) — RUN-03 attempt 1 was voided for exactly this (said RUN-02).
+    let manifest_ptr = std::env::var("PPC_MANIFEST").unwrap_or_else(|_| {
+        format!(
+            "MasterDesignDocument/C09-Ablations-Proofs-Claims/PPC-ADOPT-RUN-{:02}-Manifest.md",
+            if is_run02 { 2 } else { 1 }
+        )
+    });
+    out.push_str(&format!("manifest={}\n", manifest_ptr));
+    out.push_str(&format!(
+        "battery={} tasks={}\n",
+        battery,
+        probe_battery.len()
+    ));
     out.push_str(&format!("model={}\n", model));
     out.push_str(&format!("server={}\n", url));
     out.push_str("real_probe=true\n");
     out.push_str(&format!(
         "base passes={}/{} quality={:.4} tokens={}\n",
-        base_passes,
-        PROBE_TASKS.len(),
-        base_q,
-        base_tokens
+        base_passes, base_total, base_q, base_tokens
     ));
 
     // Pairwise adopt vs base through the tested regulator stack.
@@ -161,8 +224,9 @@ fn main() -> std::process::ExitCode {
     let mut adopted_tokens = base_tokens;
     for (name, b) in &cands {
         eprintln!("probing {} ...", name);
-        let (passes, tokens, _) = probe(b, &host, port, &path, &model, &key);
-        let q = passes as f64 / PROBE_TASKS.len() as f64;
+        let (passes, total, tokens, _) =
+            probe_tasks(b, &host, port, &path, &model, &key, probe_battery);
+        let q = passes as f64 / total as f64;
         budget.charge(tokens as f64 * 0.0005, tokens * 4);
         let (adopt, reasons) = regularized_adopt(q, base_q, b, 1.0, 1.0, 0.02);
         let rs = reasons.join("; ");
@@ -171,7 +235,7 @@ fn main() -> std::process::ExitCode {
             name,
             b.fingerprint(),
             passes,
-            PROBE_TASKS.len(),
+            total,
             q,
             tokens,
             adopt,

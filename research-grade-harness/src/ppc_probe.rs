@@ -10,6 +10,7 @@
 use std::io::{Read, Write};
 use std::time::Duration;
 
+#[derive(Clone, Copy)]
 pub struct PpcTask {
     pub id: &'static str,
     pub prompt: &'static str,
@@ -297,3 +298,35 @@ pub fn bundle_system_prompt(b: &crate::rsi::Bundle) -> String {
 pub fn bundle_text(b: &crate::rsi::Bundle) -> String {
     b.components.join(" | ")
 }
+
+/// PPC-ADOPT-RUN-02 battery (discriminator + boundary + saturated guards).
+/// Discriminator h-06 + boundary d-02 are NEW constants (pressure-verified
+/// 2026-10-30: h-06 BASE 0/15 vs STABLE 15/15 across 3 sessions; d-02 both
+/// 0/15). Guards reference the v2 PROBE_TASKS + h-04/d-07 inline (not
+/// duplicated) — the binary composes the battery; see its --battery flag.
+pub const ADOPT_RUN02_DISCRIMINATOR: &[PpcTask] = &[PpcTask {
+    id: "h-06",
+    prompt: "Room A is 14 by 11 feet, room B is 9 by 12 feet, hallway is 22 by 4 feet. Carpet costs 3 dollars per square foot with 10 percent waste added. What is the total cost in dollars?",
+    target: "1155",
+    held_out: false,
+}];
+pub const ADOPT_RUN02_BOUNDARY: &[PpcTask] = &[PpcTask {
+    id: "d-02",
+    prompt: "Concrete costs 120 dollars per cubic yard. A slab is 10 by 8 feet by 6 inches thick. Add 8 percent waste. What is the total cost to the nearest dollar?",
+    target: "192",
+    held_out: false,
+}];
+pub const ADOPT_RUN02_GUARDS_EXTRA: &[PpcTask] = &[
+    PpcTask {
+        id: "h-04",
+        prompt: "17 boxes hold 23 chocolates each. 5 boxes are eaten entirely, then the rest are repacked into bags of 9. How many chocolates are left unpacked?",
+        target: "6",
+        held_out: false,
+    },
+    PpcTask {
+        id: "d-07",
+        prompt: "A textbook lists at 140 dollars. The bookstore discounts 15 percent, then a 6 percent sales tax applies. Final price?",
+        target: "126.14",
+        held_out: false,
+    },
+];
