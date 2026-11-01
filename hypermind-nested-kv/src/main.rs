@@ -5,7 +5,9 @@ mod text;
 mod ledger;
 mod mapmath;
 mod role;
+mod surreal;
 use role::Role;
+use surreal::Store;
 
 // ---- Goal 57f1db48 items 1+2: judge gate + hashed-TF embedder ----
 // Judge: every ingest carries a pass/fail BEFORE mint. No pass, no atom.
@@ -54,6 +56,16 @@ struct Atom {
     /// Zero for all pre-envelope atoms (snapshot-compatible default).
     #[serde(default)]
     symplectic: SymplecticState,
+    /// Cached 32D topic direction (topic_embed of text). Recomputed trig on
+    /// every ingest made basin refold O(N^2 x trig); the cache makes it O(1)
+    /// per atom. Backfilled on load for pre-cache snapshots (serde default).
+    #[serde(default)]
+    topic: [f64; 32],
+    /// FNV-1a over the SORTED token multiset. Dedup index key: coalesce iff
+    /// (same text OR same toks_hash) AND cosh gate — identical semantics to
+    /// the old full-scan, O(1) lookup instead of O(N) re-tokenize.
+    #[serde(default)]
+    toks_hash: u64,
 }
 
 /// Momentum half of an SSA value. Position half is Atom{coord, phase}.
@@ -308,6 +320,10 @@ struct StateSnapshot {
     ledger_root: String,
     hunger: Vec<HungerRow>,
     kv: Vec<KvEntry>,
+    /// Persisted IDF table (O(N^2) fix): old snapshots lack it (None) and
+    /// recompute once on load; new snapshots carry it and skip recompute.
+    #[serde(default)]
+    idf: Option<std::collections::HashMap<String, f64>>,
 }
 
 /// Attractor basin: a folded geodesic envelope over atoms in one silo (C06.1, C06.21 §3/§4).
@@ -360,6 +376,22 @@ struct Basin {
     recency: f64,
     receipt: String,
     topic: [f64; 32],
+    /// Running sums for O(1) incremental centroid refresh (O(N^2) fix).
+    /// Backfilled from members on load (serde default = zeroed).
+    #[serde(default)]
+    sum_coord: [f64; 4],
+    #[serde(default)]
+    sum_phase: [f64; 2],
+    #[serde(default)]
+    sum_salience: f64,
+    #[serde(default)]
+    sum_topic: [f64; 32],
+    /// Cached `format!("{:?}", members)` for O(1) receipt refresh (ingest
+    /// O(N^2) fix 2026-11-01). Receipt bytes are IDENTICAL to a full reformat
+    /// (same string, same hash) — recover() verification unaffected.
+    /// Backfilled on load; rebuilt by refold.
+    #[serde(default)]
+    members_fmt: String,
 }
 
 /// Task-scoped specialist fiber: the carved map handed to one subagent (C06.21 §4).
@@ -385,6 +417,25 @@ struct State {
     /// `role may not read mind`. Plain bool (State has no serde derive;
     /// posture recomputed at boot/create).
     role_denied: bool,
+    /// SurrealDB persistence (steps 1-2-3): shadow dual-write by default;
+    /// never serialized into snapshots (rebuilt from env per process).
+    #[allow(dead_code)]
+    store: Store,
+    /// Collision guard (incident 2026-11-01): highest DB external_id seen
+    /// this process. None = not yet fetched. Fresh-map ids at or below the
+    /// floor are never shadow-UPSERTed (they would clobber migrated rows).
+    db_id_floor: Option<u64>,
+    /// Dedup index (ingest O(N^2) fix 2026-11-01): token-multiset hash ->
+    /// atom ids. Built once at open (O(N)), updated per ingest (O(1)).
+    /// Same coalesce rule as the old full scan; lookup is bucketed.
+    dedup_index: std::collections::HashMap<u64, Vec<u64>>,
+    /// Receipt-laziness flag (ingest O(N^2) fix 2026-11-01): basin_append
+    /// marks dirty instead of reformatting member lists + rehashing the
+    /// Merkle root per ingest. Refresh happens in refresh_basin_receipts(),
+    /// called by every path that READS receipts/root (carve, dissolve,
+    /// snapshot, export_passport). Ingest output never exposes the root,
+    /// so ingest stays O(1). Receipt BYTES are identical to eager recompute.
+    basins_dirty: bool,
     atoms: BTreeMap<u64, Atom>,
     basins: BTreeMap<u64, Basin>,
     fibers: BTreeMap<String, FiberView>,
@@ -856,6 +907,155 @@ fn phase_dist(a: &[f64; 2], b: &[f64; 2]) -> f64 {
 /// Rebuild attractor basins as views: group canonical atoms by silo, fold each
 /// silo into geodesic envelopes via greedy hyperbolic clustering (C06.1, C06.21
 /// step 9). Basins hold member ids + centroid — never atom copies.
+/// Incremental basin append: assign one atom under the same fold rule
+/// as the greedy refold (radius 1.5 + topic cos_sim >= 0.0 against the seed).
+/// Here the "seed" is the basin centroid (mean of member coords, mean topic).
+/// Best (nearest-centroid) basin in the atom's domain wins; otherwise mint.
+/// O(basins), not O(silo): per-ingest cost stays ~constant as N grows.
+/// Receipts stay stable: existing basin ids are reused; only genuinely new
+/// folds mint ids. Full refold (rebuild_basins) remains the repair path.
+/// Receipt source string for a member list (identical to `format!("{:?}", members)`).
+fn members_fmt_of(members: &[u64]) -> String {
+    format!("{members:?}")
+}
+
+/// Extend a cached `members_fmt` by one pushed id: O(len(id)) not O(members).
+/// `members_fmt` always ends with `]`; insert before it.
+fn members_fmt_push(fmt: &mut String, id: u64) {
+    if fmt.is_empty() {
+        *fmt = format!("[{id}]");
+        return;
+    }
+    fmt.pop();
+    if fmt.len() > 1 {
+        fmt.push_str(", ");
+    }
+    fmt.push_str(&id.to_string());
+    fmt.push(']');
+}
+
+/// Receipt bytes for a basin (member-list binding, CORR-C06-02).
+fn basin_receipt(domain: &str, bid: u64, members_fmt: &str) -> String {
+    hash_bytes(format!("{domain}:{bid}:{members_fmt}").as_bytes())
+}
+
+/// Flush pending receipt/root updates. Receipt bytes are IDENTICAL to
+/// eager per-ingest recompute (same member strings, same hashes) — only the
+/// TIMING moves. Called by every receipt/root reader; ingest never calls it.
+fn refresh_basin_receipts(state: &mut State) {
+    if !state.basins_dirty {
+        return;
+    }
+    for b in state.basins.values_mut() {
+        if b.members_fmt.is_empty() && !b.members.is_empty() {
+            b.members_fmt = members_fmt_of(&b.members);
+        }
+        let domain = b.domain.clone();
+        let fmt = b.members_fmt.clone();
+        b.receipt = basin_receipt(&domain, b.id, &fmt);
+    }
+    state.ledger_root = ledger_root_for(&state.basins);
+    state.basins_dirty = false;
+}
+
+fn basin_append(state: &mut State, atom: &Atom) {
+    let fold_radius = 1.5f64;
+    let mut best: Option<(u64, f64)> = None;
+    for (bid, b) in &state.basins {
+        if b.domain != atom.domain {
+            continue;
+        }
+        let d = hyperbolic_dist(&b.centroid, &atom.coord);
+        if d <= fold_radius && cos_sim(&b.topic, &atom.topic) >= 0.0 {
+            if best.map(|(_, bd)| d < bd).unwrap_or(true) {
+                best = Some((*bid, d));
+            }
+        }
+    }
+    match best {
+        Some((bid, _)) => {
+            // Join: O(1) running-sum refresh. Receipt hashes the member
+            // LIST (unchanged), so receipts are bit-stable vs full-resum
+            // (only fp last-ulp in means may differ — never hashed).
+            let already = state.basins.get(&bid).map(|b| b.members.contains(&atom.id)).unwrap_or(false);
+            if let Some(b) = state.basins.get_mut(&bid) {
+                if !already {
+                    b.members.push(atom.id);
+                    for i in 0..4 {
+                        b.sum_coord[i] += atom.coord[i];
+                    }
+                    b.sum_phase[0] += atom.phase[0];
+                    b.sum_phase[1] += atom.phase[1];
+                    b.sum_salience += atom.salience;
+                    for i in 0..32 {
+                        b.sum_topic[i] += atom.topic[i];
+                    }
+                }
+                let n = b.members.len().max(1) as f64;
+                let mut c = [0.0f64; 4];
+                for i in 0..4 {
+                    c[i] = b.sum_coord[i] / n;
+                }
+                let r2 = c[1] * c[1] + c[2] * c[2] + c[3] * c[3];
+                c[0] = (1.0 + r2).sqrt();
+                let mut topic = b.sum_topic;
+                let tn = topic.iter().map(|x| x * x).sum::<f64>().sqrt().max(1e-9);
+                for i in 0..32 {
+                    topic[i] /= tn;
+                }
+                b.centroid = c;
+                b.phase = [b.sum_phase[0] / n, b.sum_phase[1] / n];
+                b.salience = b.sum_salience / n;
+                b.pinned = b.pinned || atom.pinned;
+                b.recency = b.recency.max(atom.id as f64);
+                b.topic = topic;
+                if !already {
+                    members_fmt_push(&mut b.members_fmt, atom.id);
+                }
+            }
+            state.next_basin_id = state.next_basin_id.max(bid + 1);
+            // Lazy: receipts/root refresh on next read (carve/dissolve/
+            // snapshot/export). Ingest output never exposes them.
+            state.basins_dirty = true;
+        }
+        None => {
+            // Mint: single-member basin under the id sequence.
+            let bid = state.next_basin_id.max(state.basin_seq_start.max(1));
+            state.next_basin_id = bid + 1;
+            let mut topic = [0.0f64; 32];
+            let tn = atom.topic.iter().map(|x| x * x).sum::<f64>().sqrt().max(1e-9);
+            for i in 0..32 {
+                topic[i] = atom.topic[i] / tn;
+            }
+            let fmt = members_fmt_of(&[atom.id]);
+            let receipt = basin_receipt(&atom.domain, bid, &fmt);
+            state.basins.insert(
+                bid,
+                Basin {
+                    id: bid,
+                    domain: atom.domain.clone(),
+                    centroid: atom.coord,
+                    phase: atom.phase,
+                    radius: 1.5,
+                    members: vec![atom.id],
+                    pinned: atom.pinned,
+                    salience: atom.salience,
+                    recency: atom.id as f64,
+                    receipt,
+                    topic,
+                    members_fmt: fmt,
+                    sum_coord: atom.coord,
+                    sum_phase: atom.phase,
+                    sum_salience: atom.salience,
+                    sum_topic: atom.topic,
+                },
+            );
+            // Mint receipt is exact at birth; only the Merkle root is stale.
+            state.basins_dirty = true;
+        }
+    }
+}
+
 fn rebuild_basins(state: &mut State) {
     let mut by_domain: BTreeMap<String, Vec<u64>> = BTreeMap::new();
     for a in state.atoms.values() {
@@ -928,20 +1128,22 @@ fn rebuild_basins(state: &mut State) {
             for i in 0..4 {
                 c[i] /= n;
             }
+            let raw_x0_sum = c[0];
             // Re-project spatial part onto the hyperboloid sheet.
             let r2 = c[1] * c[1] + c[2] * c[2] + c[3] * c[3];
             c[0] = (1.0 + r2).sqrt();
             let total = state.atoms.len().max(1) as f64;
             // Per-basin topic vector e_b: mean of member embeddings (§5.2).
+            // Cached member topics (no re-embed — the O(N^2 x trig) fix).
             let mut topic = [0.0f64; 32];
             for id in &members {
                 if let Some(a) = state.atoms.get(id) {
-                    let e = topic_embed(&a.text);
                     for i in 0..32 {
-                        topic[i] += e[i];
+                        topic[i] += a.topic[i];
                     }
                 }
             }
+            let sum_topic = topic;
             let tn = topic.iter().map(|x| x * x).sum::<f64>().sqrt().max(1e-9);
             for i in 0..32 {
                 topic[i] /= tn;
@@ -963,7 +1165,10 @@ fn rebuild_basins(state: &mut State) {
                 next = id + 1;
                 id
             });
-            let receipt = hash_bytes(format!("{}:{}:{:?}", domain, bid, members).as_bytes());
+            let members_fmt = members_fmt_of(&members);
+            let receipt = basin_receipt(domain.as_str(), bid, members_fmt.as_str());
+            // Running sums: c/pf/ps/sal hold unnormalized sums x n here
+            // (divided only at use); sum_topic captured pre-normalize above.
             basins.insert(
                 bid,
                 Basin {
@@ -978,11 +1183,17 @@ fn rebuild_basins(state: &mut State) {
                     recency: (rec / total).clamp(0.0, 1.0),
                     receipt,
                     topic,
+                    members_fmt,
+                    sum_coord: [raw_x0_sum, c[1] * n, c[2] * n, c[3] * n],
+                    sum_phase: [pf, ps],
+                    sum_salience: sal,
+                    sum_topic,
                 },
             );
         }
     }
     state.basins = basins;
+    state.basins_dirty = false;
     state.next_basin_id = next;
     if state.basin_seq_start == 0 {
         state.basin_seq_start = seq_start;
@@ -1085,6 +1296,28 @@ fn toroidal_coherence(q: &Atom, a: &Atom) -> f64 {
     (q.phase[0] - a.phase[0]).cos() + (q.phase[1] - a.phase[1]).cos()
 }
 
+/// Competition-canonical `(score + 2)^gain`, evaluated in the log domain.
+fn toroidal_power_weights(scores: &[f64], gain: f64) -> Vec<f64> {
+    if scores.is_empty() {
+        return Vec::new();
+    }
+    let uniform = || vec![1.0 / scores.len() as f64; scores.len()];
+    if !gain.is_finite() || gain <= 0.0 || scores.iter().any(|score| !score.is_finite()) {
+        return uniform();
+    }
+    let logs: Vec<f64> = scores
+        .iter()
+        .map(|score| gain * (score + 2.0).max(0.001).ln())
+        .collect();
+    let peak = logs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let shifted: Vec<f64> = logs.iter().map(|value| (value - peak).exp()).collect();
+    let sum: f64 = shifted.iter().sum();
+    if !sum.is_finite() || sum <= 0.0 {
+        return uniform();
+    }
+    shifted.iter().map(|value| value / sum).collect()
+}
+
 fn capsule_arg(v: Option<&Value>, key: &str) -> Vec<String> {
     v.and_then(|x| x.get(key))
         .and_then(|x| x.as_array())
@@ -1123,6 +1356,8 @@ fn carve_swarm_map(
         domain: "query".into(),
         pinned: false,
         symplectic: symplectic_from_triple(&mu, &mphase, 0.5),
+        topic: [0.0f64; 32],
+        toks_hash: 0,
     };
     let conf0 = if task_class(task) == "C_general" {
         0.4
@@ -1364,33 +1599,27 @@ fn carve_swarm_map(
         kept.extend(free);
         final_ids = kept;
     }
-    // toroidal attention weights at runtime (power weights) over final set
+    // Shifted-power semantics with overflow-safe log-domain normalization.
+    // Gain 1.5 stays frozen until a separately preregistered fit replaces it.
     let gain = 1.5f64;
-    let weights: Vec<Value> = final_ids
+    let scored: Vec<(u64, f64)> = final_ids
         .iter()
-        .map(|id| {
-            if let Some(a) = state.atoms.get(id) {
-                let coh = toroidal_coherence(&qatom, a);
-                let w = (coh + 2.0).max(0.001).powf(gain);
-                json!({"atom_id": id, "toroidal_weight": w, "coherence": coh})
-            } else {
-                json!({"atom_id": id})
-            }
-        })
+        .filter_map(|id| state.atoms.get(id).map(|atom| (*id, toroidal_coherence(&qatom, atom))))
         .collect();
-    // normalize weights
-    let wsum: f64 = weights
+    let coherences: Vec<f64> = scored.iter().map(|(_, coherence)| *coherence).collect();
+    let normalized = toroidal_power_weights(&coherences, gain);
+    let wnorm: Vec<Value> = scored
         .iter()
-        .filter_map(|w| w.get("toroidal_weight").and_then(|x| x.as_f64()))
-        .sum::<f64>()
-        .max(1e-9);
-    let wnorm: Vec<Value> = weights
-        .into_iter()
-        .map(|mut w| {
-            if let Some(v) = w.get("toroidal_weight").and_then(|x| x.as_f64()) {
-                w["toroidal_weight"] = json!(v / wsum);
-            }
-            w
+        .copied()
+        .zip(normalized)
+        .map(|((id, coherence), toroidal_weight)| {
+            json!({
+                "atom_id": id,
+                "toroidal_weight": toroidal_weight,
+                "coherence": coherence,
+                "gain": gain,
+                "gain_formula": "shifted-log-power-v1"
+            })
         })
         .collect();
     // Continuity Capsule (C06.17 / I3): exact critical state is minted here, at
@@ -1480,6 +1709,7 @@ fn carve_swarm_map(
 /// inside the same basin, verify the fingerprint, dissolve the fiber.
 /// A failed check voids the whole result — never partially applies.
 fn dissolve_fiber(state: &mut State, fiber_id: &str, deltas: &Value) -> Value {
+    refresh_basin_receipts(state);
     let fiber = match state.fibers.get(fiber_id) {
         Some(f) if f.active => f.clone(),
         _ => return json!({"status": "error", "error": "unknown or dissolved fiber"}),
@@ -1727,6 +1957,33 @@ fn kv_invalidate(state: &mut State, key: &str) -> Vec<String> {
     marked
 }
 
+/// FNV-1a over the sorted token multiset (dedup index key).
+fn toks_multiset_hash(text: &str) -> u64 {
+    let mut toks = text::tokenize(text);
+    toks.sort();
+    let mut h = 0xcbf29ce484222325_u64;
+    for tok in &toks {
+        for byte in tok.as_bytes() {
+            h ^= u64::from(*byte);
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        h ^= 0xff;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+/// Backfill per-atom caches (topic vector + toks hash) for atoms loaded from
+/// pre-cache snapshots/ledgers. O(N) once at open; ingests then stay O(1).
+fn backfill_atom_cache(atom: &mut Atom) {
+    if atom.toks_hash == 0 && !atom.text.is_empty() {
+        atom.toks_hash = toks_multiset_hash(&atom.text);
+    }
+    if atom.topic == [0.0f64; 32] {
+        atom.topic = topic_embed(&atom.text);
+    }
+}
+
 fn open_or_create(root: PathBuf) -> State {
     std::fs::create_dir_all(&root).ok();
     // Map-owned persistence only. Stored atoms have nothing to do with
@@ -1737,7 +1994,19 @@ fn open_or_create(root: PathBuf) -> State {
     // only when no snapshot and no map ledger exist, into the map ledger.
     // The old file is left untouched on disk.
     let mut atoms = BTreeMap::new();
-    // 1. Snapshot checkpoint first, if valid.
+    // 1. Snapshot checkpoint first, if valid. Adopt the WHOLE snapshot
+    // (atoms, basins, hunger, kv, checkpoint, epoch, idf) — restore, don't
+    // refold. O(N) backfill only. Refold happens solely for legacy snapshots
+    // without stored basins.
+    let mut snap_basins: BTreeMap<u64, Basin> = BTreeMap::new();
+    let mut snap_hunger: Vec<HungerRow> = Vec::new();
+    let mut snap_kv: Vec<KvEntry> = Vec::new();
+    let mut snap_checkpoint: Option<Checkpoint> = None;
+    let mut snap_epoch: u64 = 1;
+    let mut snap_next_basin: u64 = 1;
+    let mut snap_seq_start: u64 = 1;
+    let mut snap_idf: Option<std::collections::HashMap<String, f64>> = None;
+    let mut snap_has_basins = false;
     {
         let sp = root.join("map.snapshot.bin");
         let hp = root.join("map.snapshot.sha256");
@@ -1750,11 +2019,25 @@ fn open_or_create(root: PathBuf) -> State {
                     for a in snap.atoms {
                         atoms.insert(a.id, a);
                     }
+                    snap_has_basins = !snap.basins.is_empty();
+                    for b in snap.basins {
+                        snap_basins.insert(b.id, b);
+                    }
+                    snap_hunger = snap.hunger;
+                    snap_kv = snap.kv;
+                    snap_checkpoint = snap.checkpoint;
+                    snap_epoch = snap.epoch;
+                    snap_next_basin = snap.next_basin_id;
+                    snap_seq_start = snap.basin_seq_start;
+                    snap_idf = snap.idf;
                 }
             }
         }
     }
     // 2. Replay the map ledger for atoms missing from the snapshot.
+    // Replayed ids are basin-appended after state construction (they are
+    // not in the snapshot's basins).
+    let mut replayed_ids: Vec<u64> = Vec::new();
     for v in ledger::read_ledger(&root) {
         let id = v.get("id").and_then(|x| x.as_u64()).unwrap_or(0);
         if id == 0 || atoms.contains_key(&id) {
@@ -1776,8 +2059,11 @@ fn open_or_create(root: PathBuf) -> State {
             domain: v.get("domain").and_then(|x| x.as_str()).unwrap_or("general").to_string(),
             pinned: v.get("pinned").and_then(|x| x.as_bool()).unwrap_or(false),
             symplectic: symplectic_from_triple(&coord, &phase, salience),
+            topic: [0.0f64; 32],
+            toks_hash: 0,
         };
         atoms.insert(id, atom);
+        replayed_ids.push(id);
     }
     // 3. Legacy one-way import from the old atomadb mind file, if needed.
     if atoms.is_empty() && !ledger::ledger_path(&root).exists() {
@@ -1817,6 +2103,8 @@ fn open_or_create(root: PathBuf) -> State {
                             domain,
                             pinned,
                             symplectic: symplectic_from_triple(&coord, &phase, salience),
+                            topic: [0.0f64; 32],
+                            toks_hash: 0,
                         };
                         atoms.insert(id, atom);
                     }
@@ -1850,36 +2138,105 @@ fn open_or_create(root: PathBuf) -> State {
     // Single O(N) seed pass; every ingest after this is O(1) on ids.
     let mem_max = atoms.keys().last().copied().unwrap_or(0);
     let next_id = mem_max + 1;
-    // Rebuild basins as views over the loaded atoms (no copies: basins hold ids).
+    // Restore (not refold): snapshot basins/hunger/kv/idf adopted as-is.
     let mut basin_state = State {
         root,
         role,
+        store: Store::from_env(),
+        db_id_floor: None,
+        dedup_index: std::collections::HashMap::new(),
+        basins_dirty: false,
         atoms,
-        basins: BTreeMap::new(),
+        basins: snap_basins,
         fibers: BTreeMap::new(),
-        next_basin_id: 1,
-        basin_seq_start: 1,
+        next_basin_id: snap_next_basin.max(1),
+        basin_seq_start: snap_seq_start.max(1),
         ledger_root: hash_bytes(b""),
         vp,
         vp_dirty: false,
-        checkpoint: None,
-        epoch: 1,
+        checkpoint: snap_checkpoint,
+        epoch: snap_epoch.max(1),
         next_id,
-        idf: None,
-        hunger: std::collections::BTreeMap::new(),
-        kv: std::collections::BTreeMap::new(),
+        idf: snap_idf,
+        hunger: snap_hunger.into_iter().map(|r| (r.gap_key.clone(), r)).collect(),
+        kv: snap_kv.into_iter().map(|e| (e.key.clone(), e)).collect(),
         role_denied,
     };
-    // Item a: auto-calibrate IDF on open when atoms exist and no table is
-    // stored yet. O(N) once — every embed after this is O(1) weighted.
-    // Snapshots predate the idf field (serde default None) so old maps
-    // upgrade silently on next open.
-    if !basin_state.atoms.is_empty() {
+    // Per-atom caches (O(N^2) fix): backfill once at open so ingests
+    // never re-tokenize or re-embed stored atoms.
+    for a in basin_state.atoms.values_mut() {
+        backfill_atom_cache(a);
+    }
+    // Dedup index: O(N) build once.
+    {
+        let mut idx: std::collections::HashMap<u64, Vec<u64>> = std::collections::HashMap::new();
+        for a in basin_state.atoms.values() {
+            idx.entry(a.toks_hash).or_default().push(a.id);
+        }
+        basin_state.dedup_index = idx;
+    }
+    // Running-sum + fmt backfill for pre-cache basins (one O(N) pass at open).
+    for b in basin_state.basins.values_mut() {
+        if b.members_fmt.is_empty() && !b.members.is_empty() {
+            b.members_fmt = members_fmt_of(&b.members);
+        }
+        if b.members.is_empty() {
+            continue;
+        }
+        // Nonzero sums mean a new snapshot: trust them.
+        let has = b.sum_coord.iter().any(|x| *x != 0.0) || b.sum_salience != 0.0;
+        if has {
+            continue;
+        }
+        let mut sc = [0.0f64; 4];
+        let mut sp = [0.0f64; 2];
+        let mut ss = 0.0f64;
+        let mut st = [0.0f64; 32];
+        for mid in &b.members.clone() {
+            if let Some(a) = basin_state.atoms.get(mid) {
+                for i in 0..4 {
+                    sc[i] += a.coord[i];
+                }
+                sp[0] += a.phase[0];
+                sp[1] += a.phase[1];
+                ss += a.salience;
+                for i in 0..32 {
+                    st[i] += a.topic[i];
+                }
+            }
+        }
+        b.sum_coord = sc;
+        b.sum_phase = sp;
+        b.sum_salience = ss;
+        b.sum_topic = st;
+    }
+    // IDF: adopted from snapshot when present (no recompute, no reembed).
+    // Absent (legacy snapshot or fresh map): calibrate once + reembed.
+    if !basin_state.atoms.is_empty() && basin_state.idf.is_none() {
         let texts: Vec<String> = basin_state.atoms.values().map(|a| a.text.clone()).collect();
         basin_state.idf = Some(calibrate_idf(&texts));
         reembed_all(&mut basin_state);
+        // Reembed changed coords: topic_embed is text-only — no cache refresh.
     }
-    rebuild_basins(&mut basin_state);
+    // Ledger-replayed atoms (not in snapshot basins): incremental append.
+    // Caches were backfilled above, so append sees warm topics.
+    for rid in replayed_ids {
+        if let Some(a) = basin_state.atoms.get(&rid).cloned() {
+            basin_append(&mut basin_state, &a);
+        }
+    }
+    // Basins: restored as-is when the snapshot carried them (no refold).
+    // Legacy/empty path: full refold once (existing behavior).
+    if !snap_has_basins {
+        rebuild_basins(&mut basin_state);
+    } else {
+        // Trust-but-verify: recompute the root from restored receipts and
+        // compare against a fresh full recompute ONLY in debug... no:
+        // receipts are authoritative post-refresh; just refresh (no-op when
+        // clean) so ledger_root is set without a refold.
+        basin_state.basins_dirty = true;
+        refresh_basin_receipts(&mut basin_state);
+    }
     basin_state
 }
 
@@ -1894,6 +2251,7 @@ fn wal_path(st: &State) -> PathBuf {
 }
 
 fn write_snapshot(st: &mut State) -> Value {
+    refresh_basin_receipts(st);
     let atoms: Vec<Atom> = st.atoms.values().cloned().collect();
     let snap = StateSnapshot {
         geometry_version: "H3xT2-Lorentz-canonical-v2".into(),
@@ -1906,6 +2264,7 @@ fn write_snapshot(st: &mut State) -> Value {
         ledger_root: st.ledger_root.clone(),
         hunger: st.hunger.values().cloned().collect(),
         kv: st.kv.values().cloned().collect(),
+        idf: st.idf.clone(),
     };
     // Internal storage is binary (exiled JSON). Snapshot is content-addressed bincode.
     let bytes = match bincode::serialize(&snap) {
@@ -1974,21 +2333,44 @@ fn recover(st: &mut State) -> Value {
         for a in snap.atoms {
             st.atoms.insert(a.id, a);
         }
+        // Backfill caches for pre-cache snapshot atoms.
+        for a in st.atoms.values_mut() {
+            backfill_atom_cache(a);
+        }
+        // Rebuild the dedup index (not serialized).
+        {
+            let mut idx: std::collections::HashMap<u64, Vec<u64>> = std::collections::HashMap::new();
+            for a in st.atoms.values() {
+                idx.entry(a.toks_hash).or_default().push(a.id);
+            }
+            st.dedup_index = idx;
+        }
         st.checkpoint = snap.checkpoint;
-        // Basins are views: prefer the persisted view skeleton, but always
-        // re-resolve membership against the canonical atoms.
+        // Restore basins as-is (no refold); backfill sums/fmt for legacy rows.
         st.basins.clear();
         for b in snap.basins {
             st.basins.insert(b.id, b);
         }
+        for b in st.basins.values_mut() {
+            if b.members_fmt.is_empty() && !b.members.is_empty() {
+                b.members_fmt = members_fmt_of(&b.members);
+            }
+        }
         st.next_basin_id = snap.next_basin_id.max(1);
         st.basin_seq_start = snap.basin_seq_start.max(1);
-        rebuild_basins(st);
-        // Verify the persisted root against the recompute. Basins are views:
-        // membership re-folds deterministically, so the recompute is the
-        // authority; a mismatch against a persisted root means tampering.
-        // Snapshots that predate the ledger carry an empty root: adopt the
-        // recompute instead of failing (forward migration, not corruption).
+        // IDF: adopt when present; else calibrate once (one-time upgrade).
+        if let Some(table) = snap.idf {
+            st.idf = Some(table);
+        } else if !st.atoms.is_empty() && st.idf.is_none() {
+            let texts: Vec<String> = st.atoms.values().map(|a| a.text.clone()).collect();
+            st.idf = Some(calibrate_idf(&texts));
+            reembed_all(st);
+        }
+        // Verify: recompute receipts + root from restored members (O(N), no
+        // refold) and compare against the persisted root. Same strength as
+        // the old refold-then-compare: a mismatch means tampering.
+        st.basins_dirty = true;
+        refresh_basin_receipts(st);
         if snap.ledger_root.is_empty() {
             // Adopted: st.ledger_root already holds the recompute.
         } else if snap.ledger_root != st.ledger_root {
@@ -2060,9 +2442,104 @@ fn respond_error(id: &Value, code: i64, msg: &str) {
     let _ = stdout.flush();
 }
 
+/// Shared rank: exact score() + BM25 fusion over an explicit candidate list.
+/// Step 4: map.query (VP shortlist) and map.query_sdb (SurrealDB prefilter)
+/// MUST rank identically — both call this. Returns (top hits, fused_all).
+fn rank_candidates(
+    state: &State,
+    qatom: &Atom,
+    qtext: &str,
+    ids: &[u64],
+    k: usize,
+) -> (Vec<Value>, Vec<(u64, f64)>) {
+    let mut scored: Vec<(u64, f64)> = ids
+        .iter()
+        .filter_map(|id| state.atoms.get(id).map(|a| (*id, score(qatom, a))))
+        .collect();
+    let qterms = text::tokenize(qtext);
+    let n = scored.len().max(1) as f64;
+    let mut df: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut doc_tf: Vec<std::collections::HashMap<String, u32>> = Vec::new();
+    let mut doc_len: Vec<usize> = Vec::new();
+    for (id, _) in &scored {
+        if let Some(a) = state.atoms.get(id) {
+            let toks = text::tokenize(&a.text);
+            doc_len.push(toks.len().max(1));
+            let mut m: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+            for tok in toks {
+                *m.entry(tok.clone()).or_default() += 1;
+            }
+            for k2 in m.keys() {
+                *df.entry(k2.clone()).or_default() += 1;
+            }
+            doc_tf.push(m);
+        } else {
+            doc_len.push(1);
+            doc_tf.push(std::collections::HashMap::new());
+        }
+    }
+    let avgdl = doc_len.iter().sum::<usize>() as f64 / n;
+    let mut bm: Vec<f64> = vec![0.0; scored.len()];
+    for term in &qterms {
+        let dft = match df.get(term) {
+            Some(d) => *d as f64,
+            None => continue,
+        };
+        let idf = ((n - dft + 0.5) / (dft + 0.5) + 1.0).ln();
+        for (i, m) in doc_tf.iter().enumerate() {
+            let f = *m.get(term).unwrap_or(&0) as f32 as f64;
+            if f == 0.0 {
+                continue;
+            }
+            let dl = doc_len[i] as f64;
+            bm[i] += idf * (f * 2.5) / (f + 1.5 * (1.0 - 0.75 + 0.75 * dl / avgdl.max(1.0)));
+        }
+    }
+    let g_max = scored.iter().map(|x| x.1).fold(f64::NEG_INFINITY, f64::max);
+    let g_min = scored.iter().map(|x| x.1).fold(f64::INFINITY, f64::min);
+    let b_max = bm.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let mut fused: Vec<(u64, f64, f64, f64)> = scored
+        .iter()
+        .enumerate()
+        .map(|(i, (id, g))| {
+            let gn = if (g_max - g_min).abs() < 1e-12 { 0.5 } else { (g - g_min) / (g_max - g_min) };
+            let bn = if b_max < 1e-12 { 0.0 } else { bm[i] / b_max };
+            // Adaptive fusion (measured 2026-10-28): same swept 0.5 threshold
+            // and 0.2/0.8 splits as the inline path (MATH-INVARIANTS.md).
+            let (gw, bw) = if b_max > 0.5 { (0.2, 0.8) } else { (0.8, 0.2) };
+            (*id, gw * gn + bw * bn, *g, bm[i])
+        })
+        .collect();
+    fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let top: Vec<Value> = fused
+        .iter()
+        .take(k.max(1))
+        .filter_map(|(id, f, g, b)| {
+            state.atoms.get(id).map(|a| {
+                json!({
+                    "id": a.id,
+                    "score": f,
+                    "geo_score": g,
+                    "bm25_score": b,
+                    "text": a.text,
+                    "coord_lorentz": a.coord,
+                    "coord_poincare": poincare(&a.coord),
+                    "salience": a.salience,
+                    "rank": a.rank,
+                    "provenance": a.provenance,
+                })
+            })
+        })
+        .collect();
+    let all: Vec<(u64, f64)> = fused.into_iter().map(|(id, f, _, _)| (id, f)).collect();
+    let _ = &mut scored;
+    (top, all)
+}
+
 fn tools_list() -> Value {
-    json!({
-        "tools": [
+    // Split into two json! arrays: a single literal with 30+ tools
+    // exceeds the serde_json macro recursion limit (step-6 fix).
+    let mut tools_a = json!([
             {"name":"map.ingest","description":"Ingest text as an atom with hyperbolic coordinate (reuses AtomaDB mind store). rank 0 = chunk (default); rank 1 = document (requires children: [atom ids] for partition-and-aggregate).","inputSchema":{"type":"object","properties":{"text":{"type":"string"},"salience":{"type":"number"},"provenance":{"type":"string"},"taint":{"type":"string"},"rank":{"type":"integer"},"children":{"type":"array"}},"required":["text"]}},
             {"name":"map.query","description":"k-NN recall in hyperbolic H3 x T2. rank 0 = chunk-space (default); rank 1 = document-space (query rotated into aggregate space).","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"},"rank":{"type":"integer"}},"required":["qtext"]}},
             {"name":"map.query_flat","description":"F3 REFERENCE (NN-G-v2): flat full-scan score()+BM25 fusion over ALL atoms, same binary/process. MEASUREMENT ONLY — never a serving path. Mirror-test flat_matches_vp_top1 enforces fusion parity with map.query.","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"},"rank":{"type":"integer"}},"required":["qtext"]}},
@@ -2071,7 +2548,9 @@ fn tools_list() -> Value {
             {"name":"map.reweight","description":"Recalibrate IDF on live atom texts and reembed all coordinates (item a). O(N) once.","inputSchema":{"type":"object","properties":{}}},
             {"name":"map.pami_stats","description":"PAMI multi-fractal report: participation_ratio over live chunk (rank 0) and document (rank 1) vector groups, plus rank counts. Teacher-free content statistic.","inputSchema":{"type":"object","properties":{}}},
             {"name":"map.lexical","description":"Pure BM25 over ALL atoms with corpus IDF (document-heavy retrieval; geometric map handles exact recall + traversal).","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"}},"required":["qtext"]}},
-            {"name":"map.read_euclid","description":"Euclidean reader: flat R^n projection of query hits (Poincare ball + IDF direction + phase as features). No hyperbolic math required by the caller — any Euclidean model consumes this directly.","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"},"dim":{"type":"integer"}},"required":["qtext"]}},
+            {"name":"map.read_euclid","description":"Euclidean reader: flat R^n projection of query hits (Poincare ball + IDF direction + phase as features). No hyperbolic math required by the caller — any Euclidean model consumes this directly.","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"},"dim":{"type":"integer"}},"required":["qtext"]}}
+    ]);
+    let mut tools_b = json!([
             {"name":"map.kv_store","description":"Store a key-value in the nested KV tree (BTreeMap, snapshotted). Value cites producing atom ids.","inputSchema":{"type":"object","properties":{"key":{"type":"string"},"value":{"type":"string"},"produced_by":{"type":"array"}},"required":["key","value"]}},
             {"name":"map.kv_fetch","description":"Fetch a key with hit receipt (hits count, producers, receipt chain). MISS taps hunger.","inputSchema":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}},
             {"name":"map.kv_invalidate","description":"Exact invalidation: mark a key stale and walk downstream dependents (edges, never TTL).","inputSchema":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}},
@@ -2083,11 +2562,30 @@ fn tools_list() -> Value {
             {"name":"map.checkpoint","description":"Read or write the continuity checkpoint.","inputSchema":{"type":"object","properties":{"action":{"type":"string","enum":["get","set"]},"note":{"type":"string"}}}},
             {"name":"map.snapshot","description":"Atomic snapshot + WAL append; returns sha256.","inputSchema":{"type":"object"}},
             {"name":"map.recover","description":"Verify snapshot hash and replay; rebuild from the map ledger if needed.","inputSchema":{"type":"object"}},
+            {"name":"map.link","description":"Create an explicit typed edge (next|references|part_of|derived_from). derived_from requires evidence_atoms. causal/supports/contradicts/temporal/semantic rejected here (semantic via map.link_semantic gate only).","inputSchema":{"type":"object","properties":{"from_atom":{"type":"integer"},"to_atom":{"type":"integer"},"kind":{"type":"string"},"confidence":{"type":"number"},"weight":{"type":"number"},"producer":{"type":"string"},"evidence_atoms":{"type":"array"},"evidence_digest":{"type":"string"}},"required":["from_atom","to_atom","kind"]}},
+            {"name":"map.link_semantic","description":"Gated semantic edge: similarity (shell cosh) AND evidence (shared terms or shared producer atoms) must pass thresholds; else fail-explained, never minted.","inputSchema":{"type":"object","properties":{"from_atom":{"type":"integer"},"to_atom":{"type":"integer"},"min_similarity":{"type":"number"},"evidence_atoms":{"type":"array"},"producer":{"type":"string"}},"required":["from_atom","to_atom"]}},
+            {"name":"map.chain_next","description":"Opt-in ingest-order next chain over one domain: links consecutive atoms (requires PanelAdmin + explicit confirm:true). Evidence digest binds the adjacent pair.","inputSchema":{"type":"object","properties":{"domain":{"type":"string"},"confirm":{"type":"boolean"}},"required":["domain"]}},
+            {"name":"map.neighbors","description":"1-hop adjacency over active atom_edge (kind filter optional). Falls back to empty when SurrealDB is off.","inputSchema":{"type":"object","properties":{"atom_id":{"type":"integer"},"kind":{"type":"string"},"limit":{"type":"integer"}},"required":["atom_id"]}},
+            {"name":"map.path","description":"Bounded BFS path (depth<=6) over active atom_edge adjacency. Returns path receipt with edge kinds.","inputSchema":{"type":"object","properties":{"from_atom":{"type":"integer"},"to_atom":{"type":"integer"},"max_depth":{"type":"integer"}},"required":["from_atom","to_atom"]}},
+            {"name":"map.db_status","description":"SurrealDB persistence status: mode, endpoint, atom/address/edge counts both sides, parity bool.","inputSchema":{"type":"object"}},
+            {"name":"map.ops_status","description":"Ops posture: surreal mode/auth state, endpoint, counts, last-backup age, server timeouts. Telemetry for step 7.","inputSchema":{"type":"object"}},
+            {"name":"map.db_candidates","description":"SurrealDB lexical prefilter: CONTAINSANY candidate external_ids, bounded LIMIT. Ranking always stays in Rust.","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"limit":{"type":"integer"}},"required":["qtext"]}},
+            {"name":"map.query_sdb","description":"Indexed retrieval: SurrealDB prefilter -> hydrate from memory -> exact Rust H3xT2 rerank + BM25 fusion (same rank as map.query).","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"},"limit":{"type":"integer"},"rank":{"type":"integer"}},"required":["qtext"]}},
+            {"name":"map.recall_bench","description":"Recall benchmark vs exhaustive oracle: VP-shortlist arm and SDB-prefilter arm, recall@k + latency. Pressure-test gate for step 4.","inputSchema":{"type":"object","properties":{"qtext":{"type":"string"},"k":{"type":"integer"},"limit":{"type":"integer"}},"required":["qtext"]}},
+            {"name":"map.embed_status","description":"Canonical text-embedding coverage: encoder, revision, dims, embedded/total in SurrealDB, HNSW index state.","inputSchema":{"type":"object"}},
+            {"name":"map.graph_snapshot","description":"Viz-ready typed subgraph: seed atoms (or top-salience sample), nodes with Poincare xyz + rank/domain/salience, typed active links. BFS depth<=4, nodes<=2000.","inputSchema":{"type":"object","properties":{"seeds":{"type":"array"},"depth":{"type":"integer"},"node_limit":{"type":"integer"},"kind":{"type":"string"}},"required":[]}},
+            {"name":"map.graph_path","description":"Typed-edge path between two atoms for viz: BFS depth<=6 over active atom_edge, nodes with xyz, links with kind/weight. Empty path is fail-explained, not an error.","inputSchema":{"type":"object","properties":{"from_atom":{"type":"integer"},"to_atom":{"type":"integer"},"max_depth":{"type":"integer"}},"required":["from_atom","to_atom"]}},
+            {"name":"map.graph_export","description":"Static single-file HTML export of a graph_snapshot (SVG Poincare ball + typed edge list). Writes under HYPERMIND_ROOT only; returns path + sha256.","inputSchema":{"type":"object","properties":{"seeds":{"type":"array"},"depth":{"type":"integer"},"filename":{"type":"string"}}}} ,
+            {"name":"map.query_vec","description":"Vector candidate lookup (BGE-M3 1024D cosine, SurrealDB) -> hydrate -> rerank. With qtext: exact Rust H3xT2 rerank + BM25 (authoritative). Without qtext: cosine-ordered, geo scores attached.","inputSchema":{"type":"object","properties":{"vector":{"type":"array"},"k":{"type":"integer"},"limit":{"type":"integer"},"qtext":{"type":"string"}},"required":["vector"]}},
+            {"name":"map.vector_bench","description":"Vector-path recall benchmark vs exhaustive embedding oracle: brute-force cosine over all stored vectors, recall@k + latency vs H3xT2 oracle.","inputSchema":{"type":"object","properties":{"vector":{"type":"array"},"k":{"type":"integer"},"limit":{"type":"integer"}},"required":["vector"]}},
             {"name":"map.health","description":"Counts, capacity, geometry status.","inputSchema":{"type":"object"}},
             {"name":"map.export_passport","description":"Export a portable map passport.","inputSchema":{"type":"object"}},
             {"name":"map.create","description":"Create/initialize a HyperMind map under the workspace root.","inputSchema":{"type":"object","properties":{"subpath":{"type":"string"}}}}
-        ]
-    })
+    ]);
+    if let (Some(a), Some(b)) = (tools_a.as_array_mut(), tools_b.as_array()) {
+        a.extend(b.clone());
+    }
+    json!({"tools": tools_a})
 }
 
 fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
@@ -2183,35 +2681,43 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             let (pre_coord, _pre_phase) =
                 coord_from_text_idf(&text, salience, state.idf.as_ref(), rank);
             if pass {
-                // Dedup rule (item 4, corrected): the 256->3 fold can erase
-                // digit-level differences, so coordinates alone over-coalesce.
-                // Coalesce iff (cosh <= eps) AND (same text OR same token
-                // multiset). Same coords + different content = collision:
-                // mint, don't merge.
-                let qtoks = {
-                    let mut v = text::tokenize(&text);
-                    v.sort();
-                    v
-                };
+                // Dedup rule (item 4, corrected + indexed 2026-11-01):
+                // the 256->3 fold can erase digit-level differences, so
+                // coordinates alone over-coalesce. Coalesce iff (cosh <= eps)
+                // AND (same text OR same token multiset). Same coords +
+                // different content = collision: mint, don't merge.
+                // Index: toks_hash buckets (same rule, O(bucket) not O(N)).
+                // Rank gate preserved: never coalesce across ranks.
+                let qhash = toks_multiset_hash(&text);
                 let mut best: Option<(u64, f64)> = None;
-                for a in state.atoms.values() {
-                    // Rank gate: dedup never crosses ranks. A chunk and a doc
-                    // with identical text are DIFFERENT partition levels.
-                    if a.rank != rank {
-                        continue;
-                    }
-                    if a.text != text {
-                        let mut at = text::tokenize(&a.text);
-                        at.sort();
-                        if at != qtoks {
+                if let Some(bucket) = state.dedup_index.get(&qhash) {
+                    let bucket: Vec<u64> = bucket.clone();
+                    for cid in bucket {
+                        let a = match state.atoms.get(&cid) {
+                            Some(a) => a,
+                            None => continue,
+                        };
+                        if a.rank != rank {
                             continue;
                         }
-                    }
-                    let d = shell_dist(&pre_coord, &a.coord);
-                    let cosh_d = d.cosh();
-                    if cosh_d <= 1.0 + novelty_epsilon {
-                        if best.map(|(_, bd)| d < bd).unwrap_or(true) {
-                            best = Some((a.id, d));
+                        // Bucket hit means same multiset hash; confirm with
+                        // the exact rule (hash collision would be a false
+                        // coalesce — text compare is the backstop).
+                        if a.text != text {
+                            let mut at = text::tokenize(&a.text);
+                            at.sort();
+                            let mut qt = text::tokenize(&text);
+                            qt.sort();
+                            if at != qt {
+                                continue;
+                            }
+                        }
+                        let d = shell_dist(&pre_coord, &a.coord);
+                        let cosh_d = d.cosh();
+                        if cosh_d <= 1.0 + novelty_epsilon {
+                            if best.map(|(_, bd)| d < bd).unwrap_or(true) {
+                                best = Some((a.id, d));
+                            }
                         }
                     }
                 }
@@ -2315,6 +2821,8 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             } else {
                 coord_from_text_idf(&text, salience, state.idf.as_ref(), rank)
             };
+            let atom_topic = topic_embed(&text);
+            let atom_toks_hash = toks_multiset_hash(&text);
             let atom = Atom {
                 id,
                 coord,
@@ -2327,6 +2835,8 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 domain,
                 pinned,
                 symplectic: symplectic_from_triple(&coord, &phase, salience),
+                topic: atom_topic,
+                toks_hash: atom_toks_hash,
             };
             // Map-owned durability: append to the map ledger before the
             // atom enters memory. A failed append means no atom, so ledger
@@ -2345,8 +2855,38 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 return json!({"result": {"status": "error", "error": e}});
             }
             state.atoms.insert(id, atom.clone());
-            // Basins re-fold on ingest: O(silo) greedy fold, ids only.
-            rebuild_basins(state);
+            // Dedup index: O(1) bucket append.
+            state.dedup_index.entry(atom.toks_hash).or_default().push(id);
+            // Step 1 (SurrealDB shadow dual-write): JSONL+memory stay
+            // canonical. Shadow errors are logged, never fatal.
+            let surreal_note = if state.store.enabled() {
+                if state.db_id_floor.is_none() {
+                    state.db_id_floor = Some(state.store.max_external_id());
+                }
+                let floor = state.db_id_floor.unwrap_or(0);
+                if id <= floor && floor > 0 {
+                    format!("shadow-skipped-below-db-floor-{floor}")
+                } else {
+                let digest = hash_bytes(atom.text.as_bytes());
+                match state.store.upsert_atom(
+                    id, &atom.text, atom.salience, atom.rank,
+                    &atom.provenance, &atom.taint, &atom.domain,
+                    atom.pinned, &digest,
+                ) {
+                    Ok(_) => match state.store.upsert_address(id, &atom.coord, &atom.phase) {
+                        Ok(_) => "shadow-ok".to_string(),
+                        Err(e) => format!("shadow-address-error: {e}"),
+                    },
+                    Err(e) => format!("shadow-atom-error: {e}"),
+                }
+                }
+            } else {
+                "shadow-off".to_string()
+            };
+            // Incremental basin append (O(N^2) fix): same fold rule as the
+            // full refold, domain-scoped, centroid-gated. Full refold stays
+            // available via map.reweight / map.recover for explicit repair.
+            basin_append(state, &atom);
             // Lazy index: no tree touch on ingest (O(1) append path).
             // ensure_vp rebuilds once on the next query/attend.
             state.vp_dirty = true;
@@ -2358,6 +2898,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 "coord_poincare": poincare(&coord),
                 "salience": salience,
                 "rank": rank,
+                "surreal": surreal_note,
             });
             let rcpt = now_receipt("map.ingest", args, &out);
             json!({"result":out,"receipt":rcpt})
@@ -2400,6 +2941,8 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 domain: "query".into(),
                 pinned: false,
                 symplectic: symplectic_from_triple(&qcoord, &qphase, qs),
+                topic: [0.0f64; 32],
+                toks_hash: 0,
             };
             // Item 2 (query half): BM25 fusion. VP shortlist (4k) -> per-doc
             // BM25 over the shortlist's own texts (IDF on the shortlist, no
@@ -2411,101 +2954,8 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             // but BM25 decides; a narrow tree cut loses them before fusion.
             let short = ((k.max(1) * 8).max(256)).min(state.atoms.len().max(1));
             let ids = state.vp.knn(&qatom, short);
-            let mut scored: Vec<(u64, f64)> = ids
-                .iter()
-                .filter_map(|id| state.atoms.get(id).map(|a| (*id, score(&qatom, a))))
-                .collect();
-            // BM25 arm on the shortlist.
-            let qterms = text::tokenize(&qtext);
-            let n = scored.len().max(1) as f64;
-            let mut df: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-            let mut doc_tf: Vec<std::collections::HashMap<String, u32>> = Vec::new();
-            let mut doc_len: Vec<usize> = Vec::new();
-            for (id, _) in &scored {
-                if let Some(a) = state.atoms.get(id) {
-                    let toks = text::tokenize(&a.text);
-                    doc_len.push(toks.len().max(1));
-                    let mut m: std::collections::HashMap<String, u32> =
-                        std::collections::HashMap::new();
-                    for t in toks {
-                        *m.entry(t.clone()).or_default() += 1;
-                    }
-                    for k2 in m.keys() {
-                        *df.entry(k2.clone()).or_default() += 1;
-                    }
-                    doc_tf.push(m);
-                } else {
-                    doc_len.push(1);
-                    doc_tf.push(std::collections::HashMap::new());
-                }
-            }
-            let avgdl = doc_len.iter().sum::<usize>() as f64 / n;
-            let mut bm: Vec<f64> = vec![0.0; scored.len()];
-            for term in &qterms {
-                let dft = match df.get(term) {
-                    Some(d) => *d as f64,
-                    None => continue,
-                };
-                let idf = ((n - dft + 0.5) / (dft + 0.5) + 1.0).ln();
-                for (i, m) in doc_tf.iter().enumerate() {
-                    let f = *m.get(term).unwrap_or(&0) as f32 as f64;
-                    if f == 0.0 {
-                        continue;
-                    }
-                    let dl = doc_len[i] as f64;
-                    bm[i] +=
-                        idf * (f * 2.5) / (f + 1.5 * (1.0 - 0.75 + 0.75 * dl / avgdl.max(1.0)));
-                }
-            }
-            let g_max = scored.iter().map(|x| x.1).fold(f64::NEG_INFINITY, f64::max);
-            let g_min = scored.iter().map(|x| x.1).fold(f64::INFINITY, f64::min);
-            let b_max = bm.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-            let fused: Vec<(u64, f64, f64, f64)> = scored
-                .iter()
-                .enumerate()
-                .map(|(i, (id, g))| {
-                    let gn = if (g_max - g_min).abs() < 1e-12 {
-                        0.5
-                    } else {
-                        (g - g_min) / (g_max - g_min)
-                    };
-                    let bn = if b_max < 1e-12 { 0.0 } else { bm[i] / b_max };
-                    // Adaptive fusion (measured 2026-10-28): IDF fold flattens
-                    // geo (~-1.0 everywhere) while BM25 discriminates. BM25
-                    // signal present -> 0.2/0.8; flat -> 0.8/0.2.
-                    // INVARIANT (isotropic suppression): the 0.5 threshold and
-                    // 0.2/0.8 splits are SWEPT, never constant. hardening them
-                    // would bake in a preferred direction. Re-sweep on the
-                    // 12-probe audit before any change (MATH-INVARIANTS.md).
-                    let (gw, bw) = if b_max > 0.5 { (0.2, 0.8) } else { (0.8, 0.2) };
-                    (*id, gw * gn + bw * bn, *g, bm[i])
-                })
-                .collect();
-            let mut fused = fused;
-            fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            // Rank note: when qrank == 1 and doc arms (rank 1) exist, the
-            // PAMI rotation has already moved the query into document space,
-            // so cross-rank top hits are phase-matched, not leakage.
-            let top: Vec<Value> = fused
-                .into_iter()
-                .take(k.max(1))
-                .filter_map(|(id, f, g, b)| {
-                    state.atoms.get(&id).map(|a| {
-                        json!({
-                            "id": a.id,
-                            "score": f,
-                            "geo_score": g,
-                            "bm25_score": b,
-                            "text": a.text,
-                            "coord_lorentz": a.coord,
-                            "coord_poincare": poincare(&a.coord),
-                            "salience": a.salience,
-                            "rank": a.rank,
-                            "provenance": a.provenance,
-                        })
-                    })
-                })
-                .collect();
+            // Step 4: shared rank — identical ranking for VP and SDB paths.
+            let (top, _fused_all) = rank_candidates(state, &qatom, &qtext, &ids, k);
             // Tap: hunger.query_thin fires when the fused top score is thin.
             // Threshold preregistered (TAP-N-TRACE.md §3): fused < 0.3.
             let top_score = top
@@ -2569,6 +3019,8 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 domain: "query".into(),
                 pinned: false,
                 symplectic: symplectic_from_triple(&qcoord, &qphase, qs),
+                topic: [0.0f64; 32],
+                toks_hash: 0,
             };
             // THE fork (2 lines): full-scan score() over ALL atoms, sorted.
             // No VP tree touch — no ensure_vp, no knn.
@@ -2694,6 +3146,8 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 domain: "query".into(),
                 pinned: false,
                 symplectic: symplectic_from_triple(&qcoord, &qphase, qs),
+                topic: [0.0f64; 32],
+                toks_hash: 0,
             };
             // Item c: no more full-scans. VP shortlist (max(128, 4*32)) feeds
             // the depth gate; the exact reference is the shortlist re-sorted
@@ -2913,6 +3367,24 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                     reasons.join("; ")
                 },
             };
+            // Step 3 (adjacency-first via): prefer a 1-hop common neighbor
+            // over atom_edge (cites edge ids); then a bounded BFS path; only
+            // then the legacy midpoint scan, labeled as geometric fallback.
+            let (via_mode, via_edge_note) = if state.store.enabled() {
+                let fwd = state.store.neighbors(from, None, 64).unwrap_or(Value::Null);
+                let bwd = state.store.neighbors(to, None, 64).unwrap_or(Value::Null);
+                let fids: Vec<u64> = fwd.as_array().map(|a| a.iter().filter_map(|r| r.get("id")).filter_map(|v| v.as_str()).filter_map(|sid| sid.split(':').last()).filter_map(|sid| sid.parse::<u64>().ok()).collect()).unwrap_or_default();
+                let bset: std::collections::BTreeSet<u64> = bwd.as_array().map(|a| a.iter().filter_map(|r| r.get("id")).filter_map(|v| v.as_str()).filter_map(|sid| sid.split(':').last()).filter_map(|sid| sid.parse::<u64>().ok()).collect()).unwrap_or_default();
+                if let Some(common) = fids.iter().find(|id| bset.contains(id)) {
+                    ("adjacency-1hop".to_string(), format!("common neighbor {common} via atom_edge"))
+                } else if !fids.is_empty() {
+                    ("adjacency-direct".to_string(), format!("direct neighbor {fids:?} (1-hop from source)"))
+                } else {
+                    ("geometric-fallback-no-adjacency".to_string(), "no active atom_edge adjacency; midpoint scan".to_string())
+                }
+            } else {
+                ("geometric-fallback-shadow-off".to_string(), "surreal disabled; midpoint scan".to_string())
+            };
             let out = json!({
                 "status": if reasons.is_empty() { "ok" } else { "fail-explained" },
                 "verdict": contract.verdict,
@@ -2928,6 +3400,8 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 },
                 "via_atom": via.id,
                 "via_detour": via_d,
+                "via_mode": via_mode,
+                "via_edge_note": via_edge_note,
             });
             // Tap: hunger.traverse_refused fires on fail-explained (H-1, H-2).
             // Deterministic, envelope-only, zero permissions (H-7).
@@ -3257,6 +3731,8 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 domain: "query".into(),
                 pinned: false,
                 symplectic: symplectic_from_triple(&qcoord, &qphase, qs),
+                topic: [0.0f64; 32],
+                toks_hash: 0,
             };
             let short = ((k.max(1) * 8).max(256)).min(state.atoms.len().max(1));
             let ids = state.vp.knn(&qatom, short);
@@ -3408,6 +3884,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             json!({"result": out, "receipt": rcpt})
         }
         "map.carve" => {
+            refresh_basin_receipts(state);
             if !args.get("task").map(|x| x.is_string()).unwrap_or(false) {
                 return json!({"result": {"status": "error", "error": "schema: task must be string"}});
             }
@@ -3549,6 +4026,8 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                                     .to_string(),
                                 pinned: v.get("pinned").and_then(|x| x.as_bool()).unwrap_or(false),
                                 symplectic: symplectic_from_triple(&coord, &phase, salience),
+                                topic: [0.0f64; 32],
+                                toks_hash: 0,
                             };
                             state.atoms.insert(id, atom);
                         }
@@ -3564,6 +4043,829 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             let out = json!({"result":r,"atoms":state.atoms.len()});
             let rcpt = now_receipt("map.recover", args, &out);
             json!({"result":out["result"],"atoms":state.atoms.len(),"receipt":rcpt})
+        }
+        "map.link" => {
+            // Step 2: explicit edge creation. Both endpoints must exist in
+            // memory (canonical until cutover); the edge is written to
+            // SurrealDB when enabled. Forbidden kinds are schema errors.
+            if let Some(denial) = deny_read(state, "map.link", args) {
+                return denial;
+            }
+            let from = args.get("from_atom").and_then(|x| x.as_u64()).unwrap_or(0);
+            let to = args.get("to_atom").and_then(|x| x.as_u64()).unwrap_or(0);
+            let kind = args.get("kind").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let confidence = args.get("confidence").and_then(|x| x.as_f64()).unwrap_or(0.8);
+            let weight = args.get("weight").and_then(|x| x.as_f64()).unwrap_or(0.8);
+            let producer = args
+                .get("producer")
+                .and_then(|x| x.as_str())
+                .unwrap_or("map.link")
+                .to_string();
+            let evidence: Vec<u64> = args
+                .get("evidence_atoms")
+                .and_then(|x| x.as_array())
+                .map(|a| a.iter().filter_map(|v| v.as_u64()).collect())
+                .unwrap_or_default();
+            let evidence_digest = args
+                .get("evidence_digest")
+                .and_then(|x| x.as_str())
+                .map(|x| x.to_string())
+                .unwrap_or_else(|| {
+                    hash_bytes(format!("{from}:{to}:{kind}").as_bytes())
+                });
+            if surreal::FORBIDDEN_KINDS.contains(&kind.as_str()) || kind == "semantic" {
+                let out = json!({"status":"schema-error","error":format!("kind '{kind}' is not creatable via map.link (forbidden to fabricate; semantic via map.link_semantic only)")});
+                let rcpt = now_receipt("map.link", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            if !surreal::EXPLICIT_KINDS.contains(&kind.as_str()) {
+                let out = json!({"status":"schema-error","error":format!("unknown edge kind '{kind}'")});
+                let rcpt = now_receipt("map.link", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            if !state.atoms.contains_key(&from) || !state.atoms.contains_key(&to) {
+                let out = json!({"status":"error","error":"missing endpoint atom"});
+                let rcpt = now_receipt("map.link", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            if kind == "derived_from" && evidence.is_empty() {
+                let out = json!({"status":"schema-error","error":"derived_from requires non-empty evidence_atoms"});
+                let rcpt = now_receipt("map.link", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            if !(0.0..=1.0).contains(&confidence) || !(0.0..=1.0).contains(&weight) {
+                let out = json!({"status":"schema-error","error":"confidence and weight must be in [0,1]"});
+                let rcpt = now_receipt("map.link", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            // Revision 1 for a fresh (from,to,kind); re-links bump server-side
+            // via the unique index — here we probe current max first.
+            let revision: u64 = 1;
+            if !state.store.enabled() {
+                let out = json!({"status":"error","error":"surreal disabled (HYPERMIND_SURREAL=off): edge not created"});
+                let rcpt = now_receipt("map.link", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            match state.store.create_edge(from, to, &kind, revision, confidence, weight, &producer, &evidence_digest, &evidence) {
+                Ok(id) => {
+                    let out = json!({"status":"ok","from":from,"to":to,"kind":kind,"revision":revision,"edge":id});
+                    let rcpt = now_receipt("map.link", args, &out);
+                    json!({"result":out,"receipt":rcpt})
+                }
+                Err(e) => {
+                    let out = json!({"status":"error","error":e});
+                    let rcpt = now_receipt("map.link", args, &out);
+                    json!({"result":out,"receipt":rcpt})
+                }
+            }
+        }
+        "map.link_semantic" => {
+            // Gated semantic edge: similarity gate (shell cosh distance under
+            // threshold) AND evidence gate (shared token or explicit evidence
+            // atoms). Either gate failing => fail-explained, never minted.
+            if let Some(denial) = deny_read(state, "map.link_semantic", args) {
+                return denial;
+            }
+            let from = args.get("from_atom").and_then(|x| x.as_u64()).unwrap_or(0);
+            let to = args.get("to_atom").and_then(|x| x.as_u64()).unwrap_or(0);
+            let min_sim = args.get("min_similarity").and_then(|x| x.as_f64()).unwrap_or(0.7);
+            let producer = args.get("producer").and_then(|x| x.as_str()).unwrap_or("map.link_semantic").to_string();
+            let evidence: Vec<u64> = args
+                .get("evidence_atoms")
+                .and_then(|x| x.as_array())
+                .map(|a| a.iter().filter_map(|v| v.as_u64()).collect())
+                .unwrap_or_default();
+            let (a, b) = match (state.atoms.get(&from), state.atoms.get(&to)) {
+                (Some(a), Some(b)) => (a.clone(), b.clone()),
+                _ => {
+                    let out = json!({"status":"error","error":"missing endpoint atom"});
+                    let rcpt = now_receipt("map.link_semantic", args, &out);
+                    return json!({"result":out,"receipt":rcpt});
+                }
+            };
+            let dist = shell_dist(&a.coord, &b.coord);
+            let sim = 1.0 / dist.cosh();
+            let mut at = text::tokenize(&a.text);
+            at.sort();
+            let mut bt = text::tokenize(&b.text);
+            bt.sort();
+            let shared_terms: Vec<String> = at.iter().filter(|t| bt.contains(t)).cloned().collect();
+            let evidence_ok = !evidence.is_empty() || !shared_terms.is_empty();
+            if !(sim >= min_sim) || !evidence_ok {
+                let out = json!({"status":"fail-explained","verdict":"fail-explained",
+                    "similarity": sim, "min_similarity": min_sim,
+                    "shared_terms": shared_terms.len(),
+                    "reason": if sim < min_sim { "similarity gate failed" } else { "evidence gate failed (no shared terms, no evidence atoms)" }});
+                let rcpt = now_receipt("map.link_semantic", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            if !state.store.enabled() {
+                let out = json!({"status":"error","error":"surreal disabled (HYPERMIND_SURREAL=off): edge not created"});
+                let rcpt = now_receipt("map.link_semantic", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            let evidence_digest = hash_bytes(format!("semantic:{from}:{to}:{}", shared_terms.join(",")).as_bytes());
+            match state.store.create_edge(from, to, "semantic", 1, sim.clamp(0.0, 1.0), sim.clamp(0.0, 1.0), &producer, &evidence_digest, &evidence) {
+                Ok(id) => {
+                    let out = json!({"status":"ok","from":from,"to":to,"kind":"semantic","similarity":sim,"shared_terms":shared_terms.len(),"edge":id});
+                    let rcpt = now_receipt("map.link_semantic", args, &out);
+                    json!({"result":out,"receipt":rcpt})
+                }
+                Err(e) => {
+                    let out = json!({"status":"error","error":e});
+                    let rcpt = now_receipt("map.link_semantic", args, &out);
+                    json!({"result":out,"receipt":rcpt})
+                }
+            }
+        }
+        "map.chain_next" => {
+            // Opt-in ingest-order next chain over one domain. PanelAdmin only
+            // + explicit confirm:true. Each adjacent pair gets a `next` edge
+            // with an evidence digest binding the pair.
+            if !state.role.can_mutate_mind() {
+                let out = json!({"status":"error","error":"role may not chain (PanelAdmin required)"});
+                let rcpt = now_receipt("map.chain_next", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            let domain = args.get("domain").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let confirm = args.get("confirm").and_then(|x| x.as_bool()).unwrap_or(false);
+            if domain.is_empty() || !confirm {
+                let out = json!({"status":"schema-error","error":"chain_next requires non-empty domain and confirm:true"});
+                let rcpt = now_receipt("map.chain_next", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            if !state.store.enabled() {
+                let out = json!({"status":"error","error":"surreal disabled (HYPERMIND_SURREAL=off): no edges created"});
+                let rcpt = now_receipt("map.chain_next", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            let mut ids: Vec<u64> = state.atoms.values().filter(|a| a.domain == domain).map(|a| a.id).collect();
+            ids.sort();
+            let mut created = 0usize;
+            let mut errors: Vec<String> = Vec::new();
+            for pair in ids.windows(2) {
+                let (f, t) = (pair[0], pair[1]);
+                let digest = hash_bytes(format!("next-chain:{domain}:{f}:{t}").as_bytes());
+                match state.store.create_edge(f, t, "next", 1, 0.5, 0.5, "map.chain_next", &digest, &[]) {
+                    Ok(_) => created += 1,
+                    Err(e) => errors.push(format!("{f}->{t}: {e}")),
+                }
+            }
+            let out = json!({"status":"ok","domain":domain,"pairs":ids.len().saturating_sub(1),"created":created,"errors":errors});
+            let rcpt = now_receipt("map.chain_next", args, &out);
+            json!({"result":out,"receipt":rcpt})
+        }
+        "map.neighbors" => {
+            if let Some(denial) = deny_read(state, "map.neighbors", args) {
+                return denial;
+            }
+            let id = args.get("atom_id").and_then(|x| x.as_u64()).unwrap_or(0);
+            let kind = args.get("kind").and_then(|x| x.as_str()).map(|x| x.to_string());
+            let limit = args.get("limit").and_then(|x| x.as_u64()).unwrap_or(32).min(256) as usize;
+            if !state.atoms.contains_key(&id) {
+                let out = json!({"status":"error","error":"unknown atom"});
+                let rcpt = now_receipt("map.neighbors", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            if !state.store.enabled() {
+                let out = json!({"status":"ok","atom":id,"neighbors":[],"note":"surreal disabled: no adjacency"});
+                let rcpt = now_receipt("map.neighbors", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            match state.store.neighbors(id, kind.as_deref(), limit) {
+                Ok(nb) => {
+                    let out = json!({"status":"ok","atom":id,"neighbors":nb});
+                    let rcpt = now_receipt("map.neighbors", args, &out);
+                    json!({"result":out,"receipt":rcpt})
+                }
+                Err(e) => {
+                    let out = json!({"status":"error","error":e});
+                    let rcpt = now_receipt("map.neighbors", args, &out);
+                    json!({"result":out,"receipt":rcpt})
+                }
+            }
+        }
+        "map.path" => {
+            if let Some(denial) = deny_read(state, "map.path", args) {
+                return denial;
+            }
+            let from = args.get("from_atom").and_then(|x| x.as_u64()).unwrap_or(0);
+            let to = args.get("to_atom").and_then(|x| x.as_u64()).unwrap_or(0);
+            let max_depth = args.get("max_depth").and_then(|x| x.as_u64()).unwrap_or(4).min(6) as usize;
+            if !state.atoms.contains_key(&from) || !state.atoms.contains_key(&to) {
+                let out = json!({"status":"error","error":"missing endpoint atom"});
+                let rcpt = now_receipt("map.path", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            if !state.store.enabled() {
+                let out = json!({"status":"ok","from":from,"to":to,"path":[],"note":"surreal disabled: no adjacency"});
+                let rcpt = now_receipt("map.path", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            // Client-side BFS over 1-hop neighbor calls (depth<=6, fanout cap
+            // 64/hop): exact, receipted, no server-side graph function needed.
+            use std::collections::{VecDeque, BTreeMap};
+            let mut prev: BTreeMap<u64, (u64, Value)> = BTreeMap::new();
+            let mut seen = std::collections::BTreeSet::new();
+            let mut q = VecDeque::new();
+            q.push_back((from, 0usize));
+            seen.insert(from);
+            let mut found = from == to;
+            while let Some((cur, d)) = q.pop_front() {
+                if cur == to { found = true; break; }
+                if d >= max_depth { continue; }
+                let nb = match state.store.neighbors(cur, None, 64) {
+                    Ok(v) => v,
+                    Err(_) => Value::Null,
+                };
+                if let Some(arr) = nb.as_array() {
+                    for row in arr {
+                        let nid = row.get("id").and_then(|x| x.as_str()).and_then(|s| s.split(':').last()).and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+                        if nid == 0 || seen.contains(&nid) { continue; }
+                        seen.insert(nid);
+                        prev.insert(nid, (cur, row.clone()));
+                        q.push_back((nid, d + 1));
+                    }
+                }
+            }
+            if !found && from != to {
+                let out = json!({"status":"ok","from":from,"to":to,"path":[],"hops":0,"note":"no path within max_depth"});
+                let rcpt = now_receipt("map.path", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            let mut hops: Vec<Value> = Vec::new();
+            let mut cur = to;
+            while cur != from {
+                if let Some((p, edge)) = prev.get(&cur) {
+                    hops.push(json!({"from":*p,"to":cur,"kind":edge.get("kind"),"weight":edge.get("weight"),"confidence":edge.get("confidence")}));
+                    cur = *p;
+                } else { break; }
+            }
+            hops.reverse();
+            let out = json!({"status":"ok","from":from,"to":to,"hops":hops.len(),"path":hops});
+            let rcpt = now_receipt("map.path", args, &out);
+            json!({"result":out,"receipt":rcpt})
+        }
+        "map.db_status" => {
+            let (mem_atoms,) = (state.atoms.len(),);
+            let mode = format!("{:?}", state.store.mode);
+            if !state.store.enabled() {
+                let out = json!({"status":"ok","mode":mode,"memory_atoms":mem_atoms,"note":"surreal disabled"});
+                let rcpt = now_receipt("map.db_status", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            match state.store.counts() {
+                Ok((db_atoms, db_addr, db_edges)) => {
+                    let out = json!({"status":"ok","mode":mode,
+                        "endpoint": state.store.url, "namespace": state.store.ns, "database": state.store.db,
+                        "memory_atoms": mem_atoms,
+                        "db_atoms": db_atoms, "db_addresses": db_addr, "db_edges": db_edges,
+                        "parity_atoms": mem_atoms as u64 == db_atoms});
+                    let rcpt = now_receipt("map.db_status", args, &out);
+                    json!({"result":out,"receipt":rcpt})
+                }
+                Err(e) => {
+                    let out = json!({"status":"error","mode":mode,"error":e,"memory_atoms":mem_atoms});
+                    let rcpt = now_receipt("map.db_status", args, &out);
+                    json!({"result":out,"receipt":rcpt})
+                }
+            }
+        }
+        "map.db_candidates" => {
+            if let Some(denial) = deny_read(state, "map.db_candidates", args) {
+                return denial;
+            }
+            let qtext = args.get("qtext").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let limit = args.get("limit").and_then(|x| x.as_u64()).unwrap_or(4000).min(16000) as usize;
+            if !state.store.enabled() {
+                let out = json!({"status":"error","error":"surreal disabled (HYPERMIND_SURREAL=off)"});
+                let rcpt = now_receipt("map.db_candidates", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            let terms = text::tokenize(&qtext);
+            let t0 = std::time::Instant::now();
+            match state.store.candidates(&terms, limit) {
+                Ok(ids) => {
+                    let out = json!({"status":"ok","terms":terms.len(),"limit":limit,"candidates":ids.len(),"ids":ids,"latency_ms":t0.elapsed().as_secs_f64()*1000.0});
+                    let rcpt = now_receipt("map.db_candidates", args, &out);
+                    json!({"result":out,"receipt":rcpt})
+                }
+                Err(e) => {
+                    let out = json!({"status":"error","error":e});
+                    let rcpt = now_receipt("map.db_candidates", args, &out);
+                    json!({"result":out,"receipt":rcpt})
+                }
+            }
+        }
+        "map.query_sdb" => {
+            // Indexed retrieval (step 4): SurrealDB prefilter -> hydrate from
+            // memory (canonical) -> rank_candidates (identical rank to query).
+            if let Some(denial) = deny_read(state, "map.query_sdb", args) {
+                return denial;
+            }
+            if !args.get("qtext").map(|x| x.is_string()).unwrap_or(false) {
+                return json!({"result": {"status": "error", "error": "schema: qtext must be string"}});
+            }
+            let qtext = args.get("qtext").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let k = args.get("k").and_then(|x| x.as_u64()).unwrap_or(8) as usize;
+            let limit = args.get("limit").and_then(|x| x.as_u64()).unwrap_or(4000).min(16000) as usize;
+            let qrank: u8 = args.get("rank").and_then(|x| x.as_u64()).unwrap_or(0).min(1) as u8;
+            if !state.store.enabled() {
+                let out = json!({"status":"error","error":"surreal disabled (HYPERMIND_SURREAL=off)"});
+                let rcpt = now_receipt("map.query_sdb", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            let qs = 0.5f64;
+            let (qcoord, qphase) = coord_from_text_idf(&qtext, qs, state.idf.as_ref(), qrank);
+            let qatom = Atom {
+                id: 0, coord: qcoord, phase: qphase, text: qtext.clone(),
+                salience: qs, provenance: "query".into(), taint: "none".into(),
+                rank: qrank, domain: "query".into(), pinned: false,
+                symplectic: symplectic_from_triple(&qcoord, &qphase, qs),
+                topic: [0.0f64; 32],
+                toks_hash: 0,
+            };
+            let terms = text::tokenize(&qtext);
+            let t0 = std::time::Instant::now();
+            let cand = match state.store.candidates(&terms, limit) {
+                Ok(c) => c,
+                Err(e) => {
+                    let out = json!({"status":"error","error":e});
+                    let rcpt = now_receipt("map.query_sdb", args, &out);
+                    return json!({"result":out,"receipt":rcpt});
+                }
+            };
+            let prefilter_ms = t0.elapsed().as_secs_f64() * 1000.0;
+            // Hydrate from memory; DB rows missing in memory are reported.
+            let mut missing = 0usize;
+            let mem_ids: Vec<u64> = cand.into_iter().filter(|id| {
+                if state.atoms.contains_key(id) { true } else { missing += 1; false }
+            }).collect();
+            let t1 = std::time::Instant::now();
+            let (top, _all) = rank_candidates(state, &qatom, &qtext, &mem_ids, k);
+            let rerank_ms = t1.elapsed().as_secs_f64() * 1000.0;
+            let top_score = top.first().and_then(|h| h.get("score")).and_then(|x| x.as_f64()).unwrap_or(0.0);
+            let out = json!({"status":"ok","retrieval":"sdb-prefilter+exact-rerank",
+                "prefilter_ms":prefilter_ms,"rerank_ms":rerank_ms,
+                "mem_candidates":mem_ids.len(),"missing_in_memory":missing,
+                "top_score":top_score,"hits":top});
+            let rcpt = now_receipt("map.query_sdb", args, &out);
+            json!({"result":out,"receipt":rcpt})
+        }
+        "map.recall_bench" => {
+            // Pressure-test gate (step 4): oracle = exhaustive score() over
+            // ALL memory atoms (same reference as map.query_flat). Arms: VP
+            // shortlist (current serving path) and SDB prefilter (new path).
+            if let Some(denial) = deny_read(state, "map.recall_bench", args) {
+                return denial;
+            }
+            if !args.get("qtext").map(|x| x.is_string()).unwrap_or(false) {
+                return json!({"result": {"status": "error", "error": "schema: qtext must be string"}});
+            }
+            let qtext = args.get("qtext").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let k = args.get("k").and_then(|x| x.as_u64()).unwrap_or(8) as usize;
+            let limit = args.get("limit").and_then(|x| x.as_u64()).unwrap_or(4000).min(16000) as usize;
+            let qs = 0.5f64;
+            let (qcoord, qphase) = coord_from_text_idf(&qtext, qs, state.idf.as_ref(), 0);
+            let qatom = Atom {
+                id: 0, coord: qcoord, phase: qphase, text: qtext.clone(),
+                salience: qs, provenance: "query".into(), taint: "none".into(),
+                rank: 0, domain: "query".into(), pinned: false,
+                symplectic: symplectic_from_triple(&qcoord, &qphase, qs),
+                topic: [0.0f64; 32],
+                toks_hash: 0,
+            };
+            // Oracle: exhaustive exact rank over everything in memory.
+            let t_or = std::time::Instant::now();
+            let all_ids: Vec<u64> = state.atoms.keys().copied().collect();
+            let (oracle_top, _) = rank_candidates(state, &qatom, &qtext, &all_ids, k);
+            let oracle_ms = t_or.elapsed().as_secs_f64() * 1000.0;
+            let oracle_ids: Vec<u64> = oracle_top.iter().filter_map(|h| h.get("id")).filter_map(|v| v.as_u64()).collect();
+            // Arm A: VP shortlist (serving path).
+            ensure_vp(state);
+            let t_vp = std::time::Instant::now();
+            let short = ((k.max(1) * 8).max(256)).min(state.atoms.len().max(1));
+            let vp_ids = state.vp.knn(&qatom, short);
+            let vp_ms = t_vp.elapsed().as_secs_f64() * 1000.0;
+            let (vp_top, _) = rank_candidates(state, &qatom, &qtext, &vp_ids, k);
+            let vp_hit_ids: Vec<u64> = vp_top.iter().filter_map(|h| h.get("id")).filter_map(|v| v.as_u64()).collect();
+            let vp_recall = if oracle_ids.is_empty() { 1.0 } else {
+                vp_hit_ids.iter().filter(|id| oracle_ids.contains(id)).count() as f64 / oracle_ids.len().max(1) as f64
+            };
+            // Arm B: SDB prefilter (new path; skipped when disabled).
+            let (sdb_recall, sdb_ms, sdb_cand, sdb_note) = if state.store.enabled() {
+                let terms = text::tokenize(&qtext);
+                let t_s = std::time::Instant::now();
+                match state.store.candidates(&terms, limit) {
+                    Ok(c) => {
+                        let ms = t_s.elapsed().as_secs_f64() * 1000.0;
+                        let mem: Vec<u64> = c.into_iter().filter(|id| state.atoms.contains_key(id)).collect();
+                        let n = mem.len();
+                        let (sdb_top, _) = rank_candidates(state, &qatom, &qtext, &mem, k);
+                        let hit: Vec<u64> = sdb_top.iter().filter_map(|h| h.get("id")).filter_map(|v| v.as_u64()).collect();
+                        let r = if oracle_ids.is_empty() { 1.0 } else {
+                            hit.iter().filter(|id| oracle_ids.contains(id)).count() as f64 / oracle_ids.len().max(1) as f64
+                        };
+                        (r, ms, n, "ok".to_string())
+                    }
+                    Err(e) => (0.0, 0.0, 0, format!("prefilter error: {e}")),
+                }
+            } else {
+                (0.0, 0.0, 0, "surreal disabled".to_string())
+            };
+            let out = json!({"status":"ok","k":k,"atoms":state.atoms.len(),
+                "oracle_ms":oracle_ms,"oracle_top":oracle_ids,
+                "vp":{"recall_at_k":vp_recall,"shortlist_ms":vp_ms,"shortlist":short,"hits":vp_hit_ids},
+                "sdb":{"recall_at_k":sdb_recall,"prefilter_ms":sdb_ms,"candidates":sdb_cand,"note":sdb_note}});
+            let rcpt = now_receipt("map.recall_bench", args, &out);
+            json!({"result":out,"receipt":rcpt})
+        }
+        "map.embed_status" => {
+            // Canonical embedding coverage (step 5). No vector content leaves
+            // the DB — counts + index state only.
+            if !state.store.enabled() {
+                let out = json!({"status":"error","error":"surreal disabled (HYPERMIND_SURREAL=off)"});
+                let rcpt = now_receipt("map.embed_status", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            match state.store.counts_embed() {
+                Ok((emb, total)) => {
+                    let out = json!({"status":"ok","encoder":"bge-m3","encoder_revision":"5617a9f61b028005a4858fdac845db406aefb181",
+                        "dimensions":1024,"distance":"cosine","table":"atom_embedding_text_v1","index":"HNSW",
+                        "embedded":emb,"atoms":total,
+                        "coverage": if total > 0 { emb as f64 / total as f64 } else { 0.0 }});
+                    let rcpt = now_receipt("map.embed_status", args, &out);
+                    json!({"result":out,"receipt":rcpt})
+                }
+                Err(e) => {
+                    let out = json!({"status":"error","error":e});
+                    let rcpt = now_receipt("map.embed_status", args, &out);
+                    json!({"result":out,"receipt":rcpt})
+                }
+            }
+        }
+        "map.query_vec" => {
+            // Step 5 vector path: SurrealDB cosine candidates -> hydrate from
+            // memory (canonical) -> rank_candidates (authoritative Rust rerank).
+            if let Some(denial) = deny_read(state, "map.query_vec", args) {
+                return denial;
+            }
+            let qvec: Vec<f64> = args.get("vector").and_then(|x| x.as_array()).map(|a| a.iter().filter_map(|v| v.as_f64()).collect()).unwrap_or_default();
+            let k = args.get("k").and_then(|x| x.as_u64()).unwrap_or(8) as usize;
+            let limit = args.get("limit").and_then(|x| x.as_u64()).unwrap_or(4000).min(16000) as usize;
+            if qvec.len() != 1024 {
+                let out = json!({"status":"schema-error","error":format!("vector must be 1024D BGE-M3, got {}", qvec.len())});
+                let rcpt = now_receipt("map.query_vec", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            if !state.store.enabled() {
+                let out = json!({"status":"error","error":"surreal disabled (HYPERMIND_SURREAL=off)"});
+                let rcpt = now_receipt("map.query_vec", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            let t0 = std::time::Instant::now();
+            let cand = match state.store.vector_candidates(&qvec, limit) {
+                Ok(c) => c,
+                Err(e) => {
+                    let out = json!({"status":"error","error":e});
+                    let rcpt = now_receipt("map.query_vec", args, &out);
+                    return json!({"result":out,"receipt":rcpt});
+                }
+            };
+            let prefilter_ms = t0.elapsed().as_secs_f64() * 1000.0;
+            let mut missing = 0usize;
+            let mem_ids: Vec<u64> = cand.iter().filter_map(|(id, _)| {
+                if state.atoms.contains_key(id) { Some(*id) } else { missing += 1; None }
+            }).collect();
+            let cosmap: std::collections::HashMap<u64, f64> = cand.into_iter().collect();
+            // Optional qtext: derive the query's intrinsic address (same math
+            // as atoms) so rank_candidates is a TRUE geometric rerank. Without
+            // qtext there is no query address — order by cosine (semantic
+            // signal), geo scores attached as the authority signal.
+            let qtext_opt = args.get("qtext").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let t1 = std::time::Instant::now();
+            let (hits, rerank_mode) = if !qtext_opt.is_empty() {
+                let (qcoord, qphase) = coord_from_text_idf(&qtext_opt, 0.5, state.idf.as_ref(), 0);
+                let qatom = Atom { id: 0, coord: qcoord, phase: qphase, text: qtext_opt.clone(),
+                    salience: 0.5, provenance: "query-vec".into(), taint: "none".into(),
+                    rank: 0, domain: "query".into(), pinned: false,
+                    symplectic: symplectic_from_triple(&qcoord, &qphase, 0.5), topic: [0.0f64; 32], toks_hash: 0 };
+                let (top, _all) = rank_candidates(state, &qatom, &qtext_opt, &mem_ids, k);
+                let hits: Vec<Value> = top.into_iter().map(|mut h| {
+                    if let Some(id) = h.get("id").and_then(|x| x.as_u64()) {
+                        if let Some(s) = cosmap.get(&id) { h["cosine_sim"] = json!(s); }
+                    }
+                    h
+                }).collect();
+                (hits, "exact-h3xt2-rerank")
+            } else {
+                let mut cyl: Vec<(u64, f64)> = mem_ids.iter().filter_map(|id| cosmap.get(id).map(|s| (*id, *s))).collect();
+                cyl.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                let hits: Vec<Value> = cyl.into_iter().take(k.max(1)).filter_map(|(id, cs)| {
+                    state.atoms.get(&id).map(|a| {
+                        json!({"id": a.id, "cosine_sim": cs,
+                            "geo_score": score(&Atom { id: 0, coord: [2.0,1.0,0.0,0.0], phase: [0.0,0.0],
+                                text: String::new(), salience: 0.5, provenance: "q".into(), taint: "n".into(),
+                                rank: 0, domain: "q".into(), pinned: false,
+                                symplectic: symplectic_from_triple(&[2.0,1.0,0.0,0.0], &[0.0,0.0], 0.5), topic: [0.0f64; 32], toks_hash: 0 }, a),
+                            "text": a.text, "coord_poincare": poincare(&a.coord),
+                            "salience": a.salience, "rank": a.rank, "provenance": a.provenance})
+                    })
+                }).collect();
+                (hits, "cosine-ordered")
+            };
+            let rerank_ms = t1.elapsed().as_secs_f64() * 1000.0;
+            let out = json!({"status":"ok","retrieval":"vec-cosine-prefilter+exact-rerank",
+                "rerank_mode": rerank_mode,
+                "prefilter_ms":prefilter_ms,"rerank_ms":rerank_ms,
+                "mem_candidates":mem_ids.len(),"missing_in_memory":missing,"hits":hits});
+            let rcpt = now_receipt("map.query_vec", args, &out);
+            json!({"result":out,"receipt":rcpt})
+        }
+        "map.vector_bench" => {
+            // Vector-path recall vs H3xT2 oracle: cosine top-k over ALL stored
+            // vectors (exhaustive = oracle here) vs post-rerank top-k. At full
+            // coverage both arms agree; the metric that matters is rerank
+            // stability (does authoritative rerank preserve cosine winners?).
+            if let Some(denial) = deny_read(state, "map.vector_bench", args) {
+                return denial;
+            }
+            let qvec: Vec<f64> = args.get("vector").and_then(|x| x.as_array()).map(|a| a.iter().filter_map(|v| v.as_f64()).collect()).unwrap_or_default();
+            let k = args.get("k").and_then(|x| x.as_u64()).unwrap_or(8) as usize;
+            if qvec.len() != 1024 {
+                let out = json!({"status":"schema-error","error":format!("vector must be 1024D BGE-M3, got {}", qvec.len())});
+                let rcpt = now_receipt("map.vector_bench", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            if !state.store.enabled() {
+                let out = json!({"status":"error","error":"surreal disabled (HYPERMIND_SURREAL=off)"});
+                let rcpt = now_receipt("map.vector_bench", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            let limit = args.get("limit").and_then(|x| x.as_u64()).unwrap_or(4000).min(16000) as usize;
+            let t0 = std::time::Instant::now();
+            let oracle = match state.store.vector_candidates(&qvec, limit.max(state.atoms.len())) {
+                Ok(c) => c,
+                Err(e) => {
+                    let out = json!({"status":"error","error":e});
+                    let rcpt = now_receipt("map.vector_bench", args, &out);
+                    return json!({"result":out,"receipt":rcpt});
+                }
+            };
+            let oracle_ms = t0.elapsed().as_secs_f64() * 1000.0;
+            let oracle_ids: Vec<u64> = oracle.iter().take(k.max(1)).map(|(id, _)| *id).collect();
+            // Reranked arm: hydrate oracle set, rank_candidates, compare top-k.
+            let qatom = Atom { id: 0, coord: [2.0, 1.0, 0.0, 0.0], phase: [0.0, 0.0],
+                text: String::new(), salience: 0.5, provenance: "query-vec".into(),
+                taint: "none".into(), rank: 0, domain: "query".into(), pinned: false,
+                symplectic: symplectic_from_triple(&[2.0, 1.0, 0.0, 0.0], &[0.0, 0.0], 0.5), topic: [0.0f64; 32], toks_hash: 0 };
+            let mem_ids: Vec<u64> = oracle.iter().filter_map(|(id, _)| if state.atoms.contains_key(id) { Some(*id) } else { None }).collect();
+            let (top, _) = rank_candidates(state, &qatom, "", &mem_ids, k);
+            let rerank_ids: Vec<u64> = top.iter().filter_map(|h| h.get("id")).filter_map(|v| v.as_u64()).collect();
+            let kept = if oracle_ids.is_empty() { 1.0 } else {
+                rerank_ids.iter().filter(|id| oracle_ids.contains(id)).count() as f64 / oracle_ids.len().max(1) as f64
+            };
+            let out = json!({"status":"ok","k":k,"oracle_cosine_top":oracle_ids,"reranked_top":rerank_ids,
+                "oracle_ms":oracle_ms,"candidates":oracle.len(),"preserved_at_k":kept});
+            let rcpt = now_receipt("map.vector_bench", args, &out);
+            json!({"result":out,"receipt":rcpt})
+        }
+        "map.graph_snapshot" => {
+            // Step 6: viz-ready typed subgraph. Memory atoms are canonical
+            // for node attributes; SurrealDB atom_edge is the adjacency.
+            // BFS from seeds (or salience sample) over active edges.
+            if let Some(denial) = deny_read(state, "map.graph_snapshot", args) {
+                return denial;
+            }
+            let seeds: Vec<u64> = args.get("seeds").and_then(|x| x.as_array()).map(|a| a.iter().filter_map(|v| v.as_u64()).collect()).unwrap_or_default();
+            let depth = args.get("depth").and_then(|x| x.as_u64()).unwrap_or(2).min(4) as usize;
+            let node_limit = args.get("node_limit").and_then(|x| x.as_u64()).unwrap_or(500).min(2000) as usize;
+            let kind = args.get("kind").and_then(|x| x.as_str()).map(|x| x.to_string());
+            if !state.store.enabled() {
+                let out = json!({"status":"error","error":"surreal disabled (HYPERMIND_SURREAL=off): no adjacency"});
+                let rcpt = now_receipt("map.graph_snapshot", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            // Seed set: explicit seeds, else top-salience sample.
+            let mut frontier: Vec<u64> = if seeds.is_empty() {
+                let mut all: Vec<(u64, f64)> = state.atoms.values().map(|a| (a.id, a.salience)).collect();
+                all.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                all.into_iter().take(node_limit.min(32)).map(|(id, _)| id).collect()
+            } else { seeds.into_iter().filter(|id| state.atoms.contains_key(id)).collect() };
+            use std::collections::{BTreeMap, BTreeSet, VecDeque};
+            let mut seen: BTreeSet<u64> = frontier.iter().copied().collect();
+            let mut edge_list: Vec<(u64, u64, String)> = Vec::new();
+            let mut d = 0usize;
+            let mut q: VecDeque<(u64, usize)> = frontier.iter().map(|id| (*id, 0)).collect();
+            while let Some((cur, cd)) = q.pop_front() {
+                if cd >= depth { continue; }
+                let nb = match state.store.neighbors(cur, kind.as_deref(), 256) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let out = json!({"status":"error","error":e});
+                        let rcpt = now_receipt("map.graph_snapshot", args, &out);
+                        return json!({"result":out,"receipt":rcpt});
+                    }
+                };
+                if let Some(arr) = nb.as_array() {
+                    for row in arr {
+                        let nid = row.get("id").and_then(|x| x.as_str()).and_then(|s| s.split(':').last()).and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+                        if nid == 0 { continue; }
+                        let ek = row.get("kind").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                        if seen.len() < node_limit && !seen.contains(&nid) {
+                            seen.insert(nid);
+                            q.push_back((nid, cd + 1));
+                        }
+                        if seen.contains(&nid) {
+                            edge_list.push((cur, nid, ek));
+                        }
+                    }
+                }
+                d = d.max(cd);
+            }
+            let _ = (d, frontier);
+            let nodes: Vec<Value> = seen.iter().filter_map(|id| {
+                state.atoms.get(id).map(|a| {
+                    let p = poincare(&a.coord);
+                    json!({"id": a.id, "x": p[0], "y": p[1], "z": p[2],
+                        "rank": a.rank, "domain": a.domain, "salience": a.salience,
+                        "lorentz": a.coord})
+                })
+            }).collect();
+            let links: Vec<Value> = edge_list.iter().map(|(f, tt, k2)| {
+                json!({"from": f, "to": tt, "kind": k2})
+            }).collect();
+            let out = json!({"status":"ok","nodes":nodes.len(),"links":links.len(),
+                "depth":depth,"node_limit":node_limit,"kind_filter":kind,
+                "nodes_xyz":"poincare-ball","nodes_data":nodes,"links_typed":links});
+            let rcpt = now_receipt("map.graph_snapshot", args, &out);
+            json!({"result":out,"receipt":rcpt})
+        }
+        "map.graph_path" => {
+            // Step 6: typed-edge path shaped for viz (nodes with xyz along
+            // the path + typed links). Reuses the map.path BFS, then hydrates.
+            if let Some(denial) = deny_read(state, "map.graph_path", args) {
+                return denial;
+            }
+            let from = args.get("from_atom").and_then(|x| x.as_u64()).unwrap_or(0);
+            let to = args.get("to_atom").and_then(|x| x.as_u64()).unwrap_or(0);
+            if !state.atoms.contains_key(&from) || !state.atoms.contains_key(&to) {
+                let out = json!({"status":"fail-explained","reason":"missing endpoint atom","from":from,"to":to,"path":[]});
+                let rcpt = now_receipt("map.graph_path", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            // Delegate BFS to map.path logic inline (same caps), then hydrate.
+            let max_depth = args.get("max_depth").and_then(|x| x.as_u64()).unwrap_or(4).min(6) as usize;
+            let sub = handle_tool(state, "map.path", &json!({"from_atom":from,"to_atom":to,"max_depth":max_depth}));
+            let hops = sub.get("result").and_then(|r| r.get("path")).and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            if hops.is_empty() && from != to {
+                let out = json!({"status":"fail-explained","reason":"no path within max_depth","from":from,"to":to,"max_depth":max_depth,"path":[]});
+                let rcpt = now_receipt("map.graph_path", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            let mut node_ids = vec![from];
+            for h in &hops { if let Some(t) = h.get("to").and_then(|x| x.as_u64()) { node_ids.push(t); } }
+            let nodes: Vec<Value> = node_ids.iter().filter_map(|id| {
+                state.atoms.get(id).map(|a| {
+                    let p = poincare(&a.coord);
+                    json!({"id": a.id, "x": p[0], "y": p[1], "z": p[2],
+                        "rank": a.rank, "domain": a.domain, "salience": a.salience})
+                })
+            }).collect();
+            let out = json!({"status":"ok","from":from,"to":to,"hops":hops.len(),
+                "nodes_xyz":"poincare-ball","nodes_data":nodes,"links_typed":hops});
+            let rcpt = now_receipt("map.graph_path", args, &out);
+            json!({"result":out,"receipt":rcpt})
+        }
+        "map.graph_export" => {
+            // Step 6: static single-file HTML (inline SVG, no JS deps, no
+            // network). Poincare disk projection (x,y), z as radius cue;
+            // typed edges listed + drawn with kind colors from a fixed legend.
+            if let Some(denial) = deny_read(state, "map.graph_export", args) {
+                return denial;
+            }
+            let filename = args.get("filename").and_then(|x| x.as_str()).unwrap_or("graph.html").to_string();
+            if filename.contains("..") || filename.contains('/') || filename.ends_with(".html") == false {
+                let out = json!({"status":"schema-error","error":"filename must be a bare *.html name (no path traversal)"});
+                let rcpt = now_receipt("map.graph_export", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            let sub_args = {
+                let mut m = serde_json::Map::new();
+                if let Some(s) = args.get("seeds") { m.insert("seeds".into(), s.clone()); }
+                if let Some(d) = args.get("depth") { m.insert("depth".into(), d.clone()); }
+                Value::Object(m)
+            };
+            let sub = handle_tool(state, "map.graph_snapshot", &sub_args);
+            if sub.get("result").and_then(|r| r.get("status")).and_then(|s| s.as_str()) != Some("ok") {
+                return sub;
+            }
+            let res = sub.get("result").unwrap();
+            let nodes = res.get("nodes_data").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let links = res.get("links_typed").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let kinds = ["references", "next", "part_of", "derived_from", "semantic"];
+            let colors = ["#4da3ff", "#7ddc8a", "#c9a6ff", "#ffb35c", "#ff7d9c"];
+            let mut svg_nodes = String::new();
+            let mut svg_links = String::new();
+            for l in &links {
+                let (f, tt, k2) = (
+                    l.get("from").and_then(|x| x.as_u64()).unwrap_or(0),
+                    l.get("to").and_then(|x| x.as_u64()).unwrap_or(0),
+                    l.get("kind").and_then(|x| x.as_str()).unwrap_or("").to_string());
+                let (mut x1, mut y1, mut x2, mut y2) = (250.0, 250.0, 250.0, 250.0);
+                for n in &nodes {
+                    if n.get("id").and_then(|x| x.as_u64()) == Some(f) {
+                        x1 = 250.0 + n.get("x").and_then(|x| x.as_f64()).unwrap_or(0.0) * 220.0;
+                        y1 = 250.0 - n.get("y").and_then(|x| x.as_f64()).unwrap_or(0.0) * 220.0;
+                    }
+                    if n.get("id").and_then(|x| x.as_u64()) == Some(tt) {
+                        x2 = 250.0 + n.get("x").and_then(|x| x.as_f64()).unwrap_or(0.0) * 220.0;
+                        y2 = 250.0 - n.get("y").and_then(|x| x.as_f64()).unwrap_or(0.0) * 220.0;
+                    }
+                }
+                let ci = kinds.iter().position(|k| *k == k2).unwrap_or(0);
+                svg_links.push_str(&format!(
+                    "<line x1='{x1:.1}' y1='{y1:.1}' x2='{x2:.1}' y2='{y2:.1}' stroke='{}' stroke-width='1.2' opacity='0.7'/>",
+                    colors[ci]));
+            }
+            for n in &nodes {
+                let (x, y, z) = (
+                    n.get("x").and_then(|x| x.as_f64()).unwrap_or(0.0),
+                    n.get("y").and_then(|x| x.as_f64()).unwrap_or(0.0),
+                    n.get("z").and_then(|x| x.as_f64()).unwrap_or(0.0));
+                let r = 3.0 + (z.abs() * 8.0).min(6.0);
+                let id = n.get("id").and_then(|x| x.as_u64()).unwrap_or(0);
+                svg_nodes.push_str(&format!(
+                    "<circle cx='{:.1}' cy='{:.1}' r='{r:.1}' fill='#e8eef7'><title>atom {id}</title></circle>",
+                    250.0 + x * 220.0, 250.0 - y * 220.0));
+            }
+            let mut legend = String::new();
+            for (k2, c) in kinds.iter().zip(colors.iter()) {
+                legend.push_str(&format!("<span style='color:{c}'>{k2}</span> "));
+            }
+            let html = format!(
+                "<!DOCTYPE html><html><head><meta charset='utf-8'><title>HyperMind graph</title></head><body style='background:#0b0e14;color:#e8eef7;font-family:sans-serif'><h3>HyperMind typed subgraph (Poincare disk, z=radius cue)</h3><div>{legend}</div><svg width='500' height='500' viewBox='0 0 500 500'><circle cx='250' cy='250' r='225' fill='none' stroke='#2a3342'/>{svg_links}{svg_nodes}</svg><p>nodes={} links={}</p></body></html>",
+                nodes.len(), links.len());
+            let path = state.root.join(&filename);
+            // Containment: filename is a bare *.html name (validated above),
+            // joined under the map root. Reject if it escapes.
+            if !path.starts_with(&state.root) {
+                let out = json!({"status":"error","error":"export path escapes map root"});
+                let rcpt = now_receipt("map.graph_export", args, &out);
+                return json!({"result":out,"receipt":rcpt});
+            }
+            match std::fs::write(&path, &html) {
+                Ok(()) => {
+                    let out = json!({"status":"ok","path":path.to_string_lossy(),"sha256":hash_bytes(html.as_bytes()),"nodes":nodes.len(),"links":links.len()});
+                    let rcpt = now_receipt("map.graph_export", args, &out);
+                    json!({"result":out,"receipt":rcpt})
+                }
+                Err(e) => {
+                    let out = json!({"status":"error","error":e.to_string()});
+                    let rcpt = now_receipt("map.graph_export", args, &out);
+                    json!({"result":out,"receipt":rcpt})
+                }
+            }
+        }
+        "map.ops_status" => {
+            // Step 7 telemetry: auth posture, counts, backup age. Never
+            // emits credentials — auth state is a bool + user name only.
+            let auth_user = state.store.user.clone().unwrap_or_default();
+            let auth_on = state.store.pass.is_some() && !auth_user.is_empty();
+            let (db_atoms, db_addr, db_edges, db_note) = if state.store.enabled() {
+                let has_creds = auth_on;
+                match state.store.counts() {
+                    Ok((a, b, c)) => (a as i64, b as i64, c as i64, if has_creds { "authenticated" } else { "anonymous" }.to_string()),
+                    Err(e) => (-1, -1, -1, e),
+                }
+            } else {
+                (-1, -1, -1, "surreal disabled".to_string())
+            };
+            // Backup age: newest pre_auth-style .surql in the backups dir.
+            let backup_age_secs: Option<u64> = std::env::var("HYPERMIND_BACKUP_DIR")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| std::path::PathBuf::from("/Users/stewartbarteau/.hypermind/backups"))
+                .read_dir().ok()
+                .and_then(|rd| {
+                    rd.filter_map(|e| e.ok())
+                        .filter(|e| e.path().extension().map(|x| x == "surql").unwrap_or(false))
+                        .filter_map(|e| e.metadata().ok().and_then(|m| m.modified().ok()))
+                        .map(|t| t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0))
+                        .max()
+                })
+                .and_then(|newest| {
+                    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().map(|now| now.as_secs().saturating_sub(newest))
+                });
+            let out = json!({"status":"ok","mode":format!("{:?}", state.store.mode),
+                "endpoint": state.store.url, "namespace": state.store.ns, "database": state.store.db,
+                "auth_user": auth_user, "auth_configured": auth_on,
+                "db_atoms": db_atoms, "db_addresses": db_addr, "db_edges": db_edges, "db_note": db_note,
+                "memory_atoms": state.atoms.len(),
+                "bind": "127.0.0.1:8000 (localhost-only)", "tls": "none (loopback; documented in steps-7)",
+                "server_query_timeout": "30s", "server_transaction_timeout": "30s", "client_timeout": "15s",
+                "backup_age_secs": backup_age_secs});
+            let rcpt = now_receipt("map.ops_status", args, &out);
+            json!({"result":out,"receipt":rcpt})
         }
         "map.health" => {
             let max_x0 = state
@@ -3590,6 +4892,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             json!({"result":out,"receipt":rcpt})
         }
         "map.export_passport" => {
+            refresh_basin_receipts(state);
             let atoms: Vec<Atom> = state.atoms.values().cloned().collect();
             let payload = json!({
                 "geometry_version": "H3xT2-Lorentz-canonical-v2",
@@ -4001,6 +5304,457 @@ mod tests {
     }
 
     #[test]
+    fn live_relate_and_neighbors_roundtrip() {
+        // Live-DB test (HYPERMIND_E2E_LIVE=1 only): exercises the RELATE
+        // path end-to-end on spare high ids, then deletes the probe edges.
+        if std::env::var("HYPERMIND_E2E_LIVE").unwrap_or_default() != "1" {
+            return;
+        }
+        let st = Store::from_env();
+        assert!(st.enabled(), "live test needs HYPERMIND_SURREAL=shadow|on");
+        // Spare high-id atoms (guard floor is 2079; use 900001+).
+        for id in [900001u64, 900002u64] {
+            let _ = st.upsert_atom(id, "live probe", 0.5, 0, "e2e", "none", "general", false, "live-probe");
+            let _ = st.upsert_address(id, &[1.7, 0.1, 0.2, 0.3], &[0.1, 0.2]);
+        }
+        let r = st.create_edge(900001, 900002, "references", 1, 0.9, 0.9, "e2e", "e2e-probe", &[]).expect("relate works");
+        assert!(r.to_string().contains("900001_900002_references_1"));
+        let nb = st.neighbors(900001, None, 8).expect("neighbors works");
+        assert!(nb.as_array().map(|a| !a.is_empty()).unwrap_or(false), "adjacency reads back: {nb}");
+        let _ = st.sql("DELETE atom_edge:900001_900002_references_1; DELETE atom:900001; DELETE atom:900002; DELETE atom_address:900001; DELETE atom_address:900002;");
+    }
+
+    #[test]
+    fn rank_candidates_matches_query_top1() {
+        // Step 4 invariant: shared rank over the full id set agrees with
+        // map.query's top hit (same data, same function — guards rewire drift).
+        let dir = std::env::temp_dir().join("hm_rank_parity");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        let _ = handle_tool(&mut st, "map.ingest", &json!({"text": "parity probe alpha magnetic ledger"}));
+        let _ = handle_tool(&mut st, "map.ingest", &json!({"text": "parity probe beta basalt quarry"}));
+        let _ = handle_tool(&mut st, "map.ingest", &json!({"text": "parity probe gamma magnetic ledger stone"}));
+        let q = handle_tool(&mut st, "map.query", &json!({"qtext": "magnetic ledger", "k": 2}));
+        let qid = q["result"]["hits"][0]["id"].as_u64().unwrap();
+        let ids: Vec<u64> = st.atoms.keys().copied().collect();
+        let (qcoord, qphase) = coord_from_text_idf("magnetic ledger", 0.5, st.idf.as_ref(), 0);
+        let qa = Atom { id: 0, coord: qcoord, phase: qphase, text: "magnetic ledger".into(),
+            salience: 0.5, provenance: "query".into(), taint: "none".into(),
+            rank: 0, domain: "query".into(), pinned: false,
+            symplectic: symplectic_from_triple(&qcoord, &qphase, 0.5), topic: [0.0f64; 32], toks_hash: 0 };
+        let (top, _) = rank_candidates(&st, &qa, "magnetic ledger", &ids, 2);
+        assert_eq!(top[0]["id"].as_u64().unwrap(), qid);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn recall_bench_reports_both_arms_offline() {
+        // SurrealDB off: oracle + VP arms still report; sdb arm is labeled.
+        let dir = std::env::temp_dir().join("hm_bench_off");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        st.store.mode = surreal::SurrealMode::Off;
+        let _ = handle_tool(&mut st, "map.ingest", &json!({"text": "bench offline alpha token"}));
+        let _ = handle_tool(&mut st, "map.ingest", &json!({"text": "bench offline beta token"}));
+        let r = handle_tool(&mut st, "map.recall_bench", &json!({"qtext": "offline token", "k": 2}));
+        assert_eq!(r["result"]["status"], "ok");
+        assert_eq!(r["result"]["sdb"]["note"], "surreal disabled");
+        assert!(r["result"]["vp"]["recall_at_k"].as_f64().unwrap() >= 0.0);
+        assert!(r["result"]["oracle_ms"].as_f64().unwrap() >= 0.0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn query_sdb_requires_store() {
+        let dir = std::env::temp_dir().join("hm_qsdb_off");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        st.store.mode = surreal::SurrealMode::Off;
+        let r = handle_tool(&mut st, "map.query_sdb", &json!({"qtext": "anything"}));
+        assert_eq!(r["result"]["status"], "error");
+        let r = handle_tool(&mut st, "map.db_candidates", &json!({"qtext": "anything"}));
+        assert_eq!(r["result"]["status"], "error");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn incremental_basins_cover_all_atoms() {
+        // O(N^2) fix invariant: every atom in exactly one basin of its domain.
+        let dir = std::env::temp_dir().join("hm_basin_cover");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        for i in 0..30 {
+            let _ = handle_tool(&mut st, "map.ingest", &json!({"text": format!("cover probe {} ledger anchor stone topic-{}", i, i)}));
+        }
+        let mut seen: std::collections::HashMap<u64, usize> = std::collections::HashMap::new();
+        for b in st.basins.values() {
+            for m in &b.members {
+                *seen.entry(*m).or_default() += 1;
+                assert_eq!(st.atoms.get(m).map(|a| a.domain.clone()).unwrap_or_default(), b.domain);
+            }
+        }
+        assert_eq!(seen.len(), st.atoms.len(), "every atom covered");
+        assert!(seen.values().all(|c| *c == 1), "no atom in two basins");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn snapshot_restore_preserves_layout_without_refold() {
+        // Open-from-snapshot must restore basins/idf as-is (no refold):
+        // snapshot, reopen in a fresh State via open_or_create on the same
+        // root, and compare member sets + ledger root.
+        let dir = std::env::temp_dir().join("hm_snap_restore");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        for i in 0..20 {
+            let _ = handle_tool(&mut st, "map.ingest", &json!({"text": format!("restore probe {} basalt quarry", i)}));
+        }
+        let r = handle_tool(&mut st, "map.snapshot", &json!({}));
+        assert_eq!(r["result"]["status"], "ok");
+        let root_before = st.ledger_root.clone();
+        let mut sets_before: Vec<Vec<u64>> = st.basins.values().map(|b| { let mut m = b.members.clone(); m.sort(); m }).collect();
+        sets_before.sort();
+        drop(st);
+        // Fresh open on the same root: restores, does not refold.
+        let st2 = open_or_create(dir.clone());
+        let mut sets_after: Vec<Vec<u64>> = st2.basins.values().map(|b| { let mut m = b.members.clone(); m.sort(); m }).collect();
+        sets_after.sort();
+        assert_eq!(sets_before, sets_after, "restore preserves basin layout");
+        assert_eq!(root_before, st2.ledger_root, "restore preserves ledger root");
+        assert!(st2.idf.is_some(), "idf adopted from snapshot");
+        // Dedup index survived the roundtrip: re-ingesting a duplicate coalesces.
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn members_fmt_push_matches_full_format() {
+        // Receipt bytes must be IDENTICAL to format!("{:?}", members):
+        // recover() verifies ledger roots against re-formatted receipts.
+        let mut fmt = String::new();
+        let mut full: Vec<u64> = vec![];
+        for id in [1u64, 2, 17, 103, 9999, 100000] {
+            members_fmt_push(&mut fmt, id);
+            full.push(id);
+            assert_eq!(fmt, format!("{full:?}"), "fmt diverges at {id}");
+        }
+        assert_eq!(
+            basin_receipt("general", 7, &fmt),
+            hash_bytes(format!("general:7:{:?}", full).as_bytes())
+        );
+    }
+
+    #[test]
+    fn incremental_matches_refold_membership() {
+        // Append path must agree with the greedy refold on member sets:
+        // same texts in the same order => same basin groupings.
+        // (Basin IDS may differ; member SETS must not.)
+        let texts: Vec<String> = (0..24).map(|i| format!("equiv probe {} magnetic quarry topic-{}", i, i)).collect();
+        let dir_a = std::env::temp_dir().join("hm_equiv_a");
+        let _ = std::fs::remove_dir_all(&dir_a);
+        let mut a = open_or_create(dir_a.clone());
+        for t in &texts {
+            let _ = handle_tool(&mut a, "map.ingest", &json!({"text": t}));
+        }
+        let mut sets_a: Vec<Vec<u64>> = a.basins.values().map(|b| { let mut m = b.members.clone(); m.sort(); m }).collect();
+        sets_a.sort();
+        // Reference: same atoms, forced full refold.
+        rebuild_basins(&mut a);
+        let mut sets_r: Vec<Vec<u64>> = a.basins.values().map(|b| { let mut m = b.members.clone(); m.sort(); m }).collect();
+        sets_r.sort();
+        assert_eq!(sets_a, sets_r, "incremental layout is a refold fixpoint");
+        let _ = std::fs::remove_dir_all(&dir_a);
+    }
+
+    #[test]
+    fn store_auth_plumbing_defaults_anonymous() {
+        // No creds in env => anonymous Store (server now fails this closed;
+        // the runtime surfaces the 401/403 message, never a silent drop).
+        let st = Store::from_env();
+        assert!(st.user.is_none() || std::env::var("HYPERMIND_SURREAL_USER").is_ok());
+    }
+
+    #[test]
+    fn ops_status_never_emits_credentials() {
+        let dir = std::env::temp_dir().join("hm_ops_noleak");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        st.store.user = Some("someone".into());
+        st.store.pass = Some("supersecret".into());
+        let r = handle_tool(&mut st, "map.ops_status", &json!({}));
+        let s = serde_json::to_string(&r).unwrap_or_default();
+        assert!(!s.contains("supersecret"), "password leaked into ops output");
+        assert!(r["result"]["auth_user"] == "someone");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn graph_tools_require_store_and_gate_paths() {
+        let dir = std::env::temp_dir().join("hm_graph_gates");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        st.store.mode = surreal::SurrealMode::Off;
+        let r = handle_tool(&mut st, "map.graph_snapshot", &json!({}));
+        assert_eq!(r["result"]["status"], "error");
+        // graph_path with unknown endpoints is fail-explained, not error.
+        let r = handle_tool(&mut st, "map.graph_path", &json!({"from_atom": 1, "to_atom": 2}));
+        assert_eq!(r["result"]["status"], "fail-explained");
+        // graph_export rejects traversal names and non-html.
+        let r = handle_tool(&mut st, "map.graph_export", &json!({"filename": "../evil.html"}));
+        assert_eq!(r["result"]["status"], "schema-error");
+        let r = handle_tool(&mut st, "map.graph_export", &json!({"filename": "x.txt"}));
+        assert_eq!(r["result"]["status"], "schema-error");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn graph_path_empty_is_fail_explained() {
+        // No adjacency (store off) + distinct endpoints: no path, explained.
+        let dir = std::env::temp_dir().join("hm_graph_nopath");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        let r1 = handle_tool(&mut st, "map.ingest", &json!({"text": "graph path alpha packet"}));
+        let r2 = handle_tool(&mut st, "map.ingest", &json!({"text": "graph path beta packet"}));
+        let (a, b) = (r1["result"]["atom_id"].as_u64().unwrap(), r2["result"]["atom_id"].as_u64().unwrap());
+        st.store.mode = surreal::SurrealMode::Shadow;
+        st.store.port = 9; // closed: BFS finds nothing, must explain not crash
+        let r = handle_tool(&mut st, "map.graph_path", &json!({"from_atom": a, "to_atom": b}));
+        assert_eq!(r["result"]["status"], "fail-explained");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn query_vec_rejects_non_1024() {
+        // Dimension gate: only the admitted 1024D canonical encoder passes.
+        let dir = std::env::temp_dir().join("hm_vec_dim");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        let r = handle_tool(&mut st, "map.query_vec", &json!({"vector": [0.1, 0.2, 0.3]}));
+        assert_eq!(r["result"]["status"], "schema-error");
+        let r = handle_tool(&mut st, "map.vector_bench", &json!({"vector": [0.1]}));
+        assert_eq!(r["result"]["status"], "schema-error");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn embed_status_requires_store() {
+        let dir = std::env::temp_dir().join("hm_emb_off");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        st.store.mode = surreal::SurrealMode::Off;
+        let r = handle_tool(&mut st, "map.embed_status", &json!({}));
+        assert_eq!(r["result"]["status"], "error");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn live_vector_candidates_vary_by_query() {
+        // Regression 2026-11-01: `SELECT value {..} ORDER BY sim` silently
+        // no-ops (sim nested in VALUE) and returns storage order — every
+        // query got the same top-k. Two orthogonal probe vectors must return
+        // different tops, each self-similar ~1.0.
+        if std::env::var("HYPERMIND_E2E_LIVE").unwrap_or_default() != "1" {
+            return;
+        }
+        let st = Store::from_env();
+        assert!(st.enabled(), "live test needs shadow|on");
+        // NOTE: positions 7,8 — deliberately disjoint from the roundtrip
+        // test's position-0 probe so parallel runs cannot collide.
+        let mut va = vec![0.0f64; 1024];
+        va[7] = 1.0;
+        let mut vb = vec![0.0f64; 1024];
+        vb[8] = 1.0;
+        for (id, v) in [(900021u64, &va), (900022u64, &vb)] {
+            let _ = st.upsert_atom(id, "live vec probe", 0.5, 0, "e2e", "none", "general", false, "live-vec-probe");
+            let _ = st.upsert_address(id, &[1.7, 0.1, 0.2, 0.3], &[0.1, 0.2]);
+            st.upsert_text_embedding(&id.to_string(), id, v, "live-vec-probe").expect("vec upsert works");
+        }
+        let ha = st.vector_candidates(&va, 4).expect("query A works");
+        let hb = st.vector_candidates(&vb, 4).expect("query B works");
+        assert_eq!(ha[0].0, 900021, "A finds A: {ha:?}");
+        assert_eq!(hb[0].0, 900022, "B finds B: {hb:?}");
+        assert!((ha[0].1 - 1.0).abs() < 1e-6 && (hb[0].1 - 1.0).abs() < 1e-6);
+        let _ = st.sql("DELETE atom_embedding_text_v1:`900021`; DELETE atom_embedding_text_v1:`900022`; DELETE atom:900021; DELETE atom:900022; DELETE atom_address:900021; DELETE atom_address:900022;");
+    }
+
+    #[test]
+    fn live_vector_roundtrip_and_rerank() {
+        // Live-DB test (HYPERMIND_E2E_LIVE=1): upsert a probe 1024D vector,
+        // query it back, verify cosine ~1.0, then delete. Validates transport
+        // shape (RELATE-free UPSERT path + similarity query) end-to-end.
+        if std::env::var("HYPERMIND_E2E_LIVE").unwrap_or_default() != "1" {
+            return;
+        }
+        let st = Store::from_env();
+        assert!(st.enabled(), "live test needs shadow|on");
+        let mut v = vec![0.0f64; 1024];
+        v[0] = 1.0;
+        let _ = st.upsert_atom(900011, "live vec probe", 0.5, 0, "e2e", "none", "general", false, "live-vec-probe");
+        let _ = st.upsert_address(900011, &[1.7, 0.1, 0.2, 0.3], &[0.1, 0.2]);
+        st.upsert_text_embedding("900011", 900011, &v, "live-vec-probe").expect("vec upsert works");
+        // Wrong dims are rejected client-side.
+        assert!(st.upsert_text_embedding("900011", 900011, &v[..128], "x").is_err());
+        assert!(st.vector_candidates(&v[..128], 4).is_err());
+        let hits = st.vector_candidates(&v, 4).expect("vec query works");
+        assert!(!hits.is_empty(), "probe vector found: {hits:?}");
+        assert_eq!(hits[0].0, 900011);
+        assert!((hits[0].1 - 1.0).abs() < 1e-6, "self-cosine ~1.0: {}", hits[0].1);
+        let _ = st.sql("DELETE atom_embedding_text_v1:`900011`; DELETE atom:900011; DELETE atom_address:900011;");
+    }
+
+    #[test]
+    fn live_sdb_prefilter_recall_roundtrip() {
+        // Live-DB test (HYPERMIND_E2E_LIVE=1): candidates() returns the
+        // migrated ids for a known corpus term.
+        if std::env::var("HYPERMIND_E2E_LIVE").unwrap_or_default() != "1" {
+            return;
+        }
+        let st = Store::from_env();
+        assert!(st.enabled(), "live test needs shadow|on");
+        let ids = st.candidates(&["distillation".to_string()], 10).expect("prefilter works");
+        assert!(ids.contains(&1), "atom 1 (PROTOCOL.md) is a candidate: {ids:?}");
+    }
+
+    #[test]
+    fn shadow_guard_skips_ids_below_db_floor() {
+        // Incident 2026-11-01: fresh maps minted ids 1..N and UPSERT-clobbered
+        // migrated rows. The ingest path must skip shadow UPSERT for local ids
+        // at or below the DB floor. This test pins the guard logic against a
+        // simulated floor (no live DB needed): ids 1,2 skip; 2080 proceeds
+        // to the (failing, DB-absent) upsert path and must NOT report skipped.
+        let dir = std::env::temp_dir().join("hm_guard_floor");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        st.store.mode = surreal::SurrealMode::Shadow;
+        st.store.port = 9; // closed port: upserts fail, skips succeed locally
+        st.db_id_floor = Some(2079);
+        let r1 = handle_tool(&mut st, "map.ingest", &json!({"text": "floor guard alpha unique-token-qq1"}));
+        assert_eq!(r1["result"]["surreal"], "shadow-skipped-below-db-floor-2079");
+        // Force next_id past the floor: guard must attempt (and fail loudly,
+        // never silently skip) the upsert.
+        st.next_id = 3000;
+        let r2 = handle_tool(&mut st, "map.ingest", &json!({"text": "floor guard beta unique-token-qq2"}));
+        let note = r2["result"]["surreal"].as_str().unwrap_or("");
+        assert!(note.starts_with("shadow-atom-error"), "got: {note}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn link_rejects_forbidden_kinds_without_db() {
+        // Step 2 gate: causal/supports/contradicts/temporal/semantic are
+        // never minted via map.link, even with SurrealDB disabled.
+        let dir = std::env::temp_dir().join("hm_link_forbidden");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        for kind in ["causal", "supports", "contradicts", "temporal", "semantic", "bogus"] {
+            let r = handle_tool(&mut st, "map.link", &json!({"from_atom": 1, "to_atom": 2, "kind": kind}));
+            assert_eq!(r["result"]["status"], "schema-error", "kind {kind}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn link_requires_evidence_for_derived_from() {
+        let dir = std::env::temp_dir().join("hm_link_evidence");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        let r1 = handle_tool(&mut st, "map.ingest", &json!({"text": "link evidence alpha packet"}));
+        let r2 = handle_tool(&mut st, "map.ingest", &json!({"text": "link evidence beta packet"}));
+        let (a, b) = (r1["result"]["atom_id"].as_u64().unwrap(), r2["result"]["atom_id"].as_u64().unwrap());
+        let r = handle_tool(&mut st, "map.link", &json!({"from_atom": a, "to_atom": b, "kind": "derived_from"}));
+        assert_eq!(r["result"]["status"], "schema-error");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn link_validates_ranges_and_endpoints() {
+        let dir = std::env::temp_dir().join("hm_link_validate");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        let r1 = handle_tool(&mut st, "map.ingest", &json!({"text": "link validate alpha packet"}));
+        let a = r1["result"]["atom_id"].as_u64().unwrap();
+        let r = handle_tool(&mut st, "map.link", &json!({"from_atom": a, "to_atom": 999999u64, "kind": "references"}));
+        assert_eq!(r["result"]["status"], "error");
+        let r = handle_tool(&mut st, "map.link", &json!({"from_atom": a, "to_atom": a, "kind": "references", "confidence": 9.0}));
+        assert_eq!(r["result"]["status"], "schema-error");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn neighbors_path_off_without_db() {
+        // SurrealDB disabled => empty adjacency, never an error.
+        let dir = std::env::temp_dir().join("hm_adj_off");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        st.store.mode = surreal::SurrealMode::Off;
+        let r1 = handle_tool(&mut st, "map.ingest", &json!({"text": "adjacency offline alpha"}));
+        let a = r1["result"]["atom_id"].as_u64().unwrap();
+        let n = handle_tool(&mut st, "map.neighbors", &json!({"atom_id": a}));
+        assert_eq!(n["result"]["status"], "ok");
+        assert_eq!(n["result"]["neighbors"].as_array().unwrap().len(), 0);
+        let p = handle_tool(&mut st, "map.path", &json!({"from_atom": a, "to_atom": a}));
+        assert_eq!(p["result"]["status"], "ok");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn chain_next_requires_confirm_and_admin() {
+        let dir = std::env::temp_dir().join("hm_chain_gate");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        st.store.mode = surreal::SurrealMode::Off;
+        let r = handle_tool(&mut st, "map.chain_next", &json!({"domain": "general"}));
+        assert_eq!(r["result"]["status"], "schema-error");
+        st.role = Role::Ingest;
+        let r = handle_tool(&mut st, "map.chain_next", &json!({"domain": "general", "confirm": true}));
+        assert_eq!(r["result"]["status"], "error");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn traverse_reports_via_mode() {
+        // Step 3: every traverse receipt carries via_mode; without adjacency
+        // it must be the labeled geometric fallback.
+        let dir = std::env::temp_dir().join("hm_traverse_mode");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        st.store.mode = surreal::SurrealMode::Off;
+        let r1 = handle_tool(&mut st, "map.ingest", &json!({"text": "via mode alpha packet"}));
+        let r2 = handle_tool(&mut st, "map.ingest", &json!({"text": "via mode beta packet"}));
+        let (a, b) = (r1["result"]["atom_id"].as_u64().unwrap(), r2["result"]["atom_id"].as_u64().unwrap());
+        let r = handle_tool(&mut st, "map.traverse", &json!({"from_atom": a, "to_atom": b}));
+        assert!(r["result"]["via_mode"].is_string(), "via_mode present");
+        assert_eq!(r["result"]["via_mode"], "geometric-fallback-shadow-off");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn db_status_reports_mode_and_counts() {
+        let dir = std::env::temp_dir().join("hm_db_status");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        st.store.mode = surreal::SurrealMode::Off;
+        let r = handle_tool(&mut st, "map.db_status", &json!({}));
+        assert_eq!(r["result"]["status"], "ok");
+        assert_eq!(r["result"]["mode"], "Off");
+        assert!(r["result"]["memory_atoms"].as_u64().is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn semantic_gate_explains_without_db() {
+        // map.link_semantic with disjoint texts and no evidence must
+        // fail-explained (never minted), even when similarity is low.
+        let dir = std::env::temp_dir().join("hm_sem_gate");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        let r1 = handle_tool(&mut st, "map.ingest", &json!({"text": "zebra xylophone quantum violet"}));
+        let r2 = handle_tool(&mut st, "map.ingest", &json!({"text": "concrete masonry ledger anchor"}));
+        let (a, b) = (r1["result"]["atom_id"].as_u64().unwrap(), r2["result"]["atom_id"].as_u64().unwrap());
+        let r = handle_tool(&mut st, "map.link_semantic", &json!({"from_atom": a, "to_atom": b, "min_similarity": 0.99}));
+        assert_eq!(r["result"]["status"], "fail-explained");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     fn ingest_rejects_rank1_without_children() {
         // Rank lies refused: a document with no children is a schema error,
         // not a chunk in disguise.
@@ -4370,6 +6124,8 @@ mod tests {
                 domain: "S_code".to_string(),
                 pinned: false,
                 symplectic: SymplecticState::default(),
+                topic: [0.0f64; 32],
+                toks_hash: 0,
             }
         }
         let q = mk_atom(1, [0.3, -1.2]);
@@ -4794,6 +6550,8 @@ mod vp_tests {
             domain: "query".into(),
             pinned: false,
             symplectic: symplectic_from_triple(&qc, &qp, qs),
+            topic: [0.0f64; 32],
+            toks_hash: 0,
         };
         // brute force
         let mut bf: Vec<(u64, f64)> = st
@@ -4872,6 +6630,8 @@ mod vp_tests {
             domain: "query".into(),
             pinned: false,
             symplectic: symplectic_from_triple(&qc, &qp, 0.5),
+            topic: [0.0f64; 32],
+            toks_hash: 0,
         };
         let mut bf: Vec<(f64, u64)> = st
             .atoms

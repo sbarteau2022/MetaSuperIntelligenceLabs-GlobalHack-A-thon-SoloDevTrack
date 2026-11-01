@@ -369,13 +369,10 @@ pub fn random_lorentz_vec(rng: &mut impl rand::Rng, x0_max: f64) -> LorentzVec {
 // (pair_coherence, map_phase_coherence, normalized_power_weights,
 // softmax_weights, fit_map_attention_gain), re-expressed in this crate's
 // Q32.31 i64 + f64 idiom. No vault types used.
-// NOTE (mismatch RESOLVED 2026-11-01): the vault's `normalized_power_weights`
-// (lines 307-328) is the frozen spec -- LOG-domain `w = exp(gain*ln(s))` for
-// s>0, zero weight otherwise -- and that form is `normalized_power_weights`
-// below. The legacy hypermind carve-path spelling `(s+2)^g` lives under the
-// distinct name `shifted_power_weights`. Likewise no `toroidal_coherence` fn
-// exists in-crate; the doc on `map_phase_coherence` describes the raw-sum
-// difference anyway.
+// COMPETITION BOUNDARY (2026-11-01): HyperMind's `(s+2)^g` law is canonical.
+// The unshifted vault formula below is retained only for historical comparison
+// and is inadmissible as competition provenance. `shifted_power_weights` is
+// the Rust-to-Rust mirror of HyperMind's eligible runtime contract.
 
 /// Resultant-vector pair coherence over consecutive 2-D pairs.
 ///
@@ -446,7 +443,11 @@ pub fn normalized_power_weights(scores: &[f64], gain: f64) -> Vec<f64> {
     if scores.is_empty() {
         return Vec::new();
     }
-    if !gain.is_finite() || gain <= 0.0 || gain > 128.0 {
+    if !gain.is_finite()
+        || gain <= 0.0
+        || gain > 128.0
+        || scores.iter().any(|score| !score.is_finite())
+    {
         return vec![1.0 / scores.len() as f64; scores.len()];
     }
     let logs: Vec<f64> = scores
@@ -468,9 +469,9 @@ pub fn normalized_power_weights(scores: &[f64], gain: f64) -> Vec<f64> {
     exp.iter().map(|&x| x / sum).collect()
 }
 
-/// Legacy hypermind carve-path spelling (main.rs carve_swarm_map); NOT the
-/// frozen spec: `w_i = (s_i + 2.0).max(0.001).powf(gain)`, sum-normalized
-/// with the normalizer floored at `1e-9`. Never yields exact zeros.
+/// Competition-canonical HyperMind law: `(s_i + 2)^gain`, evaluated as
+/// peak-subtracted `exp(gain * ln(max(s_i + 2, 0.001)))`. Never overflows and
+/// retains finite non-zero mass at the antipode.
 ///
 /// Same gain guard and empty-input convention as [`normalized_power_weights`].
 #[inline]
@@ -478,15 +479,21 @@ pub fn shifted_power_weights(scores: &[f64], gain: f64) -> Vec<f64> {
     if scores.is_empty() {
         return Vec::new();
     }
-    if !gain.is_finite() || gain <= 0.0 || gain > 128.0 {
+    if !gain.is_finite()
+        || gain <= 0.0
+        || gain > 128.0
+        || scores.iter().any(|score| !score.is_finite())
+    {
         return vec![1.0 / scores.len() as f64; scores.len()];
     }
-    let raw: Vec<f64> = scores
+    let logs: Vec<f64> = scores
         .iter()
-        .map(|&s| (s + 2.0).max(0.001).powf(gain))
+        .map(|&s| gain * (s + 2.0).max(0.001).ln())
         .collect();
-    let sum = raw.iter().sum::<f64>().max(1e-9);
-    raw.iter().map(|&w| w / sum).collect()
+    let peak = logs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let shifted: Vec<f64> = logs.iter().map(|&value| (value - peak).exp()).collect();
+    let sum = shifted.iter().sum::<f64>();
+    shifted.iter().map(|&weight| weight / sum).collect()
 }
 
 /// Standard max-subtracted softmax. Empty input yields an empty vec.

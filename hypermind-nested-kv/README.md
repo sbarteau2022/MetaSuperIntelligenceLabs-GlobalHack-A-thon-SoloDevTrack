@@ -9,6 +9,14 @@ See `PLAIN-LANGUAGE-SPEC.md` for the system in plain words,
 `BASETEN-GRANT-PACK.md` for measured numbers,
 `GPU-ENCODER-CLEARANCE.md` for the GPU encoder drop-in contract (step 2).
 
+## Toroidal gain contract
+
+HyperMind's competition-canonical attention law is `(coherence + 2)^1.5`,
+computed with peak-subtracted log-domain normalization and a `0.001` base
+floor. The gain remains frozen until a separately preregistered fit changes it.
+Implementation provenance is HyperMind Rust-to-Rust; prior Monster, Elle, and
+DNHG sources are excluded from the competition evidence chain.
+
 ## Step log (goal bd01f172 — README updated per step)
 
 ### Step 1 — Salience normalization (DONE 2026-10-28)
