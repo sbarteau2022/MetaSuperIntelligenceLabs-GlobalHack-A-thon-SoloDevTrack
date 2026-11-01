@@ -132,8 +132,13 @@ fn spawn(mcp: &str, root: &str) -> Result<Child, String> {
 }
 
 fn main() -> std::process::ExitCode {
-    let mcp = std::env::var("HYPERMIND_MCP")
-        .unwrap_or_else(|_| "hypermind-nested-kv/target/debug/hypermind-mcp".into());
+    let mcp = match std::env::var("HYPERBOLIC_MAP_PLUGIN_BIN") {
+        Ok(path) => path,
+        Err(_) => {
+            eprintln!("set HYPERBOLIC_MAP_PLUGIN_BIN to the standalone plugin executable");
+            return std::process::ExitCode::FAILURE;
+        }
+    };
     let root = std::env::var("HYPERMIND_ROOT").unwrap_or_else(|_| "/tmp/rgah-n3-wire".into());
     let receipt_path = std::env::var("WIRE_RECEIPT")
         .unwrap_or_else(|_| "research-grade-harness/RG-N3-WIRE-RECEIPT.txt".into());

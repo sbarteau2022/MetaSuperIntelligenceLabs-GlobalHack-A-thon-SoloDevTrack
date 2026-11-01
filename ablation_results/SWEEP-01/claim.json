@@ -1,0 +1,45 @@
+{
+  "claim_id": "C09-DIST-SWEEP-01",
+  "ablation_id": "DIST-SWEEP",
+  "label": "VERIFIED",
+  "statement": "Simulated band allocation L=52 B=64 (Muse-Glimmer): greedy_retained=0.133592 vs stride_retained=0.133592; walks_max=51; verdict PASS",
+  "evidence": {
+    "hardware": "darwin/arm64 CPU-only sim, python 3.15.2, nvcc=False, nvidia-smi=False",
+    "workload": "Zipf s=1.0 N=1000 k=max(1,B//L)=1; bands early/mid/late 0.20/0.50/0.30; sweep script DistillationProtocol/ablation_sweep.py",
+    "model": "Muse-Glimmer",
+    "L": 52,
+    "B": 64,
+    "bands_layers": {
+      "early": 17,
+      "mid": 17,
+      "late": 18
+    },
+    "band_budget": {
+      "early": 13,
+      "mid": 32,
+      "late": 19
+    },
+    "k_per_layer": {
+      "early": 1,
+      "mid": 2,
+      "late": 1
+    },
+    "walks_max": 51,
+    "greedy_retained": 0.13359213049244015,
+    "stride_retained": 0.13359213049244015,
+    "threshold_checks": {
+      "greedy_ge_stride": true,
+      "walks_max_eq_L_minus_1": true
+    },
+    "thresholds": {
+      "PROBE_GREEDY_STRIDE_RATIO_MIN": 3.0,
+      "ROW_GREEDY_GE_STRIDE_REQUIRED": true,
+      "WALKS_MAX_EQ_L_MINUS_1_REQUIRED": true
+    },
+    "verdict": "PASS",
+    "simulation_only": true
+  },
+  "pre_registration_hash": "PreRegistrations/distillation_ablation.md prediction 1 (3x floor); text-filed, no section hash on file",
+  "timestamp": "2026-10-31T00:00:00Z",
+  "corrections": []
+}

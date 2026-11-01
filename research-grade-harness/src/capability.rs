@@ -184,12 +184,10 @@ fn split_objects(text: &str) -> Vec<&str> {
                 }
                 depth += 1;
             }
-            b'}' => {
-                if depth > 0 {
-                    depth -= 1;
-                    if depth == 0 {
-                        objs.push(&text[start..=i]);
-                    }
+            b'}' if depth > 0 => {
+                depth -= 1;
+                if depth == 0 {
+                    objs.push(&text[start..=i]);
                 }
             }
             _ => {}

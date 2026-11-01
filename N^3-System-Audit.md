@@ -1,6 +1,6 @@
 # N³ System — Audit & Component Definitions
 
-**Date.** 2026-10-28. **Auditor.** Zed agent (Stewart). **Scope.** The N³ ("Nested Neural Net") system as described in `MasterN^3DB-RAG - MultiModal.md` and implemented (partially) by `hypermind-nested-kv` (bin `hypermind-mcp`, v0.1.0). **Status.** Audit only; no code changed.
+**Date.** 2026-10-28. **Auditor.** Zed agent (Stewart). **Scope.** The N³ ("Nested Neural Net") system as described in `MasterN3DB-RAG-MultiModal.md` and implemented (partially) by `hypermind-nested-kv` (bin `hypermind-mcp`, v0.1.0). **Status.** Audit only; no code changed.
 
 ## 1. Bottom line (VERIFIED from repo)
 
@@ -78,7 +78,7 @@ flowchart TD
 | Artifact                                                       | Part                                   | Status                            |
 | -------------------------------------------------------------- | -------------------------------------- | --------------------------------- |
 | `hypermind-nested-kv/` (bin `hypermind-mcp`)                   | RAG + Hyperbolic memory                | Built, certified with corrections |
-| `MasterN^3DB-RAG - MultiModal.md`                              | Design of all four parts               | Pre-spec, draft                   |
+| `MasterN3DB-RAG-MultiModal.md`                              | Design of all four parts               | Pre-spec, draft                   |
 | `CapabilityTreeSitter/`                                        | DAG capability vault (on-disk nesting) | Present on disk                   |
 | `MasterDesignDocument/MasterToolingIndex`, `MasterSkillsIndex` | Tool/skill registries                  | Present on disk                   |
 | Telemetry SQLite DB                                            | Observability                          | NOT BUILT (proposed)              |

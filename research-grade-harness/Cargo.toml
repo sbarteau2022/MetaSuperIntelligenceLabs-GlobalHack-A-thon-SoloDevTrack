@@ -6,6 +6,12 @@ description = "Research-grade agentic harness: active inference, free-energy, RS
 license = "Apache-2.0"
 authors = ["MetaSuperIntelligenceLabs"]
 
+[features]
+default = []
+live-n3 = []
+live-map-plugin = []
+synthetic-scaffold = []
+
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"

@@ -99,10 +99,10 @@ impl Cache {
     }
 
     pub fn ref_release(&mut self, key: &str) {
-        if let Some(b) = self.blocks.get_mut(key) {
-            if b.refcount > 0 {
-                b.refcount -= 1;
-            }
+        if let Some(b) = self.blocks.get_mut(key)
+            && b.refcount > 0
+        {
+            b.refcount -= 1;
         }
     }
 
@@ -122,14 +122,14 @@ impl Cache {
     }
 
     pub fn release_anchor(&mut self, key: &str) {
-        if let Some(b) = self.blocks.get_mut(key) {
-            if b.anchored {
-                b.anchored = false;
-                if !b.plan_covered {
-                    b.leak_rate_ppm = 50_000;
-                }
-                self.anchored_count = self.anchored_count.saturating_sub(1);
+        if let Some(b) = self.blocks.get_mut(key)
+            && b.anchored
+        {
+            b.anchored = false;
+            if !b.plan_covered {
+                b.leak_rate_ppm = 50_000;
             }
+            self.anchored_count = self.anchored_count.saturating_sub(1);
         }
     }
 

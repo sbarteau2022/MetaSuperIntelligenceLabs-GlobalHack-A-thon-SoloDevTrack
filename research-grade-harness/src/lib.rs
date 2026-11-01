@@ -17,6 +17,7 @@ pub mod gate;
 pub mod hear;
 pub mod judge;
 pub mod lanes;
+pub mod map_plugin;
 pub mod mcp_client;
 pub mod mission;
 pub mod mode;
@@ -71,6 +72,7 @@ pub use lanes::{
     ContributorLane, ContributorLaneMuse, DualLaneRun, LaneVerdict, NativeLane, TaskPacket,
     TaskReceipt,
 };
+pub use map_plugin::MapPlugin;
 pub use mcp_client::{McpChild, esc, has_receipt_sha256, sfield, unwrap_content};
 pub use mode::{Command, TacticalLevel, allowed_commands, authorize, raise_level};
 pub use plugins::{PluginReceipt, PluginRegistry, PluginSpec};

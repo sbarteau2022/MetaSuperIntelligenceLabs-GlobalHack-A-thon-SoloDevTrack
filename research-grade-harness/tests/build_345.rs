@@ -194,12 +194,12 @@ fn dual_lane_same_contract() {
     let run = DualLaneRun::run(&native, &muse, packets);
     assert_eq!(run.native_receipts.len(), 3);
     assert_eq!(run.contributor_receipts.len(), 3);
-    // Both Done (structural agreement); lane attribution differs.
-    assert!((run.agreement_rate() - 1.0).abs() < 1e-9);
+    // No executor is configured: both lanes must fail closed.
+    assert_eq!(run.agreement_rate(), 0.0);
     assert!(
         run.native_receipts
             .iter()
-            .all(|r| matches!(r.verdict, LaneVerdict::Done { .. }))
+            .all(|r| matches!(r.verdict, LaneVerdict::Escalated { .. }) && r.tokens_spent == 0)
     );
     assert_ne!(
         run.native_receipts[0].lane_id,

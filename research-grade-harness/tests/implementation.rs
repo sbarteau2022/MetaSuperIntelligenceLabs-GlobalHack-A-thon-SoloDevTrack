@@ -14,7 +14,7 @@ use rgah::{
 };
 
 #[test]
-fn engine_sequential_passes() {
+fn engine_sequential_fails_closed_without_executor() {
     let mut plan = Plan {
         id: "p".into(),
         objective: "o".into(),
@@ -49,12 +49,14 @@ fn engine_sequential_passes() {
     let mut receipts = ReceiptLog::default();
     let mut budget = EnergyBudget::new(10.0);
     let report = eng.run_sequential(&mut plan, &mut receipts, &mut budget);
-    assert_eq!(report.passed, vec!["a".to_string()]);
-    assert!(receipts.resume_skips("a"));
+    assert!(report.passed.is_empty());
+    assert_eq!(report.escalated, vec!["a".to_string()]);
+    assert!(!receipts.resume_skips("a"));
+    assert_eq!(receipts.entries[0].outcome, "ESCALATE");
 }
 
 #[test]
-fn engine_parallel_runs() {
+fn engine_parallel_fails_closed_without_executor() {
     let mut plan = Plan {
         id: "p".into(),
         objective: "o".into(),
@@ -111,7 +113,9 @@ fn engine_parallel_runs() {
     let mut receipts = ReceiptLog::default();
     let mut budget = EnergyBudget::new(10.0);
     let report = eng.run_parallel(&mut plan, &mut receipts, &mut budget);
-    assert_eq!(report.passed.len(), 2);
+    assert!(report.passed.is_empty());
+    assert_eq!(report.failed, vec!["a".to_string()]);
+    assert_eq!(receipts.entries[0].outcome, "FAIL");
 }
 
 #[test]

@@ -1,8 +1,14 @@
 # Workspace rule — read first, applies to every agent, every session
 
-CANONICAL WORKSPACE: this folder, and only this folder.
-It is the git repo. If you are not working inside it, you are in the
-wrong place.
+CANONICAL WORKSPACE: `/Users/stewartbarteau/Desktop/GitHub/MetaSuperIntelligenceLabs-GlobalHack-A-thon-SoloDevTrack` (the git repo).
+CORRECTION 2026-10-31: an earlier revision of this file said "this folder only." That claim is WITHDRAWN as
+harmful if this file is read outside the repo — e.g. the Zed workspace root at
+`/Users/stewartbarteau/.Trash/MetaSuperIntelligenceLabs-Global-HackAthon-Design` is a trashed, empty shell, NOT the repo.
+If you are not working inside the canonical repo path above (verified: `git -C <that path> status`), you are in the wrong place.
+Native Zed file tools cannot reach the repo (workspace-scoped); use the terminal tool with absolute paths.
+
+LEGACY NOTE: `master design.md` (52 KB, 2026-10-27) is SUPERSEDED by the C01–C35 split under `MasterDesignDocument/`
+but KEPT ON DISK per ADR-19 (history preserved, do not delete). Canonical design source is the C01–C35 folders.
 
 ONE PLACE TO SUBMIT WORK: this repo folder. Submission means the file
 shows up in `git status` inside this repo. A file anywhere else is

@@ -1,0 +1,19 @@
+{
+  "claim_id": "C09-DIST-SWEEP-PROBE",
+  "ablation_id": "DIST-SWEEP",
+  "label": "VERIFIED",
+  "statement": "Canonical probe (N=1000,k=64,Zipf s=1): greedy=0.633746 stride=0.174780 ratio=3.6260 >= min 3.0 -> PASS",
+  "evidence": {
+    "hardware": "darwin/arm64 CPU-only sim",
+    "workload": "Zipf s=1.0 N=1000 k=64",
+    "greedy": 0.633746492649761,
+    "stride": 0.17478031159422663,
+    "ratio": 3.6259604235119984,
+    "ratio_min": 3.0,
+    "verdict": "PASS",
+    "simulation_only": true
+  },
+  "pre_registration_hash": "PreRegistrations/distillation_ablation.md prediction 1 (filed 3.63x sim)",
+  "timestamp": "2026-10-31T00:00:00Z",
+  "corrections": []
+}

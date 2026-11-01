@@ -244,7 +244,7 @@ fn gate_denial_fails_packet_without_transport() {
 // write-through sink — verify() + len() + replay read-back after the run;
 // (3) multi-packet DAG beyond 2-packet chains — seed → {qa,qb} → join.
 #[test]
-#[ignore]
+#[cfg_attr(not(feature = "live-n3"), ignore = "requires live N3 hardware gate")]
 fn live_daemon_dag_c_run01() {
     let bin = std::env::var("HYPERMIND_MCP_BIN").expect("HYPERMIND_MCP_BIN required");
     let root = std::env::temp_dir().join(format!("rgah-daemon-{}", std::process::id()));
@@ -388,7 +388,7 @@ fn live_daemon_dag_c_run01() {
 // Live round-trip (ignored unless HYPERMIND_MCP_BIN is set): real binary,
 // real map.query judged on returned text, receipt + sink chain verified.
 #[test]
-#[ignore]
+#[cfg_attr(not(feature = "live-n3"), ignore = "requires live N3 hardware gate")]
 fn live_n3_round_trip() {
     let bin = std::env::var("HYPERMIND_MCP_BIN").expect("HYPERMIND_MCP_BIN required");
     let root = std::env::temp_dir().join(format!("rgah-live-{}", std::process::id()));
@@ -463,7 +463,7 @@ fn live_n3_round_trip() {
 // needle). Under joined judging the packet passes: attend runs the gate,
 // query returns the text, judges run once over the aggregate.
 #[test]
-#[ignore]
+#[cfg_attr(not(feature = "live-n3"), ignore = "requires live N3 hardware gate")]
 fn live_joined_judging_merged_join() {
     let bin = std::env::var("HYPERMIND_MCP_BIN").expect("HYPERMIND_MCP_BIN required");
     let root = std::env::temp_dir().join(format!("rgah-joined-{}", std::process::id()));

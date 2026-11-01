@@ -4,6 +4,7 @@
 
 pub mod hyperbolic;
 pub mod picard;
+pub mod rank5;
 pub mod toroidal;
 pub mod vptree;
 pub mod workload;

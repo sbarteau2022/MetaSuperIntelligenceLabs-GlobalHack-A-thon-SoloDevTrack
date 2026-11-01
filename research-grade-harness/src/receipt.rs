@@ -79,7 +79,7 @@ pub fn parse_prior_receipt_text(text: &str, plan_ids: &[String]) -> (ReceiptLog,
             continue;
         }
         let tokens: Vec<&str> = line.split_whitespace().collect();
-        let outcome_pass = tokens.iter().any(|tok| *tok == "outcome=PASS");
+        let outcome_pass = tokens.contains(&"outcome=PASS");
         // Validate supporting fields from the emitted receipt, not just the
         // packet id + outcome token. An unauthenticated prior file can still
         // carry a well-formed PASS marker; require the full emitted shape.

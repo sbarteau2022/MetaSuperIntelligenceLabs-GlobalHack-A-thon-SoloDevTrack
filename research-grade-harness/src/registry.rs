@@ -50,44 +50,230 @@ pub fn registry() -> Vec<RegistryEntry> {
         });
     };
     // MCP servers, native by function served.
-    add("route", "atoma-tool-router", RegistryKind::McpServer, "route, search catalog, execute, lane.mint", true);
-    add("check", "ts-to-rust", RegistryKind::McpServer, "TypeScript strict check first, transpile stated subset only", true);
-    add("lazy", "mcp-lazy", RegistryKind::McpServer, "find and execute pinned tools only, adds no servers", true);
-    add("runbook", "qwen36-autonomous-runbook", RegistryKind::McpServer, "autonomous runbook entry point and verified patch tools", true);
-    add("toolchain", "zed-engineering-toolchain", RegistryKind::McpServer, "detect toolchains, plan and run language checks", true);
-    add("design", "open-design", RegistryKind::McpServer, "design system server, only where a run names it", true);
+    add(
+        "route",
+        "atoma-tool-router",
+        RegistryKind::McpServer,
+        "route, search catalog, execute, lane.mint",
+        true,
+    );
+    add(
+        "check",
+        "ts-to-rust",
+        RegistryKind::McpServer,
+        "TypeScript strict check first, transpile stated subset only",
+        true,
+    );
+    add(
+        "lazy",
+        "mcp-lazy",
+        RegistryKind::McpServer,
+        "find and execute pinned tools only, adds no servers",
+        true,
+    );
+    add(
+        "runbook",
+        "qwen36-autonomous-runbook",
+        RegistryKind::McpServer,
+        "autonomous runbook entry point and verified patch tools",
+        true,
+    );
+    add(
+        "toolchain",
+        "zed-engineering-toolchain",
+        RegistryKind::McpServer,
+        "detect toolchains, plan and run language checks",
+        true,
+    );
+    add(
+        "design",
+        "open-design",
+        RegistryKind::McpServer,
+        "design system server, only where a run names it",
+        true,
+    );
     // Tools.
-    add("judge", "deterministic-judge", RegistryKind::Tool, "judge of record for code tasks", true);
-    add("telemetry", "tool-telemetry", RegistryKind::Tool, "tool call records, metadata and hashes only", true);
-    add("tap", "taps", RegistryKind::Tool, "per-category tap gates, dropped count", true);
+    add(
+        "judge",
+        "deterministic-judge",
+        RegistryKind::Tool,
+        "judge of record for code tasks",
+        true,
+    );
+    add(
+        "telemetry",
+        "tool-telemetry",
+        RegistryKind::Tool,
+        "tool call records, metadata and hashes only",
+        true,
+    );
+    add(
+        "tap",
+        "taps",
+        RegistryKind::Tool,
+        "per-category tap gates, dropped count",
+        true,
+    );
     // Skills, native by role. The 7 MasterSkills are a group until the
     // rename map gives each one a native name; no name is invented here.
-    add("carve-swarm", "carving-the-swarm", RegistryKind::Skill, "carve weights into the swarm, claims traced to live code", true);
-    add("task-decomp", "task-decomp", RegistryKind::Skill, "decompose a task into judged packets", true);
-    add("tactical", "tactical-orchestration", RegistryKind::Skill, "tactical orchestration of lanes and packets", true);
-    add("allocate-weights", "allocating-weights", RegistryKind::Skill, "allocate weights across lanes and packets", true);
-    add("master-skill", "MasterSkills", RegistryKind::Skill, "7 necessary skills, group entry, native names pending rename map", false);
+    add(
+        "carve-swarm",
+        "carving-the-swarm",
+        RegistryKind::Skill,
+        "carve weights into the swarm, claims traced to live code",
+        true,
+    );
+    add(
+        "task-decomp",
+        "task-decomp",
+        RegistryKind::Skill,
+        "decompose a task into judged packets",
+        true,
+    );
+    add(
+        "tactical",
+        "tactical-orchestration",
+        RegistryKind::Skill,
+        "tactical orchestration of lanes and packets",
+        true,
+    );
+    add(
+        "allocate-weights",
+        "allocating-weights",
+        RegistryKind::Skill,
+        "allocate weights across lanes and packets",
+        true,
+    );
+    add(
+        "master-skill",
+        "MasterSkills",
+        RegistryKind::Skill,
+        "7 necessary skills, group entry, native names pending rename map",
+        false,
+    );
     // Hooks, N3 order: TreeSitter, Top MCP, Plugins, Skills, Hooks, before completion.
-    add("tree-sitter", "Capability Tree Sitter", RegistryKind::Hook, "capability tree, first in the hook order", false);
-    add("top-mcp", "Top MCP", RegistryKind::Hook, "top MCP layer in the hook order", false);
-    add("plugin", "Plugins", RegistryKind::Hook, "plugin layer in the hook order", false);
-    add("skill", "Skills.md", RegistryKind::Hook, "skill layer in the hook order", false);
-    add("hook", "Hooks", RegistryKind::Hook, "hook layer, before completion", false);
-    add("tail", "Tails", RegistryKind::Hook, "tail layer, after completion", false);
+    add(
+        "tree-sitter",
+        "Capability Tree Sitter",
+        RegistryKind::Hook,
+        "capability tree, first in the hook order",
+        false,
+    );
+    add(
+        "top-mcp",
+        "Top MCP",
+        RegistryKind::Hook,
+        "top MCP layer in the hook order",
+        false,
+    );
+    add(
+        "plugin",
+        "Plugins",
+        RegistryKind::Hook,
+        "plugin layer in the hook order",
+        false,
+    );
+    add(
+        "skill",
+        "Skills.md",
+        RegistryKind::Hook,
+        "skill layer in the hook order",
+        false,
+    );
+    add(
+        "hook",
+        "Hooks",
+        RegistryKind::Hook,
+        "hook layer, before completion",
+        false,
+    );
+    add(
+        "tail",
+        "Tails",
+        RegistryKind::Hook,
+        "tail layer, after completion",
+        false,
+    );
     // Runbooks, pinned docs with gates intact.
-    add("frontend-refinement", "frontend-refinement-runbook", RegistryKind::Runbook, "Beam loops a real frontend until a deterministic gate passes", true);
-    add("master-todo", "master-todo-2026-10-28", RegistryKind::Runbook, "Delta-H lock, extraction, representation check, in order", true);
-    add("overnight-audit", "overnight-audit-certify-loop", RegistryKind::Runbook, "audit, certify, morning report, no auto-post or submit", true);
-    add("delta-h-ablation", "delta-h-spec-ablation-protocol", RegistryKind::Runbook, "Delta-H spec and ablation protocol, proposed until locked", false);
+    add(
+        "frontend-refinement",
+        "frontend-refinement-runbook",
+        RegistryKind::Runbook,
+        "Beam loops a real frontend until a deterministic gate passes",
+        true,
+    );
+    add(
+        "master-todo",
+        "master-todo-2026-10-28",
+        RegistryKind::Runbook,
+        "Delta-H lock, extraction, representation check, in order",
+        true,
+    );
+    add(
+        "overnight-audit",
+        "overnight-audit-certify-loop",
+        RegistryKind::Runbook,
+        "audit, certify, morning report, no auto-post or submit",
+        true,
+    );
+    add(
+        "delta-h-ablation",
+        "delta-h-spec-ablation-protocol",
+        RegistryKind::Runbook,
+        "Delta-H spec and ablation protocol, proposed until locked",
+        false,
+    );
     // Workflows.
-    add("autorunner", "MadMind autorunner", RegistryKind::Workflow, "poll ready packets, judge-gated, escalation, resume", true);
-    add("mission", "rgah mission", RegistryKind::Workflow, "run, dry-run, resume, from a brief and a plan", true);
+    add(
+        "autorunner",
+        "MadMind autorunner",
+        RegistryKind::Workflow,
+        "poll ready packets, judge-gated, escalation, resume",
+        true,
+    );
+    add(
+        "mission",
+        "rgah mission",
+        RegistryKind::Workflow,
+        "run, dry-run, resume, from a brief and a plan",
+        true,
+    );
     // Policy, already in the crate plus the mission rules.
-    add("frozen-kernel", "FrozenPolicyKernel", RegistryKind::Policy, "kernel mutation refusals, checked before every run", true);
-    add("go-no-go", "go-no-go", RegistryKind::Policy, "brief, judges, tools, budgets, kernel, all present or no-go", true);
-    add("two-strike", "two-strike", RegistryKind::Policy, "first identical fail retries once, second escalates", true);
-    add("abort", "abort", RegistryKind::Policy, "abort on judge failure, kernel violation, budget breach, or operator command", true);
-    add("budget", "energy-budget", RegistryKind::Policy, "per-packet and per-mission token and energy budgets", true);
+    add(
+        "frozen-kernel",
+        "FrozenPolicyKernel",
+        RegistryKind::Policy,
+        "kernel mutation refusals, checked before every run",
+        true,
+    );
+    add(
+        "go-no-go",
+        "go-no-go",
+        RegistryKind::Policy,
+        "brief, judges, tools, budgets, kernel, all present or no-go",
+        true,
+    );
+    add(
+        "two-strike",
+        "two-strike",
+        RegistryKind::Policy,
+        "first identical fail retries once, second escalates",
+        true,
+    );
+    add(
+        "abort",
+        "abort",
+        RegistryKind::Policy,
+        "abort on judge failure, kernel violation, budget breach, or operator command",
+        true,
+    );
+    add(
+        "budget",
+        "energy-budget",
+        RegistryKind::Policy,
+        "per-packet and per-mission token and energy budgets",
+        true,
+    );
     entries
 }
 
@@ -113,16 +299,35 @@ mod tests {
             RegistryKind::Workflow,
             RegistryKind::Policy,
         ] {
-            assert!(entries.iter().any(|e| e.kind == kind), "missing kind: {:?}", kind);
+            assert!(
+                entries.iter().any(|e| e.kind == kind),
+                "missing kind: {:?}",
+                kind
+            );
         }
     }
 
     #[test]
     fn native_names_carry_no_vendor_or_path() {
-        let banned = ["claude", "codex", "antigravity", "grok", "zed", "open-design", "/", ":", "Desktop"];
+        let banned = [
+            "claude",
+            "codex",
+            "antigravity",
+            "grok",
+            "zed",
+            "open-design",
+            "/",
+            ":",
+            "Desktop",
+        ];
         for name in native_names() {
             for bad in banned {
-                assert!(!name.to_lowercase().contains(&bad.to_lowercase()), "native name {} carries {}", name, bad);
+                assert!(
+                    !name.to_lowercase().contains(&bad.to_lowercase()),
+                    "native name {} carries {}",
+                    name,
+                    bad
+                );
             }
         }
     }
@@ -133,6 +338,10 @@ mod tests {
         // The registry must say so, not pretend otherwise.
         let entries = registry();
         assert!(entries.iter().any(|e| e.native == "hook" && !e.live));
-        assert!(entries.iter().any(|e| e.native == "delta-h-ablation" && !e.live));
+        assert!(
+            entries
+                .iter()
+                .any(|e| e.native == "delta-h-ablation" && !e.live)
+        );
     }
 }

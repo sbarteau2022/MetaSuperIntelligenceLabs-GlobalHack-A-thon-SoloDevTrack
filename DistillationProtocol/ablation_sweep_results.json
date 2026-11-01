@@ -1,11 +1,36 @@
 {
+  "date": "2026-10-31",
+  "scope": "SIMULATION ONLY (pure Python Zipf sim). NOT a teacher-checkpoint measurement; no GPU used or needed.",
+  "hardware": {
+    "platform": "darwin",
+    "machine": "arm64",
+    "python": "3.15.2",
+    "nvcc_present": false,
+    "nvidia_smi_present": false
+  },
+  "thresholds": {
+    "PROBE_GREEDY_STRIDE_RATIO_MIN": {
+      "value": 3.0,
+      "rationale": "Pre-reg prediction 1 floor (3x) for (N=1000,k=64,Zipf s=1) vs filed 3.63x sim."
+    },
+    "ROW_GREEDY_GE_STRIDE_REQUIRED": {
+      "value": true,
+      "rationale": "Greedy top-k dominates uniform stride on a sorted spectrum by construction; inversion signals a code bug."
+    },
+    "WALKS_MAX_EQ_L_MINUS_1_REQUIRED": {
+      "value": true,
+      "rationale": "walks_max must equal L-1 (walk spans all teacher layers); mismatch signals a band-partition bug."
+    }
+  },
   "probe": {
     "N": 1000,
     "k": 64,
     "s": 1.0,
     "greedy": 0.633746492649761,
     "stride": 0.17478031159422663,
-    "ratio": 3.6259604235119984
+    "ratio": 3.6259604235119984,
+    "ratio_min": 3.0,
+    "verdict": "PASS"
   },
   "rows": [
     {
@@ -29,7 +54,12 @@
       },
       "walks_max": 51,
       "greedy_retained": 0.13359213049244015,
-      "stride_retained": 0.13359213049244015
+      "stride_retained": 0.13359213049244015,
+      "threshold_checks": {
+        "greedy_ge_stride": true,
+        "walks_max_eq_L_minus_1": true
+      },
+      "verdict": "PASS"
     },
     {
       "model": "Muse-Glimmer",
@@ -52,7 +82,12 @@
       },
       "walks_max": 51,
       "greedy_retained": 0.13359213049244015,
-      "stride_retained": 0.13359213049244015
+      "stride_retained": 0.13359213049244015,
+      "threshold_checks": {
+        "greedy_ge_stride": true,
+        "walks_max_eq_L_minus_1": true
+      },
+      "verdict": "PASS"
     },
     {
       "model": "Muse-Glimmer",
@@ -75,7 +110,12 @@
       },
       "walks_max": 51,
       "greedy_retained": 0.20038819573866024,
-      "stride_retained": 0.1338587814515069
+      "stride_retained": 0.1338587814515069,
+      "threshold_checks": {
+        "greedy_ge_stride": true,
+        "walks_max_eq_L_minus_1": true
+      },
+      "verdict": "PASS"
     },
     {
       "model": "Nemotron-30B",
@@ -98,7 +138,12 @@
       },
       "walks_max": 51,
       "greedy_retained": 0.13359213049244015,
-      "stride_retained": 0.13359213049244015
+      "stride_retained": 0.13359213049244015,
+      "threshold_checks": {
+        "greedy_ge_stride": true,
+        "walks_max_eq_L_minus_1": true
+      },
+      "verdict": "PASS"
     },
     {
       "model": "Nemotron-30B",
@@ -121,7 +166,12 @@
       },
       "walks_max": 51,
       "greedy_retained": 0.13359213049244015,
-      "stride_retained": 0.13359213049244015
+      "stride_retained": 0.13359213049244015,
+      "threshold_checks": {
+        "greedy_ge_stride": true,
+        "walks_max_eq_L_minus_1": true
+      },
+      "verdict": "PASS"
     },
     {
       "model": "Nemotron-30B",
@@ -144,7 +194,12 @@
       },
       "walks_max": 51,
       "greedy_retained": 0.20038819573866024,
-      "stride_retained": 0.1338587814515069
+      "stride_retained": 0.1338587814515069,
+      "threshold_checks": {
+        "greedy_ge_stride": true,
+        "walks_max_eq_L_minus_1": true
+      },
+      "verdict": "PASS"
     },
     {
       "model": "Qwen3.6-MoE",
@@ -167,7 +222,12 @@
       },
       "walks_max": 39,
       "greedy_retained": 0.13359213049244015,
-      "stride_retained": 0.13359213049244015
+      "stride_retained": 0.13359213049244015,
+      "threshold_checks": {
+        "greedy_ge_stride": true,
+        "walks_max_eq_L_minus_1": true
+      },
+      "verdict": "PASS"
     },
     {
       "model": "Qwen3.6-MoE",
@@ -190,7 +250,12 @@
       },
       "walks_max": 39,
       "greedy_retained": 0.13359213049244015,
-      "stride_retained": 0.13359213049244015
+      "stride_retained": 0.13359213049244015,
+      "threshold_checks": {
+        "greedy_ge_stride": true,
+        "walks_max_eq_L_minus_1": true
+      },
+      "verdict": "PASS"
     },
     {
       "model": "Qwen3.6-MoE",
@@ -213,7 +278,18 @@
       },
       "walks_max": 39,
       "greedy_retained": 0.20038819573866024,
-      "stride_retained": 0.1338587814515069
+      "stride_retained": 0.1338587814515069,
+      "threshold_checks": {
+        "greedy_ge_stride": true,
+        "walks_max_eq_L_minus_1": true
+      },
+      "verdict": "PASS"
     }
-  ]
+  ],
+  "summary": {
+    "rows_total": 9,
+    "rows_pass": 9,
+    "rows_fail": 0,
+    "probe_verdict": "PASS"
+  }
 }

@@ -43,8 +43,7 @@ pub trait ContributorLane {
     fn run(&self, packet: &TaskPacket) -> TaskReceipt;
 }
 
-/// Native lane: deterministic execution against the runbook engine.
-/// (Wraps the existing Engine path; headless by construction.)
+/// Native lane placeholder. It cannot claim execution without an executor.
 pub struct NativeLane;
 
 impl ContributorLane for NativeLane {
@@ -52,29 +51,19 @@ impl ContributorLane for NativeLane {
         "native"
     }
     fn run(&self, packet: &TaskPacket) -> TaskReceipt {
-        // Deterministic: hash the task+context as the output (placeholder
-        // for engine execution; the CONTRACT under test is packet->receipt
-        // shape + lane_id attribution, not execution depth).
-        use sha2::{Digest, Sha256};
-        let mut h = Sha256::new();
-        h.update(packet.task.as_bytes());
-        h.update(packet.context_json.as_bytes());
         TaskReceipt {
             packet_id: packet.packet_id.clone(),
             lane_id: self.lane_id().into(),
-            verdict: LaneVerdict::Done {
-                output_hash: hex::encode(h.finalize()),
+            verdict: LaneVerdict::Escalated {
+                reason: "native model executor is not configured".into(),
             },
-            tokens_spent: packet.task.len() + packet.context_json.len(),
-            energy_joules: (packet.task.len() + packet.context_json.len()) as f64 * 0.0005,
+            tokens_spent: 0,
+            energy_joules: 0.0,
         }
     }
 }
 
-/// Contributor lane (Muse): same contract, independent implementation path.
-/// Previously 501-by-design; now live behind the same trait. The harness
-/// side-by-side compares NativeLane vs ContributorLane receipts on the
-/// same packets — model vs model, identical interface.
+/// Muse lane placeholder. It cannot claim execution without a model call.
 pub struct ContributorLaneMuse;
 
 impl ContributorLane for ContributorLaneMuse {
@@ -82,21 +71,14 @@ impl ContributorLane for ContributorLaneMuse {
         "contributor-muse"
     }
     fn run(&self, packet: &TaskPacket) -> TaskReceipt {
-        // Independent path: different hashing domain separator so
-        // lane attribution is verifiable even on identical inputs.
-        use sha2::{Digest, Sha256};
-        let mut h = Sha256::new();
-        h.update(b"muse-lane-v1:");
-        h.update(packet.task.as_bytes());
-        h.update(packet.context_json.as_bytes());
         TaskReceipt {
             packet_id: packet.packet_id.clone(),
             lane_id: self.lane_id().into(),
-            verdict: LaneVerdict::Done {
-                output_hash: hex::encode(h.finalize()),
+            verdict: LaneVerdict::Escalated {
+                reason: "Muse model executor is not configured".into(),
             },
-            tokens_spent: packet.task.len() + packet.context_json.len(),
-            energy_joules: (packet.task.len() + packet.context_json.len()) as f64 * 0.0005,
+            tokens_spent: 0,
+            energy_joules: 0.0,
         }
     }
 }

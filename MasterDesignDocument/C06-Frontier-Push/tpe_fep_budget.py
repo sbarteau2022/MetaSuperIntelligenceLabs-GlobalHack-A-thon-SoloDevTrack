@@ -14,7 +14,6 @@ Run: python3 tpe_fep_budget.py [--demo]
 """
 
 import math
-from tkinter.constants import YES
 
 OMEGA_STALL = 0.82  # AttnEcon spec §1 stall threshold (REPORTED)
 B_MAX = 4096  # budget ceiling, task-window units (preregistered const)
@@ -131,4 +130,3 @@ if __name__ == "__main__":
         demo()
     else:
         test_p6()
-YES

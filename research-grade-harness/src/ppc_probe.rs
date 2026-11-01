@@ -179,10 +179,10 @@ pub fn extract_str(body: &str, key: &str) -> Option<String> {
                     b'/' => out.push('/'),
                     b'u' if i + 5 < bytes.len() => {
                         let hex = &body[i + 2..i + 6];
-                        if let Ok(cp) = u32::from_str_radix(hex, 16) {
-                            if let Some(c) = char::from_u32(cp) {
-                                out.push(c);
-                            }
+                        if let Ok(cp) = u32::from_str_radix(hex, 16)
+                            && let Some(c) = char::from_u32(cp)
+                        {
+                            out.push(c);
                         }
                         i += 4;
                     }

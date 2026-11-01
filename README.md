@@ -68,6 +68,16 @@ updated alongside it.
 
 _Last updated: 2026-10-26 (finalizing pass)._
 
+## External HyperbolicMap/KV plugin (2026-10-31)
+
+The active harness plugin source is now in the sibling folder
+`../hyperbolic-map-nested-kv-plugin`. `research-grade-harness::MapPlugin`
+loads its external MCP executable only after checking map/KV tools and health.
+The N3 `hypermind-nested-kv` tree remains as a legacy development snapshot and
+observability home while its other consumers are migrated. The external plugin
+smoke and harness test suite pass; model reasoning and transformer attention KV
+replacement are not established by those tests.
+
 ## N³ traceability and observability base (2026-10-29)
 
 The [SQLite foundation](hypermind-nested-kv/observability/README.md) covers the

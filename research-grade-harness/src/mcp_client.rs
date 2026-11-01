@@ -81,14 +81,53 @@ impl McpChild {
             return Err("eof: child closed stdout".to_string());
         }
         let inner = unwrap_content(&line);
+        let status =
+            sfield(&inner, "status").ok_or_else(|| format!("{}: missing tool status", tool))?;
+        if matches!(
+            status.as_str(),
+            "error" | "denied" | "fail-explained" | "refused"
+        ) {
+            return Err(format!("{}: tool returned status={}", tool, status));
+        }
         let has_receipt = has_receipt_sha256(&inner);
+        if !has_receipt {
+            return Err(format!("{}: missing valid receipt", tool));
+        }
         Ok((inner, has_receipt, dt_ns))
+    }
+
+    /// Query the server's advertised tool names before loading it as a plugin.
+    pub fn list_tools(&mut self) -> Result<String, String> {
+        let id = self.next_id;
+        self.next_id = self.next_id.saturating_add(1);
+        let req = format!(
+            "{{\"jsonrpc\":\"2.0\",\"id\":{},\"method\":\"tools/list\",\"params\":{{}}}}\n",
+            id
+        );
+        self.writer
+            .write_all(req.as_bytes())
+            .map_err(|e| format!("write: {}", e))?;
+        self.writer.flush().map_err(|e| format!("flush: {}", e))?;
+        let mut line = String::new();
+        self.reader
+            .read_line(&mut line)
+            .map_err(|e| format!("read: {}", e))?;
+        if line.is_empty() || !line.contains("\"tools\"") || line.contains("\"error\"") {
+            return Err("tools/list failed".into());
+        }
+        Ok(line)
     }
 
     /// Shut the child down. Best-effort kill + reap; never fails.
     pub fn close(&mut self) {
         self.child.kill().ok();
         let _ = self.child.wait();
+    }
+}
+
+impl Drop for McpChild {
+    fn drop(&mut self) {
+        self.close();
     }
 }
 
@@ -132,9 +171,11 @@ pub fn unwrap_content(body: &str) -> String {
     out
 }
 
-/// Receipt presence check: plain substring scan, no JSON parsing.
+/// Require a full SHA-256 hex digest, not a marker in an error string.
 pub fn has_receipt_sha256(inner: &str) -> bool {
-    inner.contains("receipt_sha256")
+    sfield(inner, "receipt_sha256")
+        .map(|v| v.len() == 64 && v.bytes().all(|b| b.is_ascii_hexdigit()))
+        .unwrap_or(false)
 }
 
 /// Extract a top-level string field `"key":"value"` (first occurrence).
@@ -193,7 +234,7 @@ mod tests {
     // Canned tools/call response line copied from the real envelope shape
     // documented in rg_n3_wire.rs (`result.content[0].text` = inner JSON
     // `{result, receipt}`), plus a tools/list-style body with no envelope.
-    const INGEST_LINE: &str = "{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"status\\\":\\\"ok\\\",\\\"receipt_sha256\\\":\\\"abc123\\\",\\\"swarm_run_id\\\":\\\"rgah-wire-20261029\\\"}\"}]}}";
+    const INGEST_LINE: &str = "{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"status\\\":\\\"ok\\\",\\\"receipt_sha256\\\":\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\",\\\"swarm_run_id\\\":\\\"rgah-wire-20261029\\\"}\"}]}}";
     const LIST_BODY: &str =
         "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":[{\"name\":\"map.ingest\"}]}}";
 

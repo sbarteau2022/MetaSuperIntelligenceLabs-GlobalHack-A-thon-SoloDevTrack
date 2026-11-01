@@ -91,7 +91,7 @@ pub fn default_schema_version() -> u32 {
 }
 
 // ---------------------------------------------------------------- text utils
-pub fn tokenize(text: &str) -> Vec<String> {
+fn split_terms(text: &str) -> Vec<String> {
     text.to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
         .filter(|s| !s.is_empty())
@@ -113,7 +113,7 @@ pub fn fnv1a(s: &str) -> u64 {
 /// it is used. Real lanes bring their own vectors via ingest-vec.
 pub fn tf_embed(text: &str, dim: usize) -> Vec<f32> {
     let mut v = vec![0f32; dim];
-    for tok in tokenize(text) {
+    for tok in split_terms(text) {
         let h = fnv1a(&tok);
         v[(h % dim as u64) as usize] += 1.0;
         v[((h >> 16) % dim as u64) as usize] += 0.5;
@@ -157,7 +157,7 @@ impl Bm25 {
         let mut doc_len = Vec::new();
         let mut total = 0usize;
         for c in chunks {
-            let toks = tokenize(&c.text);
+            let toks = split_terms(&c.text);
             total += toks.len();
             doc_len.push(toks.len());
             let mut m: HashMap<String, u32> = HashMap::new();
@@ -181,7 +181,7 @@ impl Bm25 {
     pub fn scores(&self, query: &str) -> Vec<f32> {
         let (k1, b) = (1.5f32, 0.75f32);
         let mut out = vec![0f32; self.tf.len()];
-        for term in tokenize(query) {
+        for term in split_terms(query) {
             let dft = match self.df.get(&term) {
                 Some(d) => *d as f32,
                 None => continue,
@@ -330,7 +330,7 @@ impl Db {
         // Doc 02 sec 4.5: per-segment top terms to enable targeted (silo) lookup.
         let mut tf: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         for c in &chunks {
-            for t in tokenize(&c.text) {
+            for t in split_terms(&c.text) {
                 *tf.entry(t).or_default() += 1;
             }
         }
@@ -642,7 +642,7 @@ pub fn candidate_segments(manifest: &Manifest, qtext: &str) -> Option<Vec<String
     .iter()
     .copied()
     .collect();
-    let qterms: std::collections::HashSet<String> = tokenize(qtext)
+    let qterms: std::collections::HashSet<String> = split_terms(qtext)
         .into_iter()
         .filter(|t| !stopwords.contains(t.as_str()))
         .collect();
@@ -1495,7 +1495,7 @@ pub fn run() -> Res<()> {
                 let mut tf: std::collections::HashMap<String, usize> =
                     std::collections::HashMap::new();
                 for r in &recs {
-                    for t in tokenize(&r.text) {
+                    for t in split_terms(&r.text) {
                         *tf.entry(t).or_default() += 1;
                     }
                 }

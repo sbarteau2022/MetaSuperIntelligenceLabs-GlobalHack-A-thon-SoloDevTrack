@@ -1,0 +1,23 @@
+{
+  "claim_id": "C09-DIST-TWIN-01",
+  "ablation_id": "DIST-TWIN",
+  "label": "VERIFIED",
+  "statement": "Twin-fingerprint reference smoke: 8 steps, cosine_distance=0.0, 8 distinct coords -> 8 atoms salience [2]; assertions 1/2/3 PASS/PASS/PASS, grep PASS -> PASS",
+  "evidence": {
+    "hardware": "darwin/arm64 CPU-only, python 3.15.2, nvcc=False, nvidia-smi=False",
+    "workload": "8-step fixed content tape, pure-Python reference projector (no learned weights); in-repo identity grep over DistillationProtocol/scripts + research-grade-harness/src",
+    "verdicts": {
+      "assertion_1_byte_identical_coords": "PASS",
+      "assertion_2_single_atom_coalescence": "PASS",
+      "assertion_3_identical_ranking": "PASS",
+      "identity_grep_audit_fields_only": "PASS"
+    },
+    "identity_grep_hits": [],
+    "result_file": "DistillationProtocol/scripts/twin_fingerprint_result.json",
+    "reference_smoke_only": true
+  },
+  "pre_registration_hash": "TWIN_FINGERPRINT_TEST_SPEC.md (SPEC, prescribed 2026-10-28; no hash filed)",
+  "timestamp": "2026-10-31T00:00:00Z",
+  "corrections": [],
+  "exclusion": "Vault-engine twin run (distill_reasoning_chain under fp_A/fp_B) NOT RUN: engine source lives outside this repo (monster-hybrid-server absent); this receipt covers the reference smoke + in-repo grep only."
+}

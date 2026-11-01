@@ -1,14 +1,18 @@
 #![forbid(unsafe_code)]
 mod coherence_gate;
 mod structured_egress;
-use atomadb::{Db, Role};
+mod text;
+mod ledger;
+mod mapmath;
+mod role;
+use role::Role;
 
-// ---- Goal 57f1db48 items 1+2: judge gate + atomadb embedder ----
+// ---- Goal 57f1db48 items 1+2: judge gate + hashed-TF embedder ----
 // Judge: every ingest carries a pass/fail BEFORE mint. No pass, no atom.
 // The judge is deterministic and content-local (no model call): structural
 // gates (length, token diversity, entropy floor) + optional caller-supplied
 // `judge: {pass: bool, reason: str}` which, when present, is binding.
-// Embedder: atomadb::tf_embed(256) replaces hash_unit_vec3 sums. The
+// Embedder: hashed-TF vector (256) replaces hash_unit_vec3 sums. The
 // coordinate derivation (direction * salience radius) is unchanged in shape,
 // but direction now comes from a normalized hashed-TF vector (content
 // statistics) instead of summed random projections (lexical overlap proxy).
@@ -287,7 +291,7 @@ fn tap_hunger(
 }
 
 fn terms_hash_of(text: &str) -> String {
-    let mut toks = atomadb::tokenize(text);
+    let mut toks = text::tokenize(text);
     toks.sort();
     hash_bytes(toks.join(" ").as_bytes())
 }
@@ -374,7 +378,6 @@ struct FiberView {
 
 struct State {
     root: PathBuf,
-    db: Db,
     role: Role,
     /// F2 (NN-G-v2): fail-closed posture for PRESENT-but-unparseable
     /// HYPERMIND_ROLE. Distinct from a legitimate low role: every
@@ -451,7 +454,7 @@ fn embed_direction_idf(
     idf: Option<&std::collections::HashMap<String, f64>>,
     rank: u8,
 ) -> [f64; 3] {
-    let toks = atomadb::tokenize(text);
+    let toks = text::tokenize(text);
     // Weighted hashed-TF: tf * idf per token, hashed into 256 dims.
     let mut v = vec![0f64; 256];
     for tok in &toks {
@@ -459,15 +462,15 @@ fn embed_direction_idf(
             Some(table) => table.get(tok).copied().unwrap_or(1.0),
             None => 1.0,
         };
-        let h = atomadb::fnv1a(tok);
+        let h = mapmath::fnv1a(tok);
         v[(h % 256) as usize] += w;
         v[((h >> 16) % 256) as usize] += 0.5 * w;
     }
-    // PAMI phase rotation (atomadb::rotate_rank): rank 0 = identity (chunk),
+    // PAMI phase rotation (mapmath::rotate_rank): rank 0 = identity (chunk),
     // rank 1 = document-level phase (partition-and-aggregate parent).
     // Fold AFTER rotation so the 3d direction carries the rank phase.
     let vv: Vec<f32> = v.iter().map(|x| *x as f32).collect();
-    let rotated = atomadb::rotate_rank(&vv, rank as f32);
+    let rotated = mapmath::rotate_rank(&vv, rank as f32);
     let v: Vec<f64> = rotated.into_iter().map(|x| x as f64).collect();
     let n = v.iter().map(|x| x * x).sum::<f64>().sqrt().max(1e-9);
     // Fold 256 -> 24 (8 per axis) with positional salting so collisions
@@ -495,7 +498,7 @@ fn calibrate_idf(texts: &[String]) -> std::collections::HashMap<String, f64> {
     let mut df: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for t in texts {
         let mut seen = std::collections::HashSet::new();
-        for tok in atomadb::tokenize(t) {
+        for tok in text::tokenize(t) {
             if seen.insert(tok.clone()) {
                 *df.entry(tok).or_default() += 1;
             }
@@ -519,7 +522,7 @@ fn judge_text(text: &str, caller_judge: Option<&Value>) -> (bool, String) {
             return (false, format!("caller-judge: {}", r));
         }
     }
-    let toks = atomadb::tokenize(text);
+    let toks = text::tokenize(text);
     if toks.is_empty() {
         return (false, "empty after tokenize".into());
     }
@@ -557,7 +560,7 @@ fn judge_text(text: &str, caller_judge: Option<&Value>) -> (bool, String) {
 fn hash_unit_vec3(tok: &str) -> [f64; 3] {
     // Deterministic random-projection unit vector per token, so distinct
     // tokens (including numbers) map to distinct directions on S^2.
-    let h = atomadb::fnv1a(tok);
+    let h = mapmath::fnv1a(tok);
     let a = ((h & 0xffffffff) as f64) / (u32::MAX as f64);
     let b = (((h >> 32) & 0xffffffff) as f64) / (u32::MAX as f64);
     let theta = 2.0 * std::f64::consts::PI * a;
@@ -786,9 +789,9 @@ fn class_alpha(class: &str) -> f64 {
 /// the Atlas phase-state encoder (C05 §4); content-only, no teacher argument.
 fn topic_embed(text: &str) -> [f64; 32] {
     let mut v = [0.0f64; 32];
-    let toks = atomadb::tokenize(text);
+    let toks = text::tokenize(text);
     for tok in &toks {
-        let hv = atomadb::fnv1a(tok);
+        let hv = mapmath::fnv1a(tok);
         let a = ((hv & 0xffffffff) as f64) / (u32::MAX as f64);
         let b = (((hv >> 32) & 0xffffffff) as f64) / (u32::MAX as f64);
         let theta = 2.0 * std::f64::consts::PI * a;
@@ -801,7 +804,7 @@ fn topic_embed(text: &str) -> [f64; 32] {
     }
     for w in toks.windows(2) {
         let big = format!("{} {}", w[0], w[1]);
-        let hv = atomadb::fnv1a(&big);
+        let hv = mapmath::fnv1a(&big);
         let a = ((hv & 0xffffffff) as f64) / (u32::MAX as f64);
         for i in 0..32 {
             let f = (i + 1) as f64;
@@ -1411,7 +1414,7 @@ fn carve_swarm_map(
     // eviction; never a second ledger: basins + atoms stay canonical in M_G).
     let fiber_id = format!(
         "fiber-{:016x}",
-        atomadb::fnv1a(&format!("{}:{}", task, state.epoch))
+        mapmath::fnv1a(&format!("{}:{}", task, state.epoch))
     );
     state.epoch += 1;
     state.fibers.insert(
@@ -1726,77 +1729,97 @@ fn kv_invalidate(state: &mut State, key: &str) -> Vec<String> {
 
 fn open_or_create(root: PathBuf) -> State {
     std::fs::create_dir_all(&root).ok();
-    let db_root = root.join("db");
-    std::fs::create_dir_all(&db_root).ok();
-    let mut db = if db_root.join("manifest.json").exists() {
-        Db::open(&db_root).unwrap_or_else(|_| Db::create(&db_root).unwrap())
-    } else {
-        Db::create(&db_root).unwrap()
-    };
-    if db.collection("hypermind").is_none() {
-        let _ = db.create_collection(
-            Role::PanelAdmin,
-            atomadb::Collection {
-                name: "hypermind".into(),
-                dim: 3,
-                embedder_id: "hypermind-tf-embed-v1".into(),
-            },
-        );
-    }
+    // Map-owned persistence only. Stored atoms have nothing to do with
+    // atomadb (the RAG). Canonical stores:
+    //   map.snapshot.bin -- checkpoint (atoms, basins, hunger, kv)
+    //   map.atoms.jsonl  -- append-only atom ledger, one line per ingest
+    // Legacy: a db/mind.jsonl from the old coupling is imported ONCE,
+    // only when no snapshot and no map ledger exist, into the map ledger.
+    // The old file is left untouched on disk.
     let mut atoms = BTreeMap::new();
-    let mind_path = db.root.join("mind.jsonl");
-    if mind_path.exists() {
-        if let Ok(raw) = std::fs::read_to_string(&mind_path) {
-            for line in raw.lines() {
-                if let Ok(v) = serde_json::from_str::<Value>(line) {
-                    if v.get("op").and_then(|x| x.as_str()) != Some("deposit") {
-                        continue;
+    // 1. Snapshot checkpoint first, if valid.
+    {
+        let sp = root.join("map.snapshot.bin");
+        let hp = root.join("map.snapshot.sha256");
+        if sp.exists() {
+            let bytes = std::fs::read(&sp).unwrap_or_default();
+            let digest = hash_bytes(&bytes);
+            let expected = std::fs::read_to_string(&hp).unwrap_or_default().trim().to_string();
+            if expected.is_empty() || expected == digest {
+                if let Ok(snap) = bincode::deserialize::<StateSnapshot>(&bytes) {
+                    for a in snap.atoms {
+                        atoms.insert(a.id, a);
                     }
-                    if v.get("kind").and_then(|x| x.as_str()) != Some("atom") {
-                        continue;
+                }
+            }
+        }
+    }
+    // 2. Replay the map ledger for atoms missing from the snapshot.
+    for v in ledger::read_ledger(&root) {
+        let id = v.get("id").and_then(|x| x.as_u64()).unwrap_or(0);
+        if id == 0 || atoms.contains_key(&id) {
+            continue;
+        }
+        let text = v.get("text").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let salience = v.get("salience").and_then(|x| x.as_f64()).unwrap_or(0.5);
+        let mrank: u8 = v.get("rank").and_then(|x| x.as_u64()).unwrap_or(0).min(1) as u8;
+        let (coord, phase) = coord_from_text_idf(&text, salience, None, mrank);
+        let atom = Atom {
+            id,
+            coord,
+            phase,
+            text,
+            salience,
+            provenance: v.get("provenance").and_then(|x| x.as_str()).unwrap_or("map-ledger").to_string(),
+            taint: v.get("taint").and_then(|x| x.as_str()).unwrap_or("none").to_string(),
+            rank: mrank,
+            domain: v.get("domain").and_then(|x| x.as_str()).unwrap_or("general").to_string(),
+            pinned: v.get("pinned").and_then(|x| x.as_bool()).unwrap_or(false),
+            symplectic: symplectic_from_triple(&coord, &phase, salience),
+        };
+        atoms.insert(id, atom);
+    }
+    // 3. Legacy one-way import from the old atomadb mind file, if needed.
+    if atoms.is_empty() && !ledger::ledger_path(&root).exists() {
+        let mind_path = root.join("db").join("mind.jsonl");
+        if mind_path.exists() {
+            if let Ok(raw) = std::fs::read_to_string(&mind_path) {
+                for line in raw.lines() {
+                    if let Ok(v) = serde_json::from_str::<Value>(line) {
+                        if v.get("op").and_then(|x| x.as_str()) != Some("deposit") {
+                            continue;
+                        }
+                        if v.get("kind").and_then(|x| x.as_str()) != Some("atom") {
+                            continue;
+                        }
+                        let id = v.get("id").and_then(|x| x.as_u64()).unwrap_or(0);
+                        if id == 0 || atoms.contains_key(&id) {
+                            continue;
+                        }
+                        let text = v.get("text").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                        let salience = v.get("salience").and_then(|x| x.as_f64()).unwrap_or(0.5);
+                        let mrank: u8 = v.get("rank").and_then(|x| x.as_u64()).unwrap_or(0).min(1) as u8;
+                        let provenance = v.get("provenance").and_then(|x| x.as_str()).unwrap_or("atoma-mind").to_string();
+                        let taint = v.get("taint").and_then(|x| x.as_str()).unwrap_or("none").to_string();
+                        let domain = v.get("domain").and_then(|x| x.as_str()).unwrap_or("general").to_string();
+                        let pinned = v.get("pinned").and_then(|x| x.as_bool()).unwrap_or(false);
+                        let _ = ledger::append_atom(&root, id, &text, salience, mrank, &provenance, &taint, &domain, pinned);
+                        let (coord, phase) = coord_from_text_idf(&text, salience, None, mrank);
+                        let atom = Atom {
+                            id,
+                            coord,
+                            phase,
+                            text,
+                            salience,
+                            provenance,
+                            taint,
+                            rank: mrank,
+                            domain,
+                            pinned,
+                            symplectic: symplectic_from_triple(&coord, &phase, salience),
+                        };
+                        atoms.insert(id, atom);
                     }
-                    let id = v.get("id").and_then(|x| x.as_u64()).unwrap_or(0);
-                    if id == 0 {
-                        continue;
-                    }
-                    let text = v
-                        .get("text")
-                        .and_then(|x| x.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let salience = v.get("salience").and_then(|x| x.as_f64()).unwrap_or(0.5);
-                    // Mind lines: read `rank` when present, default 0
-                    // (chunk, the rotate_rank identity). No IDF table at load
-                    // (None) — rank rotation still applies before the fold.
-                    let mrank: u8 =
-                        v.get("rank").and_then(|x| x.as_u64()).unwrap_or(0).min(1) as u8;
-                    let (coord, phase) = coord_from_text_idf(&text, salience, None, mrank);
-                    let atom = Atom {
-                        id,
-                        coord,
-                        phase,
-                        text,
-                        salience,
-                        rank: mrank,
-                        provenance: v
-                            .get("provenance")
-                            .and_then(|x| x.as_str())
-                            .unwrap_or("atoma-mind")
-                            .to_string(),
-                        taint: v
-                            .get("taint")
-                            .and_then(|x| x.as_str())
-                            .unwrap_or("none")
-                            .to_string(),
-                        domain: v
-                            .get("domain")
-                            .and_then(|x| x.as_str())
-                            .unwrap_or("general")
-                            .to_string(),
-                        pinned: v.get("pinned").and_then(|x| x.as_bool()).unwrap_or(false),
-                        symplectic: symplectic_from_triple(&coord, &phase, salience),
-                    };
-                    atoms.insert(id, atom);
                 }
             }
         }
@@ -1805,7 +1828,7 @@ fn open_or_create(root: PathBuf) -> State {
     // retains the historical PanelAdmin default (single-user flows keep
     // working). A PRESENT-but-unparseable value sets role_denied: the
     // process boots with Role::Ingest (least privilege — cannot read,
-    // deposit, or mutate mind per atomadb gates) AND every read-path
+    // deposit, or mutate mind per map role gates) AND every read-path
     // tool denies with a `role-denied-unparseable` receipt (F1). The
     // posture is observable via map.health server_role, never silent.
     // role_denied is distinct from a legitimate Ingest role: ingest-role
@@ -1826,11 +1849,10 @@ fn open_or_create(root: PathBuf) -> State {
     let vp = VpTree::build(&points);
     // Single O(N) seed pass; every ingest after this is O(1) on ids.
     let mem_max = atoms.keys().last().copied().unwrap_or(0);
-    let next_id = atomadb::mind_max_id(&db).max(mem_max) + 1;
+    let next_id = mem_max + 1;
     // Rebuild basins as views over the loaded atoms (no copies: basins hold ids).
     let mut basin_state = State {
         root,
-        db,
         role,
         atoms,
         basins: BTreeMap::new(),
@@ -2060,7 +2082,7 @@ fn tools_list() -> Value {
                         {"name":"map.compact","description":"Create an anti-lobotomy continuity checkpoint (no destructive rewrite).","inputSchema":{"type":"object","properties":{"objective":{"type":"string"},"recent_state":{"type":"string"}}}},
             {"name":"map.checkpoint","description":"Read or write the continuity checkpoint.","inputSchema":{"type":"object","properties":{"action":{"type":"string","enum":["get","set"]},"note":{"type":"string"}}}},
             {"name":"map.snapshot","description":"Atomic snapshot + WAL append; returns sha256.","inputSchema":{"type":"object"}},
-            {"name":"map.recover","description":"Verify snapshot hash and replay; rebuild from AtomaDB mind lines if needed.","inputSchema":{"type":"object"}},
+            {"name":"map.recover","description":"Verify snapshot hash and replay; rebuild from the map ledger if needed.","inputSchema":{"type":"object"}},
             {"name":"map.health","description":"Counts, capacity, geometry status.","inputSchema":{"type":"object"}},
             {"name":"map.export_passport","description":"Export a portable map passport.","inputSchema":{"type":"object"}},
             {"name":"map.create","description":"Create/initialize a HyperMind map under the workspace root.","inputSchema":{"type":"object","properties":{"subpath":{"type":"string"}}}}
@@ -2089,28 +2111,11 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             state.role = raw
                 .and_then(|s| Role::parse(&s).ok())
                 .unwrap_or(Role::PanelAdmin);
-            let db_root = r.join("db");
-            std::fs::create_dir_all(&db_root).ok();
-            state.db = if db_root.join("manifest.json").exists() {
-                Db::open(&db_root).unwrap_or_else(|_| Db::create(&db_root).unwrap())
-            } else {
-                Db::create(&db_root).unwrap()
-            };
-            if state.db.collection("hypermind").is_none() {
-                let _ = state.db.create_collection(
-                    Role::PanelAdmin,
-                    atomadb::Collection {
-                        name: "hypermind".into(),
-                        dim: 3,
-                        embedder_id: "hypermind-tf-embed-v1".into(),
-                    },
-                );
-            }
-            state.vp = VpTree::build(&state.atoms.values().cloned().collect::<Vec<_>>());
-            // Reseed the id counter for the new root (atoms map persists across
-            // map.create by existing design, so take the max of both).
+            // Reseed the id counter for the new root (atoms map persists
+            // across map.create by existing design, so take the max of both).
             let mem_max = state.atoms.keys().last().copied().unwrap_or(0);
-            state.next_id = atomadb::mind_max_id(&state.db).max(mem_max) + 1;
+            state.next_id = state.next_id.max(mem_max + 1);
+            state.vp = VpTree::build(&state.atoms.values().cloned().collect::<Vec<_>>());
             state.vp_dirty = false;
             let out = json!({"status":"ok","root":r.to_string_lossy()});
             let rcpt = now_receipt("map.create", args, &out);
@@ -2184,7 +2189,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 // multiset). Same coords + different content = collision:
                 // mint, don't merge.
                 let qtoks = {
-                    let mut v = atomadb::tokenize(&text);
+                    let mut v = text::tokenize(&text);
                     v.sort();
                     v
                 };
@@ -2196,7 +2201,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                         continue;
                     }
                     if a.text != text {
-                        let mut at = atomadb::tokenize(&a.text);
+                        let mut at = text::tokenize(&a.text);
                         at.sort();
                         if at != qtoks {
                             continue;
@@ -2246,10 +2251,8 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             }
             // O(1) id from the in-memory counter (seeded at open/create).
             let id = state.next_id;
-            if let Err(e) =
-                atomadb::mind_deposit_with_id(&state.db, state.role, "atom", &text, None, id)
-            {
-                return json!({"result": {"status": "error", "error": e.to_string()}});
+            if !state.role.can_deposit_mind() {
+                return json!({"result": {"status": "error", "error": "role may not deposit to mind"}});
             }
             state.next_id += 1;
             // Rank-aware embed: chunk text embeds at rank 0; doc embeds
@@ -2260,14 +2263,14 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 let mut n = 0usize;
                 for cid in &children {
                     if let Some(c) = state.atoms.get(cid) {
-                        let toks = atomadb::tokenize(&c.text);
+                        let toks = text::tokenize(&c.text);
                         let mut tv = vec![0f64; 256];
                         for tok in &toks {
                             let w = match state.idf.as_ref() {
                                 Some(table) => table.get(tok).copied().unwrap_or(1.0),
                                 None => 1.0,
                             };
-                            let h = atomadb::fnv1a(tok);
+                            let h = mapmath::fnv1a(tok);
                             tv[(h % 256) as usize] += w;
                             tv[((h >> 16) % 256) as usize] += 0.5 * w;
                         }
@@ -2282,7 +2285,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                         acc[j] /= n as f64;
                     }
                     let vv: Vec<f32> = acc.iter().map(|x| *x as f32).collect();
-                    let rotated = atomadb::rotate_rank(&vv, 1.0);
+                    let rotated = mapmath::rotate_rank(&vv, 1.0);
                     let v: Vec<f64> = rotated.into_iter().map(|x| x as f64).collect();
                     let norm = v.iter().map(|x| x * x).sum::<f64>().sqrt().max(1e-9);
                     let mut out = [0.0f64; 3];
@@ -2325,6 +2328,22 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 pinned,
                 symplectic: symplectic_from_triple(&coord, &phase, salience),
             };
+            // Map-owned durability: append to the map ledger before the
+            // atom enters memory. A failed append means no atom, so ledger
+            // and memory can never diverge.
+            if let Err(e) = ledger::append_atom(
+                &state.root,
+                id,
+                &atom.text,
+                atom.salience,
+                atom.rank,
+                &atom.provenance,
+                &atom.taint,
+                &atom.domain,
+                atom.pinned,
+            ) {
+                return json!({"result": {"status": "error", "error": e}});
+            }
             state.atoms.insert(id, atom.clone());
             // Basins re-fold on ingest: O(silo) greedy fold, ids only.
             rebuild_basins(state);
@@ -2397,14 +2416,14 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .filter_map(|id| state.atoms.get(id).map(|a| (*id, score(&qatom, a))))
                 .collect();
             // BM25 arm on the shortlist.
-            let qterms = atomadb::tokenize(&qtext);
+            let qterms = text::tokenize(&qtext);
             let n = scored.len().max(1) as f64;
             let mut df: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
             let mut doc_tf: Vec<std::collections::HashMap<String, u32>> = Vec::new();
             let mut doc_len: Vec<usize> = Vec::new();
             for (id, _) in &scored {
                 if let Some(a) = state.atoms.get(id) {
-                    let toks = atomadb::tokenize(&a.text);
+                    let toks = text::tokenize(&a.text);
                     doc_len.push(toks.len().max(1));
                     let mut m: std::collections::HashMap<String, u32> =
                         std::collections::HashMap::new();
@@ -2561,14 +2580,14 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
             // Fusion tail: byte-identical logic to map.query (mirror-test
             // enforced). Candidate set = full corpus, not shortlist.
-            let qterms = atomadb::tokenize(&qtext);
+            let qterms = text::tokenize(&qtext);
             let n = scored.len().max(1) as f64;
             let mut df: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
             let mut doc_tf: Vec<std::collections::HashMap<String, u32>> = Vec::new();
             let mut doc_len: Vec<usize> = Vec::new();
             for (id, _) in &scored {
                 if let Some(a) = state.atoms.get(id) {
-                    let toks = atomadb::tokenize(&a.text);
+                    let toks = text::tokenize(&a.text);
                     doc_len.push(toks.len().max(1));
                     let mut m: std::collections::HashMap<String, u32> =
                         std::collections::HashMap::new();
@@ -3064,14 +3083,14 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             // cannot hide behind its split (monotone check on demand).
             let tf_of =
                 |text: &str, idf: Option<&std::collections::HashMap<String, f64>>| -> Vec<f32> {
-                    let toks = atomadb::tokenize(text);
+                    let toks = text::tokenize(text);
                     let mut v = vec![0f64; 256];
                     for tok in &toks {
                         let w = match idf {
                             Some(table) => table.get(tok).copied().unwrap_or(1.0),
                             None => 1.0,
                         };
-                        let h = atomadb::fnv1a(tok);
+                        let h = mapmath::fnv1a(tok);
                         v[(h % 256) as usize] += w;
                         v[((h >> 16) % 256) as usize] += 0.5 * w;
                     }
@@ -3089,11 +3108,11 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .filter(|a| a.rank == 1)
                 .map(|a| tf_of(&a.text, state.idf.as_ref()))
                 .collect();
-            let pr_chunk = atomadb::participation_ratio(&chunks);
-            let pr_doc = atomadb::participation_ratio(&docs);
+            let pr_chunk = mapmath::participation_ratio(&chunks);
+            let pr_doc = mapmath::participation_ratio(&docs);
             let mut mixed = chunks.clone();
             mixed.extend(docs.clone());
-            let pr_mixed = atomadb::participation_ratio(&mixed);
+            let pr_mixed = mapmath::participation_ratio(&mixed);
             let out = json!({
                 "status": "ok",
                 "rank0_chunks": chunks.len(),
@@ -3124,7 +3143,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .unwrap_or("")
                 .to_string();
             let k = args.get("k").and_then(|x| x.as_u64()).unwrap_or(8) as usize;
-            let qterms = atomadb::tokenize(&qtext);
+            let qterms = text::tokenize(&qtext);
             let n = state.atoms.len().max(1) as f64;
             let ids: Vec<u64> = state.atoms.keys().copied().collect();
             let mut df: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
@@ -3132,7 +3151,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             let mut doc_len: Vec<usize> = Vec::new();
             for id in &ids {
                 let toks =
-                    atomadb::tokenize(&state.atoms.get(id).map(|a| a.text.as_str()).unwrap_or(""));
+                    text::tokenize(&state.atoms.get(id).map(|a| a.text.as_str()).unwrap_or(""));
                 doc_len.push(toks.len().max(1));
                 let mut m: std::collections::HashMap<String, u32> =
                     std::collections::HashMap::new();
@@ -3475,8 +3494,8 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
         }
         "map.recover" => {
             let r = recover(state);
-            // rebuild missing atoms from AtomaDB mind lines
-            let mind_path = state.db.root.join("mind.jsonl");
+            // rebuild missing atoms from the map ledger
+            let mind_path = ledger::ledger_path(&state.root);
             if mind_path.exists() {
                 if let Ok(raw) = std::fs::read_to_string(&mind_path) {
                     for line in raw.lines() {
@@ -3937,7 +3956,7 @@ mod tests {
         // PAMI REQUIREMENT: rank 0 (chunk) rotation is the identity —
         // same-rank inner products preserved exactly (vendored contract).
         let v: Vec<f32> = (0..256).map(|i| (i as f32) * 0.01 - 1.27).collect();
-        let r = atomadb::rotate_rank(&v, 0.0);
+        let r = mapmath::rotate_rank(&v, 0.0);
         assert_eq!(r.len(), v.len());
         for (a, b) in v.iter().zip(r.iter()) {
             assert!((a - b).abs() < 1e-9, "rank 0 must be identity");
@@ -3951,7 +3970,7 @@ mod tests {
         let w: Vec<f32> = (0..256)
             .map(|i| ((i * 53 + 7) % 101) as f32 / 101.0)
             .collect();
-        let rv = atomadb::rotate_rank(&v, 1.0);
+        let rv = mapmath::rotate_rank(&v, 1.0);
         let dot_vw: f32 = v.iter().zip(w.iter()).map(|(a, b)| a * b).sum();
         let dot_rv_w: f32 = rv.iter().zip(w.iter()).map(|(a, b)| a * b).sum();
         // Cross-rank product differs from raw (phase moved it); same-rank
@@ -3974,11 +3993,11 @@ mod tests {
     fn pami_participation_ratio_sane() {
         // Single vector -> PR == 1. Two orthogonal-ish vectors -> PR in (1, 2].
         let a: Vec<f32> = (0..16).map(|i| if i == 0 { 1.0 } else { 0.0 }).collect();
-        assert!((atomadb::participation_ratio(&[a.clone()]) - 1.0).abs() < 1e-6);
+        assert!((mapmath::participation_ratio(&[a.clone()]) - 1.0).abs() < 1e-6);
         let b: Vec<f32> = (0..16).map(|i| if i == 1 { 1.0 } else { 0.0 }).collect();
-        let pr = atomadb::participation_ratio(&[a, b]);
+        let pr = mapmath::participation_ratio(&[a, b]);
         assert!(pr > 1.0 && pr <= 2.0 + 1e-6, "pr={}", pr);
-        assert_eq!(atomadb::participation_ratio(&[]), 0.0);
+        assert_eq!(mapmath::participation_ratio(&[]), 0.0);
     }
 
     #[test]
@@ -4222,6 +4241,42 @@ mod tests {
     }
 
     #[test]
+    fn atoms_persist_without_atomadb() {
+        // Map-owned durability: ingest, drop the state, reopen the same
+        // dir. The atom must come back from the map ledger alone, with
+        // no db/mind.jsonl created anywhere.
+        let dir = std::env::temp_dir().join("hm_unit_ledger_persist");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        let ingest = handle_tool(
+            &mut st,
+            "map.ingest",
+            &json!({"text": "ledger persistence distinct packet"}),
+        );
+        assert_eq!(ingest["result"]["status"], "ok");
+        let atom_id = ingest["result"]["atom_id"].as_u64().unwrap();
+        drop(st);
+        let st2 = open_or_create(dir.clone());
+        assert!(
+            st2.atoms.contains_key(&atom_id),
+            "atom {atom_id} must survive reopen via the map ledger"
+        );
+        assert_eq!(
+            st2.atoms.get(&atom_id).unwrap().text,
+            "ledger persistence distinct packet"
+        );
+        assert!(
+            !dir.join("db").join("mind.jsonl").exists(),
+            "no atomadb mind file may be created"
+        );
+        assert!(
+            dir.join("map.atoms.jsonl").exists(),
+            "map ledger must exist"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn attend_depth_bounded() {
         let dir = std::env::temp_dir().join("hm_unit_attend");
         let _ = std::fs::remove_dir_all(&dir);
@@ -4273,7 +4328,61 @@ mod tests {
         assert!(r["result"]["selected_basin_ids"].as_array().unwrap().len() >= 1);
         assert!(r["result"]["basins"].as_array().unwrap().len() >= 1);
         assert!(r["result"]["fiber_id"].as_str().is_some());
+        // Toroidal attention pin (iron-out 2026-10-31): weights present,
+        // normalized, coherence in [-2,2]. Behavior unchanged — asserts only.
+        let wnorm = r["result"]["toroidal_attention"].as_array().unwrap();
+        assert!(!wnorm.is_empty(), "toroidal_attention must be non-empty");
+        let wsum: f64 = wnorm
+            .iter()
+            .filter_map(|w| w.get("toroidal_weight").and_then(|x| x.as_f64()))
+            .sum();
+        assert!(
+            (wsum - 1.0).abs() < 1e-9,
+            "toroidal weights must sum to 1, got {}",
+            wsum
+        );
+        for w in wnorm {
+            let c = w.get("coherence").and_then(|x| x.as_f64()).unwrap();
+            assert!(
+                (-2.0 - 1e-9..=2.0 + 1e-9).contains(&c),
+                "coherence out of range [-2,2]: {}",
+                c
+            );
+            let tw = w.get("toroidal_weight").and_then(|x| x.as_f64()).unwrap();
+            assert!(tw >= 0.0, "negative toroidal weight: {}", tw);
+        }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn toroidal_coherence_range_and_identity() {
+        // Direct pin for toroidal_coherence: identity = 2.0, antipode = -2.0.
+        fn mk_atom(id: u64, phase: [f64; 2]) -> Atom {
+            Atom {
+                id,
+                coord: [1.0, 0.0, 0.0, 0.0],
+                phase,
+                text: String::new(),
+                salience: 0.5,
+                provenance: String::new(),
+                taint: String::new(),
+                rank: 0,
+                domain: "S_code".to_string(),
+                pinned: false,
+                symplectic: SymplecticState::default(),
+            }
+        }
+        let q = mk_atom(1, [0.3, -1.2]);
+        let same = mk_atom(2, [0.3, -1.2]);
+        assert!((toroidal_coherence(&q, &same) - 2.0).abs() < 1e-12);
+        let anti = mk_atom(
+            3,
+            [
+                0.3 + std::f64::consts::PI,
+                -1.2 + std::f64::consts::PI,
+            ],
+        );
+        assert!((toroidal_coherence(&q, &anti) + 2.0).abs() < 1e-9);
     }
 
     #[test]
@@ -4814,14 +4923,14 @@ mod gate_tests {
     fn role_gating_ingest_denied() {
         // Edition 2024 + #![forbid(unsafe_code)]: no process-env mutation in
         // tests. Exercise the role gate by constructing the denied state
-        // directly: an Ingest-role db refuses mind deposit at the atomadb
+        // directly: an Ingest-role db refuses mind deposit at the map role
         // layer, which is what open_or_create would surface.
-        assert!(!atomadb::Role::Ingest.can_deposit_mind());
-        assert!(atomadb::Role::PanelAdmin.can_deposit_mind());
+        assert!(!Role::Ingest.can_deposit_mind());
+        assert!(Role::PanelAdmin.can_deposit_mind());
         let dir = std::env::temp_dir().join("hm_role");
         let _ = std::fs::remove_dir_all(&dir);
         let mut st = open_or_create(dir.clone());
-        // PanelAdmin (default) ingests fine — the gate lives in atomadb.
+        // PanelAdmin (default) ingests fine — the gate lives in the map role.
         let r = handle_tool(
             &mut st,
             "map.ingest",
@@ -4839,7 +4948,7 @@ mod gate_tests {
         let dir = std::env::temp_dir().join("hm_f1_deny");
         let _ = std::fs::remove_dir_all(&dir);
         let mut st = open_or_create(dir.clone());
-        st.role = atomadb::Role::Ingest; // cannot read mind per atomadb gate
+        st.role = Role::Ingest; // cannot read mind per map role gate
         st.role_denied = false; // legitimate low role, NOT unparseable posture
         for tool in [
             "map.query",

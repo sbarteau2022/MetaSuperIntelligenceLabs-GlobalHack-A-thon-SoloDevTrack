@@ -73,7 +73,7 @@ impl PluginRegistry {
     fn provided_elsewhere(&self, cap: &str, except: &str) -> bool {
         self.active
             .values()
-            .any(|a| a.name != except && (a.provides.iter().any(|p| p == cap) || &a.name == cap))
+            .any(|a| a.name != except && (a.provides.iter().any(|p| p == cap) || a.name == cap))
     }
 
     /// Unload: fully undoes the plugin. Blocked when any active dependent

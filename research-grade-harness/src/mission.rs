@@ -3,8 +3,8 @@
 //! This module does NOT replace the engine, the judge, or the receipt log.
 //! It is the thin entry point the CLI was missing: load a plan, validate it,
 //! run it, and return the report plus receipts. Execution itself stays in
-//! engine.rs, which is synthetic by design (output is "PASS packet=<id>").
-//! A real lane execution replaces engine output, not this entry point.
+//! engine.rs. The local entry point is deliberately fail-closed: only the
+//! live N3 executor may create new PASS evidence.
 
 use crate::energy::EnergyBudget;
 use crate::engine::{Engine, EngineReport};
@@ -38,10 +38,9 @@ pub fn dry_run(plan: &Plan) -> Result<(), String> {
 
 /// Built-in geometry readiness mission, used by the CLI.
 /// Two packets, in order: validate packet structure, then validate ordering.
-/// Judges are Contains "PASS", matching the engine's synthetic output.
-/// This is a readiness smoke, not a geometry training run itself: training
-/// happens on the model side, this mission proves the harness can brief,
-/// judge, receipt, and resume a mission before training starts.
+/// Judges are retained as the declared acceptance contract. `rgah run` has no
+/// live executor and therefore escalates rather than manufacturing a PASS.
+/// Use the N3 engine API for execution-backed acceptance.
 pub fn geometry_mission() -> MissionInput {
     use crate::judge::{Judge, JudgeKind};
     use crate::runbook::{JudgeRef, Packet, PacketStatus, RetryPolicy, ToolCall};
@@ -74,7 +73,11 @@ pub fn geometry_mission() -> MissionInput {
             id: "mission-geometry-2026-10-29".into(),
             objective: "geometry training readiness: validate packet, judge, receipt chain".into(),
             packets: vec![
-                packet("packet-geometry-01", "validate geometry packet structure", vec![]),
+                packet(
+                    "packet-geometry-01",
+                    "validate geometry packet structure",
+                    vec![],
+                ),
                 packet(
                     "packet-geometry-02",
                     "validate geometry packet ordering after packet-geometry-01",
@@ -122,7 +125,8 @@ pub fn run_mission_with_prior(
         engine.register_judge(judge);
     }
     let mut budget = EnergyBudget::new(budget_j);
-    let mut report: EngineReport = engine.run_sequential(&mut input.plan, &mut receipts, &mut budget);
+    let mut report: EngineReport =
+        engine.run_sequential(&mut input.plan, &mut receipts, &mut budget);
     for id in prior_passed {
         if !report.passed.contains(&id) {
             report.passed.push(id);
@@ -189,7 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn run_mission_passes_and_receipts() {
+    fn run_mission_fails_closed_without_live_executor() {
         let input = MissionInput {
             plan: sample_plan(),
             judges: vec![Judge {
@@ -200,26 +204,34 @@ mod tests {
             }],
         };
         let receipt = run_mission(input, 100.0);
-        assert!(receipt.passed_all());
-        assert_eq!(receipt.passed, vec!["packet-geometry-01".to_string()]);
+        assert!(!receipt.passed_all());
+        assert_eq!(receipt.escalated, vec!["packet-geometry-01".to_string()]);
+        assert!(receipt.passed.is_empty());
         assert!(!receipt.receipts.entries.is_empty());
+        assert!(
+            receipt
+                .receipts
+                .entries
+                .iter()
+                .all(|entry| entry.outcome != "PASS")
+        );
     }
 
     #[test]
     fn resume_does_not_rerun_passed_packets() {
-        let first = run_mission(
-            MissionInput {
-                plan: sample_plan(),
-                judges: vec![Judge {
-                    id: "judge-pass".into(),
-                    kind: JudgeKind::Contains {
-                        needle: "PASS".into(),
-                    },
-                }],
-            },
-            100.0,
-        );
-        let prior = first.receipts.clone();
+        // Explicit parser/resume fixture only; this is not execution evidence.
+        let prior = ReceiptLog {
+            entries: vec![crate::receipt::Receipt {
+                packet_id: "packet-geometry-01".into(),
+                attempt: 1,
+                outcome: "PASS".into(),
+                judge_ids: vec!["judge-pass".into()],
+                evidence_hash: "fixture-only".into(),
+                energy_joules: 0.0,
+                erased_bits: 0,
+                timestamp_ms: 0,
+            }],
+        };
         let second = run_mission_with_prior(
             MissionInput {
                 plan: sample_plan(),
@@ -236,6 +248,7 @@ mod tests {
         // The packet was already passed, so the engine has nothing new to run.
         // The mission receipt still carries it as passed, from the prior log.
         assert_eq!(second.passed, vec!["packet-geometry-01".to_string()]);
+        assert!(second.escalated.is_empty());
         assert!(second.receipts.entries.iter().any(|r| r.outcome == "PASS"));
     }
 }

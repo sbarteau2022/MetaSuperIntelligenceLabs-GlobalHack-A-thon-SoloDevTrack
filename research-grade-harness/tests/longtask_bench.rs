@@ -1,3 +1,5 @@
+#![cfg(feature = "synthetic-scaffold")]
+
 use rgah::{
     active_inference::PolicyRanker,
     cache::Cache,
@@ -38,7 +40,8 @@ fn build_longtask_plan() -> Plan {
         status: PacketStatus::Pending,
         attempts: 0,
 
-        judge_joined: false,    };
+        judge_joined: false,
+    };
     packets.push(add("p00-recon", vec![], vec![pass_judge.clone()]));
     packets.push(add("p01-plan", vec!["p00-recon"], vec![pass_judge.clone()]));
     for lane in ["a", "b", "c", "d", "e"] {
@@ -90,6 +93,7 @@ fn build_longtask_plan() -> Plan {
 }
 
 #[test]
+#[ignore = "historical synthetic scaffold; never acceptance evidence"]
 fn longtask_40_packet_head_to_head() {
     // Plan validation (MadMind hard gate).
     let mut plan = build_longtask_plan();

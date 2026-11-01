@@ -182,8 +182,10 @@ pub fn deliberate(
 
     // Step 1 — HOLD: separation-enforced harvest already done by caller;
     // record the hold in the state.
-    let mut state = HoldingState::default();
-    state.branches = branches.clone();
+    let mut state = HoldingState {
+        branches: branches.clone(),
+        ..HoldingState::default()
+    };
     state.iteration_traces.push(format!(
         "hold: {} branches ({})",
         branches.len(),

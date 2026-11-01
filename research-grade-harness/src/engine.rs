@@ -33,8 +33,8 @@ impl Engine {
     }
 
     /// Judge one packet's output text against its registered judges.
-    /// Pure: no IO, no budget, no receipts. Shared by the legacy synthetic
-    /// path and the live N3 path so both judge the same way.
+    /// Pure: no IO, no budget, no receipts. Shared by fail-closed local
+    /// orchestration and the live N3 path so both judge the same way.
     /// Returns (all_pass, judge_ids_seen).
     pub fn judge_output(
         &self,
@@ -116,7 +116,7 @@ impl Engine {
                     energy += cost;
                     erased += (packet.declared_context_tokens as u64) * 4;
                     receipt_present = receipt_present && has_receipt;
-                    let _ = sink.record_call(
+                    let recorded = sink.record_call(
                         &call_key,
                         &tc.tool,
                         &tc.args_json,
@@ -124,6 +124,10 @@ impl Engine {
                         true,
                         if has_receipt { Some("present") } else { None },
                     );
+                    if recorded.is_err() {
+                        all_pass = false;
+                        degraded = Some(format!("telemetry-write-failed:{}", tc.tool));
+                    }
                     outputs.push(inner.clone());
                     // GAP-2: per-call conjunctive judging is the DEFAULT
                     // semantic (judge_joined=false). judge_joined=true packets
@@ -161,11 +165,16 @@ impl Engine {
         if let Some(e) = transport_error.as_deref() {
             out.push_str(&format!("\ntransport error: {}", e));
         }
-        // Packets with no map.* calls produce no N3 output: fall back to the
-        // legacy synthetic marker so judge semantics stay total. The caller
-        // records degraded=n3-not-invoked in that case.
+        // A packet with no admitted map.* execution has no evidence. It must
+        // fail closed; manufacturing a PASS marker here would let a judge
+        // certify work that never ran.
         if outputs.is_empty() {
-            out = format!("PASS packet={} attempt={}", packet.id, attempt);
+            out = format!(
+                "execution unavailable: packet={} attempt={} has no admitted map.* output",
+                packet.id, attempt
+            );
+            all_pass = false;
+            receipt_present = false;
             degraded = Some("n3-not-invoked".into());
         }
         // GAP-2: joined-output judging (opt-in). The packet's judges run once
@@ -181,6 +190,10 @@ impl Engine {
                 degraded = Some("judge-fail:joined".into());
             }
         }
+        if !receipt_present {
+            all_pass = false;
+            degraded = Some("missing-receipt".into());
+        }
         let _ = swarm_run_id;
         (
             out,
@@ -193,12 +206,15 @@ impl Engine {
         )
     }
 
-    /// Sequential executor with two-strike escalation.
+    /// Fail-closed local orchestrator. This path intentionally has no packet
+    /// executor and can never emit PASS. Use `run_sequential_n3` for live
+    /// execution; keeping this API allows validation callers to receive an
+    /// explicit escalation receipt instead of synthetic success evidence.
     pub fn run_sequential(
         &self,
         plan: &mut Plan,
         receipts: &mut ReceiptLog,
-        budget: &mut EnergyBudget,
+        _budget: &mut EnergyBudget,
     ) -> EngineReport {
         let mut report = EngineReport::default();
         // topological execution
@@ -215,65 +231,38 @@ impl Engine {
 
             // material change flag toggles on retry
             let attempt = plan.packets[pkt_idx].attempts;
-            let declared = plan.packets[pkt_idx].declared_context_tokens;
-
-            // charge energy
-            let cost = (declared as f64) * 0.0005 + 0.01;
-            if budget.can_afford(cost) {
-                budget.charge(cost, (declared as u64) * 4);
-            }
-
-            // synthetic execution output; include "PASS" so deterministic judges can succeed
-            let output = format!("PASS packet={} attempt={}", next, attempt);
-            let (all_pass, judge_ids) =
-                self.judge_output(&plan.packets[pkt_idx].clone(), &output, 0);
+            let judge_ids = plan.packets[pkt_idx]
+                .judges
+                .iter()
+                .map(|judge| judge.id.clone())
+                .collect::<Vec<_>>();
+            let cost = 0.0;
 
             let now = 0u64;
-            if all_pass {
-                plan.packets[pkt_idx].status = PacketStatus::Passed;
-                receipts.append(Receipt {
-                    packet_id: next.clone(),
-                    attempt,
-                    outcome: "PASS".into(),
-                    judge_ids,
-                    evidence_hash: format!("sha256:{}", next),
-                    energy_joules: cost,
-                    erased_bits: (declared as u64) * 4,
-                    timestamp_ms: now,
-                });
-                report.passed.push(next);
-            } else if attempt < plan.packets[pkt_idx].retry_policy.max_rounds
-                && plan.packets[pkt_idx].retry_policy.material_change_required
-            {
-                // Round 1 failed -> re-approach (retry same packet)
-                plan.packets[pkt_idx].status = PacketStatus::Pending;
-                // allow loop to retry
-            } else {
-                plan.packets[pkt_idx].status = PacketStatus::Escalated;
-                receipts.append(Receipt {
-                    packet_id: next.clone(),
-                    attempt,
-                    outcome: "ESCALATE".into(),
-                    judge_ids,
-                    evidence_hash: format!("sha256:{}", next),
-                    energy_joules: cost,
-                    erased_bits: (declared as u64) * 4,
-                    timestamp_ms: now,
-                });
-                report.escalated.push(next);
-                // skip dependents
-                let deps: Vec<String> = plan
-                    .packets
-                    .iter()
-                    .filter(|p| p.depends_on.contains(&plan.packets[pkt_idx].id))
-                    .map(|p| p.id.clone())
-                    .collect();
-                for d in deps {
-                    if let Some(pk) = plan.packet_mut(&d) {
-                        pk.status = PacketStatus::Skipped;
-                    }
-                    report.skipped.push(d);
+            plan.packets[pkt_idx].status = PacketStatus::Escalated;
+            receipts.append(Receipt {
+                packet_id: next.clone(),
+                attempt,
+                outcome: "ESCALATE".into(),
+                judge_ids,
+                evidence_hash: "executor=unavailable;required=run_sequential_n3".into(),
+                energy_joules: cost,
+                erased_bits: 0,
+                timestamp_ms: now,
+            });
+            report.escalated.push(next);
+            // skip dependents
+            let deps: Vec<String> = plan
+                .packets
+                .iter()
+                .filter(|p| p.depends_on.contains(&plan.packets[pkt_idx].id))
+                .map(|p| p.id.clone())
+                .collect();
+            for d in deps {
+                if let Some(pk) = plan.packet_mut(&d) {
+                    pk.status = PacketStatus::Skipped;
                 }
+                report.skipped.push(d);
             }
             // safety: prevent infinite loops if no progress
             if report.passed.len()
@@ -305,12 +294,13 @@ impl Engine {
         report
     }
 
-    /// Parallel executor: processes independent packets in topological levels.
+    /// Fail-closed parallel local orchestrator. No packet is certified without
+    /// a live executor; use `run_parallel_n3` for execution-backed receipts.
     pub fn run_parallel(
         &self,
         plan: &mut Plan,
         receipts: &mut ReceiptLog,
-        budget: &mut EnergyBudget,
+        _budget: &mut EnergyBudget,
     ) -> EngineReport {
         let mut report = EngineReport::default();
         // group by topological level
@@ -332,31 +322,23 @@ impl Engine {
                     plan.packets[pkt_idx].status = PacketStatus::Running;
                     plan.packets[pkt_idx].attempts += 1;
                     let attempt = plan.packets[pkt_idx].attempts;
-                    let declared = plan.packets[pkt_idx].declared_context_tokens;
-                    let cost = (declared as f64) * 0.0005 + 0.01;
-                    if budget.can_afford(cost) {
-                        budget.charge(cost, (declared as u64) * 4);
-                    }
-                    let output = format!("PASS packet={} attempt={}", id, attempt);
-                    let (all_pass, judge_ids) =
-                        self.judge_output(&plan.packets[pkt_idx].clone(), &output, 0);
-                    if all_pass {
-                        plan.packets[pkt_idx].status = PacketStatus::Passed;
-                        receipts.append(Receipt {
-                            packet_id: id.clone(),
-                            attempt,
-                            outcome: "PASS".into(),
-                            judge_ids,
-                            evidence_hash: format!("sha256:{}", id),
-                            energy_joules: cost,
-                            erased_bits: (declared as u64) * 4,
-                            timestamp_ms: 0,
-                        });
-                        report.passed.push(id.clone());
-                    } else {
-                        plan.packets[pkt_idx].status = PacketStatus::Failed;
-                        report.failed.push(id.clone());
-                    }
+                    let judge_ids = plan.packets[pkt_idx]
+                        .judges
+                        .iter()
+                        .map(|judge| judge.id.clone())
+                        .collect();
+                    plan.packets[pkt_idx].status = PacketStatus::Failed;
+                    receipts.append(Receipt {
+                        packet_id: id.clone(),
+                        attempt,
+                        outcome: "FAIL".into(),
+                        judge_ids,
+                        evidence_hash: "executor=unavailable;required=run_parallel_n3".into(),
+                        energy_joules: 0.0,
+                        erased_bits: 0,
+                        timestamp_ms: 0,
+                    });
+                    report.failed.push(id.clone());
                     remaining.remove(id);
                 }
             }
@@ -413,13 +395,18 @@ impl Engine {
             }
             if budget.can_afford(cost) {
                 budget.charge(cost, erased);
+            } else {
+                all_pass = false;
             }
-            let _ = sink.record_verdict(
+            let verdict_recorded = sink.record_verdict(
                 &format!("{}:{}", snapshot.id, attempt),
                 &snapshot.id,
                 if all_pass { "PASS" } else { "FAIL" },
                 &judge_ids.join(","),
             );
+            if verdict_recorded.is_err() {
+                all_pass = false;
+            }
 
             let now = 0u64;
             if all_pass {
@@ -546,13 +533,18 @@ impl Engine {
                     }
                     if budget.can_afford(cost) {
                         budget.charge(cost, erased);
+                    } else {
+                        all_pass = false;
                     }
-                    let _ = sink.record_verdict(
+                    let verdict_recorded = sink.record_verdict(
                         &format!("{}:{}", snapshot.id, attempt),
                         &snapshot.id,
                         if all_pass { "PASS" } else { "FAIL" },
                         &judge_ids.join(","),
                     );
+                    if verdict_recorded.is_err() {
+                        all_pass = false;
+                    }
                     if all_pass {
                         plan.packets[pkt_idx].status = PacketStatus::Passed;
                         receipts.append(Receipt {

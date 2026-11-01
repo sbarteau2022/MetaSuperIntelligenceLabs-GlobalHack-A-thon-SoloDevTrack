@@ -44,6 +44,7 @@ const LIVE_MAP_TOOLS: [&str; 22] = [
 ];
 
 /// 78 near-miss / malformed inputs exercising all four match stages + the miss path.
+#[allow(clippy::vec_init_then_push)]
 fn near_miss_corpus() -> Vec<String> {
     let mut v: Vec<String> = Vec::new();
     // case variants (stage: exact fails, leaf/skill-path may hit)

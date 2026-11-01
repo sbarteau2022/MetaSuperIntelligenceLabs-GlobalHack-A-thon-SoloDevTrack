@@ -12,6 +12,7 @@ mod hyperbolic;
 mod vptree;
 mod picard;
 mod toroidal;
+mod rank5;
 mod bench;
 mod workload;
 

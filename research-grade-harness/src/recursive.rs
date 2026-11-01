@@ -49,9 +49,7 @@ impl OptimizerScheduler {
         workflow_id: &str,
         timestamp_ms: u64,
     ) -> Option<(String, f64)> {
-        if self.pending.is_none() {
-            return None;
-        }
+        self.pending.as_ref()?;
         let out = optimize_cycle(bound, scores, improve, log, workflow_id, timestamp_ms);
         if out.is_some() {
             self.cycles_executed += 1;
@@ -136,13 +134,12 @@ pub fn mandate_iteration(
     has_answer: bool,
 ) -> Option<IterationMandate> {
     let spike = bound.requires_iteration(SPIKE_SIGMA);
-    match crate::gate::dynamic_iteration_directive(packet_id, spike, has_answer) {
-        Some(reason) => Some(IterationMandate {
+    crate::gate::dynamic_iteration_directive(packet_id, spike, has_answer).map(|reason| {
+        IterationMandate {
             packet_id: packet_id.into(),
             reason,
             bound_at_trigger: bound.total(),
             plan_required: true,
-        }),
-        None => None,
-    }
+        }
+    })
 }

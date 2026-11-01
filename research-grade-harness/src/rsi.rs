@@ -211,6 +211,7 @@ impl ProposeProbeCompose {
     /// 3. probe each unique proposal IFF the budget affords it (no record for
     ///    an unaffordable probe); 4. adopt via leakage_critic + 0.02 noise
     ///    band + regularized_adopt with KEEP_BASE the default.
+    ///
     /// Returns (adopted_bundle, metrics). Base is retained as KEEP_BASE candidate.
     pub fn run<F>(
         &self,

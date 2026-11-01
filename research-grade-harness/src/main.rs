@@ -1,9 +1,11 @@
 use clap::{Parser, Subcommand};
+#[cfg(feature = "synthetic-scaffold")]
+use rgah::bench;
 use rgah::mission::{
     MissionInput, MissionReceipt, dry_run, geometry_mission, run_mission, run_mission_with_prior,
 };
 use rgah::receipt::parse_prior_receipt_text;
-use rgah::{FrozenPolicyKernel, bench, registry};
+use rgah::{FrozenPolicyKernel, registry};
 use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -129,9 +131,20 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Commands::Bench { format: _ } => {
-            let res = bench::run_all();
-            print!("{}", res.summary());
-            ExitCode::SUCCESS
+            #[cfg(feature = "synthetic-scaffold")]
+            {
+                eprintln!("SCAFFOLD ONLY: synthetic benchmark output is not acceptance evidence");
+                let res = bench::run_all();
+                print!("{}", res.summary());
+                ExitCode::SUCCESS
+            }
+            #[cfg(not(feature = "synthetic-scaffold"))]
+            {
+                eprintln!(
+                    "NO-GO: synthetic benchmark disabled; use a pre-registered live-model run"
+                );
+                ExitCode::FAILURE
+            }
         }
         Commands::Bars => {
             println!("Quality: Δpass >= +3pp (k=1), +8pp (k=3)");
