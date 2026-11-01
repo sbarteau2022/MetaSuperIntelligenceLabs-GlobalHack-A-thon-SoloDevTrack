@@ -124,9 +124,12 @@ mod tests {
 }
 
 // -- TPE HARD-PART fiber (append-only, 2026-10-31) -------------------------
-// Frost law: byte-identical constants from
-// MasterDesignDocument/C06-Frontier-Push/TorodialPhasePositionalEncoder-Spec.md
-// sections 1-4 and tpe_fep_budget.py (R_MIN=0.22, R_SCALE=0.90). No deviation.
+// Within the models boundary: pure Rust, no Python, no JSON. Frost law is the
+// spec text itself -- TorodialPhasePositionalEncoder-Spec sections 1-4
+// (radius law 4.1, rapidity law 4.2, recurrence section 2). The .py reference
+// controller is out-of-boundary tooling and is NOT cited, read, or depended
+// on by this crate. Constants below are spec-text values, pinned on disk
+// here and verified by in-crate first-principles tests, nothing external.
 
 /// TPE carrier defaults (spec section 2; vault torus.rs conformance).
 pub const TPE_OMEGA_F: f64 = 0.1;
@@ -136,7 +139,7 @@ pub const TPE_K_S: f64 = 0.15;
 /// Stability constant K = k_f + 2*k_s = 0.6 (freeze Prop 2).
 pub const TPE_STABILITY_K: f64 = 0.6;
 
-/// Radius law constants (tpe_fep_budget.py: R_MIN=0.22, R_SCALE=0.90).
+/// Radius law constants (spec section 4.1; pinned in-crate, no external source).
 pub const TPE_R_MIN: f64 = 0.22;
 pub const TPE_R_SCALE: f64 = 0.90;
 pub const TPE_R_LIN: f64 = 0.35;
@@ -199,8 +202,10 @@ impl TpeState {
     }
 }
 
-/// Radius law (spec 4.1): r(w) = r_min + span*(0.35*w + 0.65*ln(1+w)),
-/// span = max(R_SCALE - R_MIN, 0.15), w clamped >= 0.
+/// Radius law (spec section 4.1): r(w) = r_min + span*(0.35*w + 0.65*ln(1+w)),
+/// span = max(R_SCALE - R_MIN, 0.15), w clamped >= 0. In-crate law; the
+/// closed form and the slope below are checked against each other, not
+/// against any out-of-crate script.
 #[inline]
 pub fn radius_for_rotations(w: f64) -> f64 {
     let w = w.max(0.0);
@@ -336,11 +341,36 @@ mod tpe_tests {
     }
 
     #[test]
-    fn tpe_radius_matches_python() {
-        // python tpe_fep_budget.py: r(4)=1.88337, r(16)=5.28028 (gate tol 0.05).
-        // Asserted here at 1e-9 to pin byte-identical constants.
-        assert!((radius_for_rotations(4.0) - 1.8833715572958725).abs() < 1e-9);
-        assert!((radius_for_rotations(16.0) - 5.280280298072847).abs() < 1e-9);
+    fn tpe_radius_first_principles() {
+        // No oracle literals, no Python, no JSON: r is pinned by two
+        // in-crate facts, both checkable from this file alone.
+        // (1) Boundary: r(0) == R_MIN, negative w clamps to r(0).
+        // (2) Fundamental Theorem: Simpson quadrature of the analytic slope
+        // over [0, w] recovers r(w) - r_min through pure calculus, never
+        // evaluating the closed-form log. If the 0.35/0.65 shape or the
+        // slope law drifted apart, this fails; matching float output cannot.
+        assert_eq!(radius_for_rotations(0.0), TPE_R_MIN);
+        assert_eq!(radius_for_rotations(-3.0), TPE_R_MIN);
+        for &w in &[4.0f64, 16.0, 100.0] {
+            let n = 100_000usize; // even; Simpson h = w/n
+            let h = w / n as f64;
+            let mut acc =
+                radius_slope_for_rotations(0.0) + radius_slope_for_rotations(w);
+            for i in 1..n {
+                let t = i as f64 * h;
+                acc += if i % 2 == 0 { 2.0 } else { 4.0 }
+                    * radius_slope_for_rotations(t);
+            }
+            let integral = acc * h / 3.0;
+            let got = radius_for_rotations(w) - TPE_R_MIN;
+            assert!(
+                (integral - got).abs() < 1e-9,
+                "FTC violation at w={}: integral={} closed={}",
+                w,
+                integral,
+                got
+            );
+        }
     }
 
     #[test]

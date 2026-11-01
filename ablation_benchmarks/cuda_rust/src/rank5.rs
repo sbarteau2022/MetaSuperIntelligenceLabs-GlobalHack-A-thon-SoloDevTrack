@@ -1,7 +1,7 @@
 //! Rank-5 trigonometric kernel recurrent linear attention (`f64`, CPU, no Metal).
 //!
 //! CPU transcription of `ToroidalHarmonicFieldState::step_and_readout` in
-//! `/Users/stewartbarteau/.Trash/skills-desktop-orchestrator-20261030/src/toroidal_attention.rs`
+//! `provenance/toroidal_attention-vault-20261030.rs (restored from Trash, 2026-10-31)`
 //! (lines 640-800, read 2026-11-01). The vault version operates on `f32`
 //! I/O; this fiber is `f64` end-to-end (state, I/O, readout).
 //!
