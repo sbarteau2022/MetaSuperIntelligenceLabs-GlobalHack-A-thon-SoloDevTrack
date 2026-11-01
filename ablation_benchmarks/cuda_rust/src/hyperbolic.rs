@@ -369,12 +369,13 @@ pub fn random_lorentz_vec(rng: &mut impl rand::Rng, x0_max: f64) -> LorentzVec {
 // (pair_coherence, map_phase_coherence, normalized_power_weights,
 // softmax_weights, fit_map_attention_gain), re-expressed in this crate's
 // Q32.31 i64 + f64 idiom. No vault types used.
-// NOTE (verified 2026-11-01): the vault's `normalized_power_weights`
-// (lines 307-328) implements a LOG-domain form `w = exp(gain*ln(s))`; the
-// shifted form `(s+2).max(0.001).powf(gain)` below is per the fiber spec's
-// frozen constants (shift 2.0, floor 0.001, sum floor 1e-9), NOT the vault
-// source text. Likewise no `toroidal_coherence` fn exists in-crate; the
-// doc on `map_phase_coherence` describes the raw-sum difference anyway.
+// NOTE (mismatch RESOLVED 2026-11-01): the vault's `normalized_power_weights`
+// (lines 307-328) is the frozen spec -- LOG-domain `w = exp(gain*ln(s))` for
+// s>0, zero weight otherwise -- and that form is `normalized_power_weights`
+// below. The legacy hypermind carve-path spelling `(s+2)^g` lives under the
+// distinct name `shifted_power_weights`. Likewise no `toroidal_coherence` fn
+// exists in-crate; the doc on `map_phase_coherence` describes the raw-sum
+// difference anyway.
 
 /// Resultant-vector pair coherence over consecutive 2-D pairs.
 ///
@@ -432,14 +433,48 @@ pub fn map_phase_coherence(q: &ToroidalPhase, k: &ToroidalPhase) -> f64 {
     }
 }
 
-/// Shifted power weights: `w_i = (s_i + 2.0).max(0.001).powf(gain)`,
-/// sum-normalized with the normalizer floored at `1e-9`.
+/// Log-domain power weights (FROZEN SPEC, vault lines 307-328):
+/// `w_i = exp(gain * ln(s_i))` for `s_i > 0`, else zero weight;
+/// peak-subtracted exp, sum-normalized. Uniform fallback iff ALL scores are
+/// non-positive (peak non-finite). Empty in yields empty out.
 ///
 /// `gain` must be finite and in `(0, 128]`; an invalid gain yields uniform
-/// weights (fail-neutral, documented here rather than silently clamped).
-/// Empty scores yield an empty vec.
+/// weights (fail-neutral -- the vault enforces this via `validate()`; this
+/// crate keeps the explicit guard at the transcription site).
 #[inline]
 pub fn normalized_power_weights(scores: &[f64], gain: f64) -> Vec<f64> {
+    if scores.is_empty() {
+        return Vec::new();
+    }
+    if !gain.is_finite() || gain <= 0.0 || gain > 128.0 {
+        return vec![1.0 / scores.len() as f64; scores.len()];
+    }
+    let logs: Vec<f64> = scores
+        .iter()
+        .map(|&s| {
+            if s > 0.0 {
+                gain * s.ln()
+            } else {
+                f64::NEG_INFINITY
+            }
+        })
+        .collect();
+    let peak = logs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    if !peak.is_finite() {
+        return vec![1.0 / scores.len() as f64; scores.len()];
+    }
+    let exp: Vec<f64> = logs.iter().map(|&x| (x - peak).exp()).collect();
+    let sum: f64 = exp.iter().sum();
+    exp.iter().map(|&x| x / sum).collect()
+}
+
+/// Legacy hypermind carve-path spelling (main.rs carve_swarm_map); NOT the
+/// frozen spec: `w_i = (s_i + 2.0).max(0.001).powf(gain)`, sum-normalized
+/// with the normalizer floored at `1e-9`. Never yields exact zeros.
+///
+/// Same gain guard and empty-input convention as [`normalized_power_weights`].
+#[inline]
+pub fn shifted_power_weights(scores: &[f64], gain: f64) -> Vec<f64> {
     if scores.is_empty() {
         return Vec::new();
     }
@@ -670,25 +705,58 @@ mod tests {
 
     #[test]
     fn test_hardpart_power_weights_sum_to_one() {
-        let scores = [-2.0, -1.0, 0.0, 0.5, 1.5];
+        // FROZEN SPEC (vault log-domain form): sums to 1, EXACT 0 to
+        // non-positive scores, uniform iff ALL non-positive.
+        let scores = [0.5, 1.5, 2.0];
         for &gain in &[0.25, 1.0, 4.0, 128.0] {
             let w = normalized_power_weights(&scores, gain);
             assert_eq!(w.len(), scores.len());
             assert!(w.iter().all(|&x| x >= 0.0 && x.is_finite()));
             assert!((w.iter().sum::<f64>() - 1.0).abs() < 1e-12);
         }
+        // Non-positive scores get EXACT zero weight.
+        let mixed = [-2.0, -1.0, 0.0, 0.5, 1.5];
+        let w = normalized_power_weights(&mixed, 1.0);
+        assert_eq!(&w[..3], &[0.0, 0.0, 0.0]);
+        assert!((w.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+        assert!(w[3] > 0.0 && w[4] > 0.0);
+        // Uniform iff ALL non-positive.
+        let all_bad = [-2.0, -1.0, 0.0, -0.0];
+        let u = normalized_power_weights(&all_bad, 1.0);
+        assert!(u.iter().all(|&x| (x - 0.25).abs() < 1e-12));
         // Higher gain sharpens toward the max-score entry.
         let soft = normalized_power_weights(&scores, 1.0);
         let sharp = normalized_power_weights(&scores, 32.0);
-        assert!(sharp[4] > soft[4]);
+        assert!(sharp[2] > soft[2]);
         // Invalid gain -> uniform; empty -> empty.
         let uni = normalized_power_weights(&scores, 0.0);
-        assert!(uni.iter().all(|&x| (x - 0.2).abs() < 1e-12));
+        assert!(uni.iter().all(|&x| (x - 1.0 / 3.0).abs() < 1e-12));
         let uni2 = normalized_power_weights(&scores, 129.0);
-        assert!(uni2.iter().all(|&x| (x - 0.2).abs() < 1e-12));
+        assert!(uni2.iter().all(|&x| (x - 1.0 / 3.0).abs() < 1e-12));
         assert!(normalized_power_weights(&[], 1.0).is_empty());
+
+        // LEGACY shifted form: sums to 1, NEVER yields exact 0, sharpens
+        // with gain; same guard/empty conventions.
+        // Strictly positive at moderate gains (at gain=128 the floor
+        // 0.001^128 underflows f64 to exact 0 -- documented, not asserted).
+        for &gain in &[0.25, 1.0, 4.0] {
+            let w = shifted_power_weights(&mixed, gain);
+            assert_eq!(w.len(), mixed.len());
+            assert!(w.iter().all(|&x| x > 0.0 && x.is_finite()));
+            assert!((w.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+        }
+        let w128 = shifted_power_weights(&mixed, 128.0);
+        assert!(w128.iter().all(|&x| x >= 0.0 && x.is_finite()));
+        assert!((w128.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+        let s_soft = shifted_power_weights(&mixed, 1.0);
+        let s_sharp = shifted_power_weights(&mixed, 32.0);
+        assert!(s_sharp[4] > s_soft[4]);
+        assert!(shifted_power_weights(&[], 1.0).is_empty());
+        let s_uni = shifted_power_weights(&mixed, 0.0);
+        assert!(s_uni.iter().all(|&x| (x - 0.2).abs() < 1e-12));
+
         // Softmax sums to one as well.
-        let s = softmax_weights(&scores);
+        let s = softmax_weights(&mixed);
         assert!((s.iter().sum::<f64>() - 1.0).abs() < 1e-12);
         assert!(softmax_weights(&[]).is_empty());
     }
