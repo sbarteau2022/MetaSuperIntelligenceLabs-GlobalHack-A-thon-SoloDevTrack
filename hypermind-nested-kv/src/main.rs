@@ -893,7 +893,7 @@ fn rebuild_basins(state: &mut State) {
                 match state.atoms.get(&id) {
                     Some(a)
                         if hyperbolic_dist(&seed_coord, &a.coord) <= fold_radius
-                            && cos_sim(&seed_topic, &topic_embed(&a.text)) >= -1.0 =>
+                            && cos_sim(&seed_topic, &topic_embed(&a.text)) >= 0.0 =>
                     {
                         members.push(id)
                     }
@@ -1886,7 +1886,13 @@ fn write_snapshot(st: &mut State) -> Value {
         kv: st.kv.values().cloned().collect(),
     };
     // Internal storage is binary (exiled JSON). Snapshot is content-addressed bincode.
-    let bytes = bincode::serialize(&snap).unwrap_or_default();
+    let bytes = match bincode::serialize(&snap) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("write_snapshot: serialize failed: {}", e);
+            return json!({"status":"error","error":format!("serialize failed: {}", e)});
+        }
+    };
     let digest = hash_bytes(&bytes);
     let tmp = st.root.join("map.snapshot.tmp");
     let _ = std::fs::write(&tmp, &bytes);
@@ -1926,7 +1932,13 @@ fn recover(st: &mut State) -> Value {
     if !sp.exists() {
         return json!({"status":"no-snapshot","atoms":st.atoms.len()});
     }
-    let bytes = std::fs::read(&sp).unwrap_or_default();
+    let bytes = match std::fs::read(&sp) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("recover: read snapshot failed: {}", e);
+            return json!({"status":"read-error","error":format!("{}", e)});
+        }
+    };
     let digest = hash_bytes(&bytes);
     let expected = std::fs::read_to_string(&hp)
         .unwrap_or_default()
@@ -2100,7 +2112,9 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             let mem_max = state.atoms.keys().last().copied().unwrap_or(0);
             state.next_id = atomadb::mind_max_id(&state.db).max(mem_max) + 1;
             state.vp_dirty = false;
-            json!({"status":"ok","root":r.to_string_lossy()})
+            let out = json!({"status":"ok","root":r.to_string_lossy()});
+            let rcpt = now_receipt("map.create", args, &out);
+            json!({"result":out,"receipt":rcpt})
         }
         "map.ingest" => {
             if !args.get("text").map(|x| x.is_string()).unwrap_or(false) {
@@ -2708,7 +2722,10 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 let inaccuracy = -qmass * 8.0;
                 let dissipation = k as f64 * C_ROW_J;
                 // Variational cost: identical arithmetic, now in F units.
-                let cost = complexity + inaccuracy;
+                // Dissipation (per-row touch cost) is part of the free-energy
+                // bound and must participate in the minimization, not just the
+                // reported bound — otherwise the gate ignores its own cost.
+                let cost = complexity + inaccuracy + dissipation;
                 if cost < best_cost {
                     best_cost = cost;
                     best_k = k;
@@ -4990,7 +5007,15 @@ fn run_http(state: std::sync::Arc<std::sync::Mutex<State>>, port: u16) {
             Ok(s) => s,
             Err(_) => continue,
         };
-        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let cloned = match stream.try_clone() {
+            Ok(s) => s,
+            Err(_) => {
+                let _ = stream.write_all(b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                let _ = stream.flush();
+                continue;
+            }
+        };
+        let mut reader = BufReader::new(cloned);
         // read request line
         let mut request_line = String::new();
         if reader.read_line(&mut request_line).is_err() {

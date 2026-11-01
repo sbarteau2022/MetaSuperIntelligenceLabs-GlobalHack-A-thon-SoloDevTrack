@@ -1,0 +1,49 @@
+{
+  "mcpServers": {
+    "memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@0.0.38"
+      ]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
+    },
+    "math-cas": {
+      "command": "/Users/stewartbarteau/.local/bin/uv",
+      "args": [
+        "run",
+        "--with",
+        "sympy",
+        "--with",
+        "numpy",
+        "python3",
+        "/Users/stewartbarteau/.local/share/mcp-math/server.py"
+      ]
+    },
+    "compiler-gate": {
+      "command": "/usr/bin/python3",
+      "args": [
+        "/Users/stewartbarteau/.local/share/atoma-compiler-gate/server.py"
+      ]
+    },
+    "z3-solver": {
+      "command": "/usr/bin/python3",
+      "args": [
+        "/Users/stewartbarteau/.local/share/atoma-z3-solver/server.py"
+      ]
+    }
+  }
+}

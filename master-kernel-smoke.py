@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Master Kernel v2 -- Mac smoke test (self-contained, one file).
 
-Run: python3 ~/Desktop/master-kernel-smoke.py
+Run: python3 master-kernel-smoke.py (from repo root)
 Proves on real hardware, in one run:
   1. Substrate probe: what machine this is, what parts activate.
   2. v1 vs v2 A/B on the same inputs, same machine.

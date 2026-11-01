@@ -14,7 +14,7 @@ mod simt_kernels {
     /// Each warp processes one atom's Picard reduction
     #[kernel]
     pub unsafe fn picard_reduce_warp_kernel(
-        atoms: *mut LorentzVec, // Input/output atoms (x0, x1, x2, x3 in Q32.31)
+        atoms: *mut crate::hyperbolic::LorentzVec,
         num_atoms: u32,
         max_iterations: u32,
     ) {
@@ -33,10 +33,10 @@ mod simt_kernels {
         let mut x3 = (*atom_ptr).x3;
 
         // Convert to f64 for exact arithmetic (unbounded radii path)
-        let mut x0_f = q32_31_to_f64(x0);
-        let mut x1_f = q32_31_to_f64(x1);
-        let mut x2_f = q32_31_to_f64(x2);
-        let mut x3_f = q32_31_to_f64(x3);
+        let mut x0_f = crate::hyperbolic::q32_31_to_f64(x0);
+        let mut x1_f = crate::hyperbolic::q32_31_to_f64(x1);
+        let mut x2_f = crate::hyperbolic::q32_31_to_f64(x2);
+        let mut x3_f = crate::hyperbolic::q32_31_to_f64(x3);
 
         for _ in 0..max_iterations {
             // Cancellation-free x0 + x3
@@ -99,17 +99,17 @@ mod simt_kernels {
         }
 
         // Convert back to Q32.31
-        (*atom_ptr).x0 = f64_to_q32_31(x0_f);
-        (*atom_ptr).x1 = f64_to_q32_31(x1_f);
-        (*atom_ptr).x2 = f64_to_q32_31(x2_f);
-        (*atom_ptr).x3 = f64_to_q32_31(x3_f);
+        (*atom_ptr).x0 = crate::hyperbolic::f64_to_q32_31(x0_f);
+        (*atom_ptr).x1 = crate::hyperbolic::f64_to_q32_31(x1_f);
+        (*atom_ptr).x2 = crate::hyperbolic::f64_to_q32_31(x2_f);
+        (*atom_ptr).x3 = crate::hyperbolic::f64_to_q32_31(x3_f);
     }
 
     /// Batch Picard reduction for multiple atoms
     /// Uses cluster-level cooperation for larger reductions
     #[kernel]
     pub unsafe fn picard_reduce_batch_kernel(
-        atoms: *mut LorentzVec,
+        atoms: *mut crate::hyperbolic::LorentzVec,
         num_atoms: u32,
         iterations: u32,
     ) {
@@ -123,10 +123,10 @@ mod simt_kernels {
             let mut x2 = (*atom_ptr).x2;
             let mut x3 = (*atom_ptr).x3;
 
-            let mut x0_f = q32_31_to_f64(x0);
-            let mut x1_f = q32_31_to_f64(x1);
-            let mut x2_f = q32_31_to_f64(x2);
-            let mut x3_f = q32_31_to_f64(x3);
+            let mut x0_f = crate::hyperbolic::q32_31_to_f64(x0);
+            let mut x1_f = crate::hyperbolic::q32_31_to_f64(x1);
+            let mut x2_f = crate::hyperbolic::q32_31_to_f64(x2);
+            let mut x3_f = crate::hyperbolic::q32_31_to_f64(x3);
 
             for _ in 0..iterations {
                 let x0_plus_x3 = if x0_f > x3_f {
@@ -175,10 +175,10 @@ mod simt_kernels {
                 x3_f = new_x3;
             }
 
-            (*atom_ptr).x0 = f64_to_q32_31(x0_f);
-            (*atom_ptr).x1 = f64_to_q32_31(x1_f);
-            (*atom_ptr).x2 = f64_to_q32_31(x2_f);
-            (*atom_ptr).x3 = f64_to_q32_31(x3_f);
+            (*atom_ptr).x0 = crate::hyperbolic::f64_to_q32_31(x0_f);
+            (*atom_ptr).x1 = crate::hyperbolic::f64_to_q32_31(x1_f);
+            (*atom_ptr).x2 = crate::hyperbolic::f64_to_q32_31(x2_f);
+            (*atom_ptr).x3 = crate::hyperbolic::f64_to_q32_31(x3_f);
         }
     }
 
@@ -295,7 +295,6 @@ impl PicardReducer {
     }
 }
 
-/// LorentzVec for CUDA kernel compatibility
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct LorentzVec {

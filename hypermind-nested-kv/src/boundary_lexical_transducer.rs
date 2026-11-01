@@ -155,10 +155,15 @@ impl BoundaryLexicalTransducer {
     }
 }
 
+impl Default for BoundaryLexicalTransducer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     #[test]
     fn expand_checked_rejects_unknown() {
