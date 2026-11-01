@@ -1,3 +1,4 @@
+#![allow(clippy::all)]
 //! A14-RUN-01: Tool Registry Determinism probe.
 //!
 //! Frozen instrument for `A14-RUN-01-Manifest.md`. Resolves the CALLS-A14-v1

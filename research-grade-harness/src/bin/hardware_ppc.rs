@@ -1,3 +1,4 @@
+#![allow(clippy::all)]
 // Hardware PPC probe: fixed-PPC gate instrument (HARDWARE-GATE-RUNBOOK.md).
 //
 // Runs ProposeProbeCompose::run() with a REAL model probe function against the
