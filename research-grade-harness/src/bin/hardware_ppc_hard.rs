@@ -10,7 +10,7 @@
 // and the regularized_adopt + regulator stack are identical logic via the
 // shared ppc_probe instrument.
 //
-// Env: OMLX_URL (default http://127.0.0.1:8000/v1/chat/completions),
+// Env: OMLX_URL (default http://127.0.0.1:8002/v1/chat/completions),
 //      OMLX_MODEL (default Qwen3.6-MoE-Combined), OMLX_API_KEY (default
 //      dummy), PPC_RECEIPT (default /var/tmp/ppc-hardening-receipt.txt).
 use rgah::energy::EnergyBudget;
@@ -149,7 +149,7 @@ fn probe(
 
 fn main() -> std::process::ExitCode {
     let url = std::env::var("OMLX_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:8000/v1/chat/completions".into());
+        .unwrap_or_else(|_| "http://127.0.0.1:8002/v1/chat/completions".into());
     let model = std::env::var("OMLX_MODEL").unwrap_or_else(|_| "Qwen3.6-MoE-Combined".into());
     let key = std::env::var("OMLX_API_KEY").unwrap_or_else(|_| "dummy".into());
     let (host, port, path) = match split_url(&url) {

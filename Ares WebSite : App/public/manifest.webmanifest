@@ -1,0 +1,18 @@
+{
+  "name": "Atoma Engineering — ARES Spec Ops",
+  "short_name": "Atoma ARES",
+  "description": "Research-grade agentic OS — hyperbolic memory, live swarm telemetry and N³ receipts.",
+  "start_url": "/#/platform",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/brand_QGh3P.jpg",
+      "sizes": "640x360",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ]
+}

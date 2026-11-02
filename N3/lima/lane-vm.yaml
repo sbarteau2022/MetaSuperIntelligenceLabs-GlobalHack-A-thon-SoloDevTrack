@@ -1,0 +1,26 @@
+# Lane microVM (Apple Virtualization.framework) — one lane, enterable + interruptible.
+# Template only: creation/start is the operator's call (image download + VM start).
+#   limactl create --name lane-0 lima/lane-vm.yaml && limactl start lane-0
+# Sized per the lane-VM spec (4 CPU / 6GiB / 40GiB), same Ubuntu 24.04 guest
+# image and toolchain provision as the home instance (vm/home.yaml).
+vmType: vz
+arch: aarch64
+cpus: 4
+memory: 6GiB
+disk: 40GiB
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
+    arch: aarch64
+mounts: []          # nothing from the Mac is visible inside the VM; files move only via approved tools
+containerd: { system: false, user: false }
+provision:
+  - mode: system
+    script: |
+      apt-get update
+      apt-get install -y build-essential ca-certificates curl git pkg-config python3-pip python3-venv libssl-dev
+      curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+      apt-get install -y nodejs
+      su - stewartbarteau -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable'
+      su - stewartbarteau -c '/home/stewartbarteau.guest/.cargo/bin/rustup component add clippy rustfmt'
+      ln -sf /home/stewartbarteau.guest/.cargo/bin/cargo /usr/local/bin/cargo
+      ln -sf /home/stewartbarteau.guest/.cargo/bin/rustc /usr/local/bin/rustc

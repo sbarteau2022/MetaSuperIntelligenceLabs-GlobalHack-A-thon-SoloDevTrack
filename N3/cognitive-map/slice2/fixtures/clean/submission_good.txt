@@ -1,0 +1,2 @@
+VERDICT: clean
+The loop uses enumerate and returns the index on match, then return -1 when absent. No defect.

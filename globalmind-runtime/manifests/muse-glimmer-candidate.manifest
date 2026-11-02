@@ -1,0 +1,41 @@
+# Real frozen-artifact candidate roster for Muse-Glimmer-q4km-gs128-MLX. Digests computed
+# from disk 2026-11-02. Missing eligibility and independent judge
+# receipts intentionally prevent `open`; `verify` is allowed.
+workspace = globalmind
+method = fresh-globalmind-distillation-v1
+configuration_digest = abd24302c897da5d3c7eb3043821bd18ddf206e3046e89c15ffc33bd97bd5523
+tpe_version = tppe-reference-v1
+tpe_configuration_digest = 07e0dbab82fa9181b1210daadf2eb4f64d46a6a0d799e0e356e29869e09e92de
+
+model.0.provider = local
+model.0.name = Muse-Glimmer-q4km-gs128-MLX
+model.0.revision = local-frozen-2026-11-02
+model.0.modality = text
+
+model.0.artifact.0.role = model-00001-of-00004
+model.0.artifact.0.path = /Users/stewartbarteau/models/Muse-Glimmer-q4km-gs128-MLX/model-00001-of-00004.safetensors
+model.0.artifact.0.sha256 = 33c1881b631d7a101acab26a7b5e8c0864d949fa5c203de34f6c2c41306aba9f
+model.0.artifact.1.role = model-00002-of-00004
+model.0.artifact.1.path = /Users/stewartbarteau/models/Muse-Glimmer-q4km-gs128-MLX/model-00002-of-00004.safetensors
+model.0.artifact.1.sha256 = 192b387ae0e90032f99aaf63bc3cb2a5b56151a927f3ba7744a01f49d146067a
+model.0.artifact.2.role = model-00003-of-00004
+model.0.artifact.2.path = /Users/stewartbarteau/models/Muse-Glimmer-q4km-gs128-MLX/model-00003-of-00004.safetensors
+model.0.artifact.2.sha256 = 4ecc274ad367c211f5efdce4502eaae42d8fe39af7464e3db08ae02f1b84e149
+model.0.artifact.3.role = model-00004-of-00004
+model.0.artifact.3.path = /Users/stewartbarteau/models/Muse-Glimmer-q4km-gs128-MLX/model-00004-of-00004.safetensors
+model.0.artifact.3.sha256 = 5848778d6f741452e4a7d0e3c6b74907535ed44ba1dfa85020078886b713196d
+model.0.artifact.4.role = model-index
+model.0.artifact.4.path = /Users/stewartbarteau/models/Muse-Glimmer-q4km-gs128-MLX/model.safetensors.index.json
+model.0.artifact.4.sha256 = ce55747e8b65f9ab50f036b464e10e04f54e71d39436d3936089a6f75e192117
+model.0.artifact.5.role = config
+model.0.artifact.5.path = /Users/stewartbarteau/models/Muse-Glimmer-q4km-gs128-MLX/config.json
+model.0.artifact.5.sha256 = 3ce829f4654d2f5f5f43acca424fe17d72e74015d375d385a86b7fff24d4a031
+model.0.artifact.6.role = tokenizer
+model.0.artifact.6.path = /Users/stewartbarteau/models/Muse-Glimmer-q4km-gs128-MLX/tokenizer.json
+model.0.artifact.6.sha256 = c9dbee66967b58f31a7c27f723c3760da3526ccd0427578e8905b0abb0031c4d
+model.0.artifact.7.role = tokenizer_config
+model.0.artifact.7.path = /Users/stewartbarteau/models/Muse-Glimmer-q4km-gs128-MLX/tokenizer_config.json
+model.0.artifact.7.sha256 = 400cf56166bf3fe797a441ddbd1e6d06838b6659daf99a3057bd54b6bb25f85f
+model.0.artifact.8.role = chat_template
+model.0.artifact.8.path = /Users/stewartbarteau/models/Muse-Glimmer-q4km-gs128-MLX/chat_template.jinja
+model.0.artifact.8.sha256 = cfc67e5f349f37690dfd31ed1f18bc4442a9dd32fe39a648f993cb4eb3cae678

@@ -1,0 +1,158 @@
+Lane D — Whitehead 12-Around-1 Formalization & Unified Quotient Qualification Report
+====================================================================================
+
+Date: 2026-11-02
+Contract: globalmind-runtime/contracts/whitehead-gamma12-v1.contract
+Contract Version: globalmind-whitehead-gamma12-v1
+Contract Digest (SHA-256): 76b3f57fe3f1502edd63bc011a4de249a211ef154f6848c9795f5d7eb9cd8d30
+Topology Contract Digest (SHA-256): 1ff70658041bbb6848e1696d6c6b4f763ba169c1dec6d8487eba5b76aa518ae9
+Classifier Version: whitehead-12-around-1-v1
+Classifier Digest (SHA-256): 63783cd756ce7a73bd33c4f28c0eb0688eef02022b7c58ec96bff7b147fb29b5
+Executable Module: globalmind-runtime/src/whitehead.rs
+Qualification Suite: globalmind-runtime/tests/whitehead_12_around_1.rs
+
+1. Central Hub Definition (cognitive_hub)
+-----------------------------------------
+- Record ID: cognitive_hub:hub_l0
+- Geometry Space: geometry_space:h3_t2_r12_v1 (H3xT2/r_12)
+- Label: L0_Coordinator
+- H3 Lorentz Center: [1.000000000000, 0.000000000000, 0.000000000000, 0.000000000000]
+- Poincare Ball Center: [0.000000000000, 0.000000000000, 0.000000000000]
+- Upper Half-Space (z, w): z = 0 + 0i, w = 1.0
+- T2 Reference Phase: [0.000000000000, 0.000000000000]
+- Hub Horizon Radius (d_H3): 0.35
+- Reference Contract Digest: 749697387481122e3c82c2cfbd5a1496cf37447ffbf3cf512f2857b4bc64c9bd
+- Database Status: specified (quarantined historical atoms are never auto-certified)
+
+2. Twelve Peer Well Centers (cognitive_well, ordinal 0..11, t2_sector 0..11)
+----------------------------------------------------------------------------
+- Frame Geometry: Regular icosahedron on S^2 (6 antipodal duality axes +-u_k)
+  achieving the Welch/Simplex coherence bound |<d_r, d_s>| = 1/sqrt(5) ~= 0.447213595500
+- Golden Ratio: phi = (1 + sqrt(5)) / 2 ~= 1.618033988750
+- Poincare Shell Radius: r_sph = 2 - phi = (3 - sqrt(5)) / 2 ~= 0.381966011250
+- Optical Refractive Index: n(r_sph) = 2 / (1 - r_sph^2) ~= 2.341640786500
+- Uniform Hub-to-Well Geodesic Distance: d_H3(L0, c_w) = 2 * artanh(2 - phi) ~= 0.804718956217
+- Uniform Kissing Neighbor Distance (60 directed pairs): d_H3(c_r, c_s) ~= 0.854167974175
+
+Well Table (Machine-Computed):
+- WELL 00 (L1_SensoryPerception, axis=0, pole_a, t2_sector=0):
+  h3_center = [1.341640786500, 0.000000000000, 0.470228201834, 0.760845213036]
+  t2_center = [0.785398163397, 0.261799387799], adj = [3, 4, 7, 8, 11], antipode = 1
+  coset C_00 = [[1+0i, 0+0i], [0+0i, 1+0i]]
+  boundary_digest = 2a90dcc70c9c008f74e12e36c1a34d0f307c0ed2c95f0316d25d434504d2acec
+- WELL 01 (L2_MotorPraxis, axis=0, pole_b, t2_sector=1):
+  h3_center = [1.341640786500, 0.000000000000, -0.470228201834, -0.760845213036]
+  t2_center = [2.356194490192, 0.785398163397], adj = [2, 5, 6, 9, 10], antipode = 0
+  coset C_01 = [[0+0i, 1+0i], [-1+0i, 0+0i]]
+  boundary_digest = a3e7171849fcfcb3a604355693a522f1097c55da9657713b21ea87a2abcbc175
+- WELL 02 (L3_SomaticInteroception, axis=1, pole_a, t2_sector=2):
+  h3_center = [1.341640786500, 0.000000000000, 0.470228201834, -0.760845213036]
+  t2_center = [3.926990816987, 1.308996938996], adj = [1, 4, 7, 9, 10], antipode = 3
+  coset C_02 = [[1+0i, -1+0i], [1+0i, 0+0i]]
+  boundary_digest = 7f392582506d7e3502ca4bd0e227fce62b42dea9fa8976d9b72b052b6ca408fa
+- WELL 03 (L4_LanguageSemiotics, axis=1, pole_b, t2_sector=3):
+  h3_center = [1.341640786500, 0.000000000000, -0.470228201834, 0.760845213036]
+  t2_center = [5.497787143782, 1.832595714594], adj = [0, 5, 6, 8, 11], antipode = 2
+  coset C_03 = [[1+0i, 0+0i], [-2+0i, 1+0i]]
+  boundary_digest = 4448a5906ce47bb8b69a51d22047662e92845e4902c1cb7a4e87dd254fcbceec
+- WELL 04 (L5_EpisodicMemory, axis=2, pole_a, t2_sector=4):
+  h3_center = [1.341640786500, 0.470228201834, 0.760845213036, 0.000000000000]
+  t2_center = [0.785398163397, 2.356194490192], adj = [0, 2, 7, 8, 10], antipode = 5
+  coset C_04 = [[1+0i, 1+0i], [-1+0i, 0+0i]]
+  boundary_digest = 62636d4b51e747ad1f3b7b03934f326fb70aaa2cad1725cd9779681dce5a9c95
+- WELL 05 (L6_PredictiveSimulation, axis=2, pole_b, t2_sector=5):
+  h3_center = [1.341640786500, -0.470228201834, -0.760845213036, 0.000000000000]
+  t2_center = [2.356194490192, 2.879793265791], adj = [1, 3, 6, 9, 11], antipode = 4
+  coset C_05 = [[0+1i, 1+0i], [-1+0i, 0+0i]]
+  boundary_digest = 267ab545256c175a8e068ff402c068d57757b9e09b92d080e50ef6357c8a36ed
+- WELL 06 (L7_ConvergentLogic, axis=3, pole_a, t2_sector=6):
+  h3_center = [1.341640786500, 0.470228201834, -0.760845213036, 0.000000000000]
+  t2_center = [3.926990816987, 3.403392041389], adj = [1, 3, 5, 8, 10], antipode = 7
+  coset C_06 = [[1+0i, 0+0i], [-1+-1i, 1+0i]]
+  boundary_digest = 7e7b1fae2e76df7d345f022e08f23782104c365a6ec03f09aca117300d2346fc
+- WELL 07 (L8_DivergentSynthesis, axis=3, pole_b, t2_sector=7):
+  h3_center = [1.341640786500, -0.470228201834, 0.760845213036, 0.000000000000]
+  t2_center = [5.497787143782, 3.926990816987], adj = [0, 2, 4, 9, 11], antipode = 6
+  coset C_07 = [[0+1i, -1+0i], [1+0i, 0+0i]]
+  boundary_digest = 75b83a84d39ba23f7cc8fea3ff18d9a1c2bec029d12bd1dab3c987e134b88b13
+- WELL 08 (L9_ValuationSalience, axis=4, pole_a, t2_sector=8):
+  h3_center = [1.341640786500, 0.760845213036, 0.000000000000, 0.470228201834]
+  t2_center = [0.785398163397, 4.450589592586], adj = [0, 3, 4, 6, 10], antipode = 9
+  coset C_08 = [[1+0i, 0+0i], [-1+1i, 1+0i]]
+  boundary_digest = b280f3226f8881e935ee7719756d92f8436eceef0190cc1973df1ec1e3b75121
+- WELL 09 (L10_SocialCognition, axis=4, pole_b, t2_sector=9):
+  h3_center = [1.341640786500, -0.760845213036, 0.000000000000, -0.470228201834]
+  t2_center = [2.356194490192, 4.974188368184], adj = [1, 2, 5, 7, 11], antipode = 8
+  coset C_09 = [[2+0i, -1+0i], [1+0i, 0+0i]]
+  boundary_digest = d3a72868c602c09fb541b859ef8fefb77ecff9eee41bed902715b665a342ff09
+- WELL 10 (L11_SpatialTopography, axis=5, pole_a, t2_sector=10):
+  h3_center = [1.341640786500, 0.760845213036, 0.000000000000, -0.470228201834]
+  t2_center = [3.926990816987, 5.497787143782], adj = [1, 2, 4, 6, 8], antipode = 11
+  coset C_10 = [[1+1i, -1+0i], [1+0i, 0+0i]]
+  boundary_digest = 65aa5b4b5a3bfa2d3bea4e49c87a1ec6953630be8d532e39d35a16142675ebdc
+- WELL 11 (L12_MetacognitiveRegulation, axis=5, pole_b, t2_sector=11):
+  h3_center = [1.341640786500, -0.760845213036, 0.000000000000, 0.470228201834]
+  t2_center = [5.497787143782, 6.021385919380], adj = [0, 3, 5, 7, 9], antipode = 10
+  coset C_11 = [[1+-1i, -1+0i], [1+0i, 0+0i]]
+  boundary_digest = b48bc5ff09c35997ba61dce7766fb44ae03ed13ee7e614da192ba6bdff0e1ee4
+
+3. Subgroup Specification & Generators (Gamma_12 < PSL(2, Z[i]))
+----------------------------------------------------------------
+- Ambient Bianchi/Picard Group: Gamma = PSL(2, Z[i]) = SL(2, Z[i]) / {+-I}
+- Ideal: I = (2 + 2i) = (1 + i)^3 subset Z[i], norm N(2 + 2i) = 8, |Z[i]/I| = 8
+- Projective Line: |P^1(Z[i] / (2 + 2i))| = 8 * (1 + 1/2) = 12 points
+- Index-12 Congruence Subgroup:
+  Gamma_12 = Gamma_0(2 + 2i) = { [[a, b], [c, d]] in PSL(2, Z[i]) : c == 0 mod (2 + 2i) }
+  stabilizing base point [1 : 0]^T in P^1(Z[i] / (2 + 2i)), index [Gamma : Gamma_12] = 12.
+- Deduplicated Schreier + Whitehead Generator Set (20 generators in Gamma_12):
+  GEN 00: schreier_c0_T1_to_c0              [[1+0i, 1+0i], [0+0i, 1+0i]]       char=[0, 1, 0]
+  GEN 01: schreier_c0_Ti_to_c0              [[1+0i, 0+1i], [0+0i, 1+0i]]       char=[0, 1, 0]
+  GEN 02: schreier_c0_J_to_c0               [[0+1i, 0+0i], [0+0i, 0+-1i]]      char=[1, 0, 0]
+  GEN 03: schreier_c2_S_to_c4               [[1+0i, -1+0i], [0+0i, 1+0i]]      char=[0, 1, 0]
+  GEN 04: schreier_c3_T1_to_c3              [[1+0i, -1+0i], [4+0i, -3+0i]]     char=[0, 1, 0]
+  GEN 05: schreier_c3_Ti_to_c3              [[1+-2i, 0+1i], [0+-4i, 1+2i]]     char=[0, 1, 0]
+  GEN 06: schreier_c3_J_to_c3               [[0+1i, 0+0i], [0+4i, 0+-1i]]      char=[1, 0, 0]
+  GEN 07: schreier_c4_Ti_to_c11             [[1+0i, 0+0i], [2+-2i, 1+0i]]      char=[0, 0, 1]
+  GEN 08: schreier_c5_S_to_c5               [[0+1i, 1+0i], [0+0i, 0+-1i]]      char=[1, 1, 0]
+  GEN 09: schreier_c6_T1_to_c8              [[0+1i, -1+0i], [2+2i, -2+1i]]     char=[1, 1, 1]
+  GEN 10: schreier_c6_Ti_to_c8              [[2+-1i, 0+1i], [0+-4i, 2+1i]]     char=[1, 1, 0]
+  GEN 11: schreier_c6_J_to_c6               [[0+1i, 0+0i], [-2+2i, 0+-1i]]     char=[1, 0, 1]
+  GEN 12: schreier_c7_S_to_c7               [[0+1i, -1+0i], [0+0i, 0+-1i]]     char=[1, 1, 0]
+  GEN 13: schreier_c8_T1_to_c6              [[0+1i, 1+0i], [-2+2i, 2+1i]]      char=[1, 1, 1]
+  GEN 14: schreier_c8_Ti_to_c6              [[0+1i, 0+-1i], [0+0i, 0+-1i]]     char=[1, 1, 0]
+  GEN 15: schreier_c8_J_to_c8               [[0+1i, 0+0i], [2+2i, 0+-1i]]      char=[1, 0, 1]
+  GEN 16: schreier_c9_T1_to_c4              [[1+0i, 0+0i], [-4+0i, 1+0i]]      char=[0, 0, 0]
+  GEN 17: schreier_c9_Ti_to_c5              [[1+0i, 0+0i], [-2+-2i, 1+0i]]     char=[0, 0, 1]
+  GEN 18: schreier_c11_T1_to_c7             [[1+0i, 0+0i], [-2+2i, 1+0i]]      char=[0, 0, 1]
+  GEN 19: whitehead_loxodromic_3_2m2i_2p2i_3 [[3+0i, 2+-2i], [2+2i, 3+0i]]     char=[0, 0, 1]
+
+4. Action on H3, Coupling to T2, Canonical Reduction & Boundary Rules
+---------------------------------------------------------------------
+- H3 Action: Exact 2x2 Hermitian spinor congruence X' = M X M^\dagger where
+  X(x) = [[x0 + x3, x1 + i*x2], [x1 - i*x2, x0 - x3]], det(X) = 1.
+  Verified identical (< 1e-12) to the 3D Poincare Upper Half-Space extension
+  z' = ((az+b)*conj(cz+d) + a*conj(c)*w^2) / (|cz+d|^2 + |c|^2*w^2),
+  w' = w / (|cz+d|^2 + |c|^2*w^2).
+- T2 Character & Coset Coupling:
+  1. Sign-invariant character homomorphism chi: Gamma_12 -> T^2 given by
+     delta(gamma) = pi * (pi_b(gamma) ^ pi_c(gamma)) along the 2:1 resonant
+     direction (2*delta mod 2pi, delta mod 2pi), preserving psi = theta_f - 2*theta_s (mod 2pi).
+  2. Unique left-coset factorization M_x = C_k * gamma_x (k in 0..12, gamma_x in Gamma_12)
+     couples the 12 hyperbolic fundamental domain tiles C_k^-1 . F_Gamma to the
+     12 resonant T^2 sectors via coupled_psi = (psi(phi_can) + 2*pi*k/12) mod 2pi.
+- Boundary & Overlap Policy:
+  - Equidistant Voronoi boundaries within BOUNDARY_TIE_EPSILON = 1e-12 break ties
+    deterministically by lowest well ordinal (0..11).
+  - Minimal icosahedral overlap policy Omega_{r,s} = 0.08 iff <d_r, d_s> = +1/sqrt(5)
+    (5 kissing neighbors per well); Omega_{r,s} = 0 for non-adjacent and antipodal wells.
+
+5. Qualification Gate Summary
+-----------------------------
+- gate1_central_hub_and_twelve_icosahedral_peer_wells: PASS
+- gate2_gamma12_subgroup_cosets_and_schreier_generators: PASS
+- gate3_h3_action_uhs_equivalence_and_t2_coupling: PASS
+- gate4_canonical_representative_idempotence_and_orbit_invariance: PASS
+- gate5_boundary_tie_breaking_and_icosahedral_overlap_policy: PASS
+- gate6_no_gap_no_overlap_and_gamma12_invariance_across_1440_states: PASS
+- gate7_surrealdb_3_3_5_topology_and_membership_persistence: PASS
+

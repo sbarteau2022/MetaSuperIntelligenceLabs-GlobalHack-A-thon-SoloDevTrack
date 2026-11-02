@@ -1,0 +1,12 @@
+{
+  "name": "orchestrator-qa-gate",
+  "description": "Validate the Kimi orchestrator quality floor: calibration block first, pinned types, zero-stub interactions, browser verification with interaction states.",
+  "parameters": {
+    "calibration_done": { "type": "boolean", "description": "true: 4-line calibration block emitted before code" },
+    "types_pinned": { "type": "boolean", "description": "true: domain.ts + Zustand store exist first" },
+    "zero_stub": { "type": "boolean", "description": "true: no dead clicks, all controls mutate live state" },
+    "browser_verified": { "type": "boolean", "description": "true: verified in live browser session" },
+    "interaction_states": { "type": "number", "description": "count of styled states per primitive (target 5)" }
+  },
+  "required": ["calibration_done", "types_pinned", "zero_stub", "browser_verified"]
+}

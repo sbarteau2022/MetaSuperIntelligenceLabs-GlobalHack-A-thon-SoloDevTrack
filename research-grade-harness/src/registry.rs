@@ -54,43 +54,43 @@ pub fn registry() -> Vec<RegistryEntry> {
         "route",
         "atoma-tool-router",
         RegistryKind::McpServer,
-        "route, search catalog, execute, lane.mint",
-        true,
+        "(unverified: no in-repo implementation as of 2026-11-01) route, search catalog, execute, lane.mint",
+        false,
     );
     add(
         "check",
         "ts-to-rust",
         RegistryKind::McpServer,
-        "TypeScript strict check first, transpile stated subset only",
-        true,
+        "(unverified: no in-repo implementation as of 2026-11-01) TypeScript strict check first, transpile stated subset only",
+        false,
     );
     add(
         "lazy",
         "mcp-lazy",
         RegistryKind::McpServer,
-        "find and execute pinned tools only, adds no servers",
-        true,
+        "(unverified: no in-repo implementation as of 2026-11-01) find and execute pinned tools only, adds no servers",
+        false,
     );
     add(
         "runbook",
         "qwen36-autonomous-runbook",
         RegistryKind::McpServer,
-        "autonomous runbook entry point and verified patch tools",
-        true,
+        "(unverified: no in-repo implementation as of 2026-11-01) autonomous runbook entry point and verified patch tools",
+        false,
     );
     add(
         "toolchain",
         "zed-engineering-toolchain",
         RegistryKind::McpServer,
-        "detect toolchains, plan and run language checks",
-        true,
+        "(unverified: no in-repo implementation as of 2026-11-01) detect toolchains, plan and run language checks",
+        false,
     );
     add(
         "design",
         "open-design",
         RegistryKind::McpServer,
-        "design system server, only where a run names it",
-        true,
+        "(unverified: no in-repo implementation as of 2026-11-01) design system server, only where a run names it",
+        false,
     );
     // Tools.
     add(
@@ -111,8 +111,8 @@ pub fn registry() -> Vec<RegistryEntry> {
         "tap",
         "taps",
         RegistryKind::Tool,
-        "per-category tap gates, dropped count",
-        true,
+        "(unverified: no in-repo implementation as of 2026-11-01) per-category tap gates, dropped count",
+        false,
     );
     // Skills, native by role. The 7 MasterSkills are a group until the
     // rename map gives each one a native name; no name is invented here.
@@ -120,29 +120,29 @@ pub fn registry() -> Vec<RegistryEntry> {
         "carve-swarm",
         "carving-the-swarm",
         RegistryKind::Skill,
-        "carve weights into the swarm, claims traced to live code",
-        true,
+        "(unverified: no in-repo implementation as of 2026-11-01) carve weights into the swarm, claims traced to live code",
+        false,
     );
     add(
         "task-decomp",
         "task-decomp",
         RegistryKind::Skill,
-        "decompose a task into judged packets",
-        true,
+        "(unverified: no in-repo implementation as of 2026-11-01) decompose a task into judged packets",
+        false,
     );
     add(
         "tactical",
         "tactical-orchestration",
         RegistryKind::Skill,
-        "tactical orchestration of lanes and packets",
-        true,
+        "(unverified: no in-repo implementation as of 2026-11-01) tactical orchestration of lanes and packets",
+        false,
     );
     add(
         "allocate-weights",
         "allocating-weights",
         RegistryKind::Skill,
-        "allocate weights across lanes and packets",
-        true,
+        "(unverified: no in-repo implementation as of 2026-11-01) allocate weights across lanes and packets",
+        false,
     );
     add(
         "master-skill",
@@ -199,22 +199,22 @@ pub fn registry() -> Vec<RegistryEntry> {
         "frontend-refinement",
         "frontend-refinement-runbook",
         RegistryKind::Runbook,
-        "Beam loops a real frontend until a deterministic gate passes",
-        true,
+        "(unverified: no in-repo implementation as of 2026-11-01) Beam loops a real frontend until a deterministic gate passes",
+        false,
     );
     add(
         "master-todo",
         "master-todo-2026-10-28",
         RegistryKind::Runbook,
-        "Delta-H lock, extraction, representation check, in order",
-        true,
+        "(unverified: no in-repo implementation as of 2026-11-01) Delta-H lock, extraction, representation check, in order",
+        false,
     );
     add(
         "overnight-audit",
         "overnight-audit-certify-loop",
         RegistryKind::Runbook,
-        "audit, certify, morning report, no auto-post or submit",
-        true,
+        "(unverified: no in-repo implementation as of 2026-11-01) audit, certify, morning report, no auto-post or submit",
+        false,
     );
     add(
         "delta-h-ablation",
@@ -228,8 +228,8 @@ pub fn registry() -> Vec<RegistryEntry> {
         "autorunner",
         "MadMind autorunner",
         RegistryKind::Workflow,
-        "poll ready packets, judge-gated, escalation, resume",
-        true,
+        "(unverified: no in-repo implementation as of 2026-11-01) poll ready packets, judge-gated, escalation, resume",
+        false,
     );
     add(
         "mission",
@@ -264,8 +264,8 @@ pub fn registry() -> Vec<RegistryEntry> {
         "abort",
         "abort",
         RegistryKind::Policy,
-        "abort on judge failure, kernel violation, budget breach, or operator command",
-        true,
+        "(unverified: no in-repo implementation as of 2026-11-01) abort on judge failure, kernel violation, budget breach, or operator command",
+        false,
     );
     add(
         "budget",

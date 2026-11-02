@@ -1,0 +1,12 @@
+{
+  "name": "styling-gate",
+  "description": "Validate shadcn/tailwind workflow: named component, initialized config, supported tailwind config extension and framework.",
+  "parameters": {
+    "component": { "type": "string", "description": "component name, non-empty" },
+    "overwrite": { "type": "boolean", "description": "true: allow reinstall over existing" },
+    "config_present": { "type": "boolean", "description": "true: components.json initialized" },
+    "tailwind_ext": { "type": "string", "description": "'ts' | 'js' | 'cjs' | 'mjs'" },
+    "framework": { "type": "string", "description": "'react' | 'vue' | 'svelte' | 'nextjs'" }
+  },
+  "required": ["component", "config_present"]
+}

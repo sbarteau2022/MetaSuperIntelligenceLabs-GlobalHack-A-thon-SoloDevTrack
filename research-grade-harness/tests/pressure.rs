@@ -165,10 +165,12 @@ fn receipt_resume() {
         attempt: 1,
         outcome: "PASS".into(),
         judge_ids: vec![],
-        evidence_hash: "h".into(),
+        evidence_hash: String::new(),
         energy_joules: 1.0,
         erased_bits: 4,
         timestamp_ms: 0,
+        prev_hash: String::new(),
+        n3_receipts: vec![],
     });
     assert!(log.resume_skips("x"));
 }

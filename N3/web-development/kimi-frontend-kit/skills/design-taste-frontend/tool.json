@@ -1,0 +1,11 @@
+{
+  "name": "antislop-gate",
+  "description": "Validate anti-slop pre-flight: no scroll listeners, real images, restrained status dots, no marketing version footers.",
+  "parameters": {
+    "scroll_listener": { "type": "boolean", "description": "must be false (use Motion useScroll/ScrollTrigger/IntersectionObserver/CSS scroll-driven)" },
+    "images_real": { "type": "boolean", "description": "true: generated/Picsum/asset images, no div-fake screenshots" },
+    "status_dots": { "type": "string", "description": "'none' or 'semantic-single'" },
+    "footer_version": { "type": "boolean", "description": "must be false on marketing pages" }
+  },
+  "required": ["scroll_listener", "images_real", "status_dots", "footer_version"]
+}

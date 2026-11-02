@@ -1,0 +1,2 @@
+VERDICT: clean
+It loops and returns the index, return -1 on a miss. Looks fine.

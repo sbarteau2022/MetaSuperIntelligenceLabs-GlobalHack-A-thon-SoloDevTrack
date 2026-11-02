@@ -1,0 +1,14 @@
+[package]
+name = "cogmap-integration"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "cogmap_integration"
+path = "src/lib.rs"
+
+[dependencies]
+cogmap = { package = "cogmap-slice1", path = "../slice1" }
+cogmap_slice2 = { package = "cogmap-slice2", path = "../slice2" }
+cogmap_slice3 = { package = "cogmap-slice3", path = "../slice3" }
+cogmap_slice4 = { package = "cogmap-slice4", path = "../slice4" }

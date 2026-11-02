@@ -15,6 +15,7 @@ pub mod evolution;
 pub mod fep;
 pub mod gate;
 pub mod hear;
+pub mod json;
 pub mod judge;
 pub mod lanes;
 pub mod map_plugin;
@@ -56,7 +57,7 @@ pub use distill_judge::{
 };
 pub use distillation::{CoshCoalescenceGate, DepthAllocator, LiveThreadedPass};
 pub use energy::{EnergyBudget, EnergyLedger};
-pub use engine::{Engine, EngineReport};
+pub use engine::{Engine, EngineReport, PacketOutcome};
 pub use evaluator::{
     EvalVerdict, GeneratedApp, LiveCheck, LiveEvaluator, PlannedSprint, SprintContract,
 };
@@ -67,13 +68,19 @@ pub use evolution::{
 pub use fep::{FreeEnergyTerms, SessionBound, precision_update};
 pub use gate::{InformationNeed, ResearchRecord, dynamic_iteration_directive, research_gate};
 pub use hear::{CoordinationDecision, EngineRuntimeState, HearCoordinator, WorkflowIntent};
+pub use json::{
+    Json, JsonError, parse as parse_json, parse_line as parse_json_line, write as write_json,
+};
 pub use judge::{Judge, JudgeKind, JudgeOutcome, JudgeResult};
 pub use lanes::{
     ContributorLane, ContributorLaneMuse, DualLaneRun, LaneVerdict, NativeLane, TaskPacket,
     TaskReceipt,
 };
 pub use map_plugin::MapPlugin;
-pub use mcp_client::{McpChild, esc, has_receipt_sha256, sfield, unwrap_content};
+pub use mcp_client::{
+    CallOutcome, McpChild, check_status, has_receipt_sha256, inner_view, receipt_digest,
+    unwrap_content,
+};
 pub use mode::{Command, TacticalLevel, allowed_commands, authorize, raise_level};
 pub use plugins::{PluginReceipt, PluginRegistry, PluginSpec};
 pub use policy_kernel::FrozenPolicyKernel;

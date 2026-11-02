@@ -1,0 +1,12 @@
+{
+  "name": "design-verdict-gate",
+  "description": "Validate a design pass: subject-grounded, brief wins over defaults, conversational tone, accessible floor (responsive, focus, reduced-motion).",
+  "parameters": {
+    "grounded": { "type": "boolean", "description": "true: design grounded in subject matter" },
+    "brief_pins": { "type": "boolean", "description": "true: brief pins the visual direction" },
+    "default_used": { "type": "boolean", "description": "true if a templated default was used on a free axis" },
+    "tone_ok": { "type": "boolean", "description": "true: plain verbs, sentence case, end-user naming" },
+    "accessible": { "type": "boolean", "description": "true: responsive, keyboard focus, reduced motion, harmonious color" }
+  },
+  "required": ["grounded", "default_used", "tone_ok", "accessible"]
+}

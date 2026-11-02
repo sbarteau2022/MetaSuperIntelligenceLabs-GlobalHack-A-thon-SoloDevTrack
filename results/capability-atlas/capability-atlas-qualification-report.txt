@@ -1,0 +1,114 @@
+================================================================================
+GLOBALMIND CAPABILITY ATLAS CONTRACT — QUALIFICATION & AUDIT REPORT
+================================================================================
+Date: 2026-11-02
+Workspace: /Users/stewartbarteau/Desktop/GitHub/MetaSuperIntelligenceLabs-GlobalHack-A-thon-SoloDevTrack
+Schema Migration: hypermind-nested-kv/schema/0012_capability_atlas.surql
+Migration 0012 SHA-256: 0bac7e11dcf1e5dd0ec999904d152faa59bfd6de8481018b8a39b89879ad05de
+Implementation:
+  - globalmind-runtime/src/capability/mod.rs
+  - globalmind-runtime/src/capability/store.rs
+  - globalmind-runtime/src/capability/vertical_slice.rs
+  - globalmind-runtime/tests/capability_atlas_audit.rs
+Database Target: Isolated SurrealDB 3.3.5 surrealkv:// (hypermind/core on port 8000 untouched)
+
+--------------------------------------------------------------------------------
+1. AUTHORITY BOUNDARY & SINGLE GLOBALMIND GRAPH
+--------------------------------------------------------------------------------
+- Every `capability_profile` attaches 1-to-1 (`UNIQUE (workspace, atom)`) to an
+  immutable semantic `atom` (`domain = 'capability_atlas'`) and `atom_address`
+  classified into one of the 12 cognitive wells via `WhiteheadTopology`.
+- Zero capability profiles reference or enter `transformer_kv_page`.
+- The Capability Atlas proposes candidate compositions; it has zero direct
+  execution methods. `LiveRegistry` is authoritative for installation, health,
+  version, schema/config digests, permissions, and credential classes.
+- `MandatoryPolicyGate` is enforced unconditionally in Rust even when SurrealDB
+  or Atlas retrieval is completely offline.
+
+--------------------------------------------------------------------------------
+2. TWELVE SCHEMA-ENFORCED ATOM KINDS & THIRTEEN TYPED EDGES
+--------------------------------------------------------------------------------
+All 12 `CapabilityKind` variants verified in `capability_profile`:
+  01. problem_pattern   (symptoms, constraints, success_condition)
+  02. solution_family   (scope, exclusions, selection_criteria)
+  03. capability        (input_output_contract, effects, failure_modes)
+  04. runbook           (steps, stop_rollback_rules, evidence_required)
+  05. mcp_server        (server_identity, transport, advertised_contracts)
+  06. plugin            (loader_contract, isolation_behavior, unload_behavior)
+  07. tool              (typed_arguments_result, side_effects, timeout_spec)
+  08. skill             (trigger, required_references, completion_gates)
+  09. hook              (event, ordering, idempotency_and_failure_policy)
+  10. policy_rule       (scope, severity, enforcement_point)
+  11. evidence_receipt  (subject_config_runtime_digests, tier, result)
+  12. failure_pattern   (signature, cause, containment, recovery)
+
+All 13 `CapabilityEdgeKind` variants verified in `capability_edge`:
+  01. solves            08. fallback_for
+  02. specializes       09. enforced_by
+  03. implements        10. triggered_by
+  04. exposes           11. verified_by
+  05. requires          12. failed_on
+  06. composes_with     13. supersedes
+  07. conflicts_with
+
+--------------------------------------------------------------------------------
+3. BOUNDED NATIVE BINARY ENVELOPES (ZERO JSON/PYTHON IN MODEL I/O)
+--------------------------------------------------------------------------------
+- `CapabilityScaffold`: magic `GMCS\x01\x00\x00\x00` (max 16,384 bytes)
+- `CompactCallableProjection`: magic `GMCP\x01\x00\x00\x00` (max 4,096 bytes)
+- `CapabilityEdgeRecord`: magic `GMCE\x01\x00\x00\x00` (max 4,096 bytes)
+- `CompactContextFrame`: magic `GMCT\x01\x00\x00\x00` (max 32,768 bytes)
+- Model I/O request/response boundary: magic `GMBI\x01\x00\x00\x00`; rejects any
+  JSON, JSONL, Python, or `transformer_kv_page` payload.
+
+--------------------------------------------------------------------------------
+4. MEASURED GATE RECEIPTS
+--------------------------------------------------------------------------------
+Command:
+  cargo test --manifest-path globalmind-runtime/Cargo.toml --test capability_atlas_audit -- --nocapture
+
+Gate 1 (`gate1_schema_0012_twelve_kinds_thirteen_edges_and_fail_closed_invariants`): PASS
+  - Admitted profiles: 17 (all 12 atom kinds)
+  - Admitted edges: 22 (all 13 edge kinds)
+  - Bundle digest: 54e3c1ff6461f8ff5e216ff894a99d7a2b7cc57f067778638d1f0ded6bae6040
+  - Replay receipt digest: 6f9c246c5f122194f4a38b556795dea4fa06977b7d24f45940e4e3103338e45c
+  - Fail-closed checks verified:
+    * Untyped `'related'` edge rejected by Rust parser and SurrealDB `ASSERT`
+    * In-place `UPDATE` on READONLY `capability_profile` rejected by SurrealDB
+    * Duplicate `(workspace, atom)` profile rejected atomically
+    * Live bearer token (`sk-...`), inline credential value (`api_key=...`),
+      and `transformer_kv_page` material rejected fail-closed
+
+Gate 2 (`gate2_two_hop_retrieval_live_reconciliation_source_invariance_and_acyclic_dag`): PASS
+  - Fixed real task set (3 query perturbations around Well 6): 3/3 landed on
+    `prof_family_native_surreal_verifier` and reached `prof_tool_surreal_contract_verify`
+    within <= 2 typed hops
+  - Excluded before planning: 3 profiles (`prof_tool_benched_experimental_probe`,
+    superseded `prof_tool_surreal_contract_verify_v090`, and conflicting/unregistered
+    `prof_tool_conflicting_direct_mutate`)
+  - Primary ExecutionDag digest: 27046201f29e22af1ab59ee346617d33ad7f17ffeec23946eb79d7101a12aa6f
+  - Fallback ExecutionDag digest (when primary tool has live schema digest mismatch):
+    5074371f15408cd22f62739b408e93b716bebba0d61093fd3895bfec22ec9cad
+  - Acyclic DAG verification: PASS (even with intentional `skill <-> hook` cycle in Atlas)
+  - Source-digest invariance: PASS (mutating `source_digest` across all profiles
+    left coordinates, content digests, composition scores, and DAG digest unchanged)
+  - CompactContextFrame projections: 3 selected contracts (`mcp_server`, `tool`,
+    `runbook`) out of 17 profiles; zero global tool-list injection
+
+Gate 3 (`gate3_offline_mandatory_rules_restart_replay_supersede_and_live_execution`): PASS
+  - Offline mandatory rule enforcement (SurrealDB stopped): PASS (JSON payload
+    and `ExternalWrite` effect blocked in Rust without SurrealDB)
+  - Isolated SurrealDB 3.3.5 restart (`restarted_pid = 74354`): PASS
+    * Identical profile IDs, 2-hop neighborhood, DAG digest
+      (`27046201f29e22af1ab59ee346617d33ad7f17ffeec23946eb79d7101a12aa6f`), and
+      binary context frame digest (`b1bc28c7a49351443b106486080ab8739b1f7c18474779a25ab244d736e7dec1`)
+  - Real read-only tool call (`surreal_contract_verify@1.0.0`) through
+    Atlas -> LiveRegistry -> AtlasPlanner -> MandatoryPolicyGate -> Harness: PASS
+    * Policy gate receipt: 8d9ef3192873c74d53c1fcf3dbc51ba2d49015d967a18d49af96e7ce9b84ae18
+    * Binary response digest: d53f95c84cf84305b3026a3beab1e18a4e4262475784977e015ee6bb88ec5bc3
+    * Utility receipt appended (`util_receipt_smoke_001`) with zero coordinate mutation
+  - Tool version supersede (`1.0.0 -> 1.1.0` via `supersede_capability_profile`): PASS
+    * `v1.1.0` content digest: c3c4fc6bff008d1eac01996e91afa9705b37c397ac0366d45a859dc855ce526e
+    * `v1.0.0` preserved intact in qualified history and marked superseded
+================================================================================
+

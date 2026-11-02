@@ -1,0 +1,46 @@
+{
+	"mcpServers": {
+		"playwright": {
+			"command": "npx",
+			"args": [
+				"-y",
+				"@playwright/mcp@0.0.38"
+			]
+		},
+		"github": {
+			"command": "npx",
+			"args": [
+				"-y",
+				"@modelcontextprotocol/server-github"
+			],
+			"env": {
+				"GITHUB_PERSONAL_ACCESS_TOKEN": "pat_11B7SIZOY0QL0GrsxebL2S_qYNeGUTHwOvOyDe6TpYKz4v6TqY9kU6kWsrCcOCCasVQTAQZUGIkXYjSOkQ"
+			}
+		},
+		"filesystem": {
+			"command": "npx",
+			"args": [
+				"-y",
+				"@modelcontextprotocol/server-filesystem",
+				"/Users/stewartbarteau/Desktop"
+			],
+			"alwaysAllow": [
+				"list_allowed_directories",
+				"list_directory",
+				"search_files",
+				"read_text_file",
+				"write_file",
+				"get_file_info",
+				"edit_file"
+			]
+		},
+		"git": {
+			"command": "uvx",
+			"args": [
+				"mcp-server-git",
+				"--repository",
+				"github.com/sbarteau2022"
+			]
+		}
+	}
+}

@@ -1,0 +1,7 @@
+[package]
+name = "cognitive-attempt-loop"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cogmap_slice2 = { package = "cogmap-slice2", path = "../../cognitive-map/slice2" }

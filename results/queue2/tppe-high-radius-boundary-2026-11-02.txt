@@ -1,0 +1,9 @@
+TPPE high-radius numerical component probe — 2026-11-02
+Command: cargo test --lib represented_boundary_saturation_fails_instead_of_clamping -- --nocapture
+Native f64 Rust test, same finite phase drives (+100,+100) for both laws.
+Stress spans: linear_log_v1=2.0, log_v1=5.0, chosen to reach each law's represented boundary within the bounded probe. These are stress configurations, not the matched bakeoff budget or task-quality evidence.
+
+linear_log_v1: first_rejected_step=1; last_u=26.83813295843146562; last_rho=0.99999999999558042; last_margin=0.00000000000441958; error=TPPE state violates radial or ideal-boundary invariants.
+log_v1: first_rejected_step=40; last_u=35.75112492706418266; last_rho=0.99999999999999944; last_margin=0.00000000000000056; error=TPPE radial law failed strict spiral expansion.
+
+PASS: the last admitted states were finite, strictly increasing in hyperbolic and represented Poincare radii, and interior. The first nonrepresentable or rounded-equal step was rejected; no clamping occurred. This establishes a bounded component behavior only, not high-radius model quality or a winning law.

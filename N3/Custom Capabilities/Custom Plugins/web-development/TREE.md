@@ -1,0 +1,77 @@
+# Web development plugin tree — languages scaffold
+
+Date: 2026-10-30. Status: PROPOSED (reshaped per Stewart: five documents per language, languages/ level, MCP tools on top).
+
+Structure: `plugins/` → `mcp-tools/` (top node: 7 core tools) → `web-development/` → `{frontend, backend, middleware}/` → `languages/` → `<lang>/` → `hooks.md`, `skills.md`, `tools.md`, `loops.md`, `rules.md`.
+Routing: `plugins/web-development/languages-plugin.json` (ids + exts + checks + harness tools; repoints at the scaffold). Legacy reference (do not author): `~/Desktop/skills/plugins/languages/`.
+
+## frontend (15)
+
+- codemirror/ — `languages/codemirror/{hooks,skills,tools,loops,rules}.md` → skill: [codemirror](./frontend/languages/codemirror/skills.md)
+- dart/ — `languages/dart/{hooks,skills,tools,loops,rules}.md` → skill: [dart](./frontend/languages/dart/skills.md)
+- dockview/ — `languages/dockview/{hooks,skills,tools,loops,rules}.md` → skill: [dockview](./frontend/languages/dockview/skills.md)
+- glsl/ — `languages/glsl/{hooks,skills,tools,loops,rules}.md` → skill: [glsl](./frontend/languages/glsl/skills.md)
+- html/ — `languages/html/{hooks,skills,tools,loops,rules}.md` → skill: [html](./frontend/languages/html/skills.md)
+- javascript/ — `languages/javascript/{hooks,skills,tools,loops,rules}.md` → skill: [javascript](./frontend/languages/javascript/skills.md)
+- monaco/ — `languages/monaco/{hooks,skills,tools,loops,rules}.md` → skill: [monaco](./frontend/languages/monaco/skills.md)
+- react-flow/ — `languages/react-flow/{hooks,skills,tools,loops,rules}.md` → skill: [react-flow](./frontend/languages/react-flow/skills.md)
+- react-three-fiber/ — `languages/react-three-fiber/{hooks,skills,tools,loops,rules}.md` → skill: [react-three-fiber](./frontend/languages/react-three-fiber/skills.md)
+- swift/ — `languages/swift/{hooks,skills,tools,loops,rules}.md` → skill: [swift](./frontend/languages/swift/skills.md)
+- tailwind/ — `languages/tailwind/{hooks,skills,tools,loops,rules}.md` → skill: [tailwind](./frontend/languages/tailwind/skills.md)
+- typescript/ — `languages/typescript/{hooks,skills,tools,loops,rules}.md` → skill: [typescript](./frontend/languages/typescript/skills.md)
+- vite/ — `languages/vite/{hooks,skills,tools,loops,rules}.md` → skill: [vite](./frontend/languages/vite/skills.md)
+- wasm/ — `languages/wasm/{hooks,skills,tools,loops,rules}.md` → skill: [wasm](./frontend/languages/wasm/skills.md)
+- zustand/ — `languages/zustand/{hooks,skills,tools,loops,rules}.md` → skill: [zustand](./frontend/languages/zustand/skills.md)
+
+## backend (32)
+
+- assembly/ — `languages/assembly/{hooks,skills,tools,loops,rules}.md` → skill: [assembly](./backend/languages/assembly/skills.md)
+- c/ — `languages/c/{hooks,skills,tools,loops,rules}.md` → skill: [c](./backend/languages/c/skills.md)
+- clojure/ — `languages/clojure/{hooks,skills,tools,loops,rules}.md` → skill: [clojure](./backend/languages/clojure/skills.md)
+- cobol/ — `languages/cobol/{hooks,skills,tools,loops,rules}.md` → skill: [cobol](./backend/languages/cobol/skills.md)
+- cpp/ — `languages/cpp/{hooks,skills,tools,loops,rules}.md` → skill: [cpp](./backend/languages/cpp/skills.md)
+- csharp/ — `languages/csharp/{hooks,skills,tools,loops,rules}.md` → skill: [csharp](./backend/languages/csharp/skills.md)
+- dotnet/ — `languages/dotnet/{hooks,skills,tools,loops,rules}.md` → skill: [dotnet](./backend/languages/dotnet/skills.md)
+- elixir/ — `languages/elixir/{hooks,skills,tools,loops,rules}.md` → skill: [elixir](./backend/languages/elixir/skills.md)
+- erlang/ — `languages/erlang/{hooks,skills,tools,loops,rules}.md` → skill: [erlang](./backend/languages/erlang/skills.md)
+- fortran/ — `languages/fortran/{hooks,skills,tools,loops,rules}.md` → skill: [fortran](./backend/languages/fortran/skills.md)
+- fsharp/ — `languages/fsharp/{hooks,skills,tools,loops,rules}.md` → skill: [fsharp](./backend/languages/fsharp/skills.md)
+- go/ — `languages/go/{hooks,skills,tools,loops,rules}.md` → skill: [go](./backend/languages/go/skills.md)
+- groovy/ — `languages/groovy/{hooks,skills,tools,loops,rules}.md` → skill: [groovy](./backend/languages/groovy/skills.md)
+- haskell/ — `languages/haskell/{hooks,skills,tools,loops,rules}.md` → skill: [haskell](./backend/languages/haskell/skills.md)
+- hlsl/ — `languages/hlsl/{hooks,skills,tools,loops,rules}.md` → skill: [hlsl](./backend/languages/hlsl/skills.md)
+- java/ — `languages/java/{hooks,skills,tools,loops,rules}.md` → skill: [java](./backend/languages/java/skills.md)
+- julia/ — `languages/julia/{hooks,skills,tools,loops,rules}.md` → skill: [julia](./backend/languages/julia/skills.md)
+- kotlin/ — `languages/kotlin/{hooks,skills,tools,loops,rules}.md` → skill: [kotlin](./backend/languages/kotlin/skills.md)
+- lean/ — `languages/lean/{hooks,skills,tools,loops,rules}.md` → skill: [lean](./backend/languages/lean/skills.md)
+- lua/ — `languages/lua/{hooks,skills,tools,loops,rules}.md` → skill: [lua](./backend/languages/lua/skills.md)
+- matlab/ — `languages/matlab/{hooks,skills,tools,loops,rules}.md` → skill: [matlab](./backend/languages/matlab/skills.md)
+- objc/ — `languages/objc/{hooks,skills,tools,loops,rules}.md` → skill: [objc](./backend/languages/objc/skills.md)
+- ocaml/ — `languages/ocaml/{hooks,skills,tools,loops,rules}.md` → skill: [ocaml](./backend/languages/ocaml/skills.md)
+- perl/ — `languages/perl/{hooks,skills,tools,loops,rules}.md` → skill: [perl](./backend/languages/perl/skills.md)
+- php/ — `languages/php/{hooks,skills,tools,loops,rules}.md` → skill: [php](./backend/languages/php/skills.md)
+- python/ — `languages/python/{hooks,skills,tools,loops,rules}.md` → skill: [python](./backend/languages/python/skills.md)
+- r/ — `languages/r/{hooks,skills,tools,loops,rules}.md` → skill: [r](./backend/languages/r/skills.md)
+- ruby/ — `languages/ruby/{hooks,skills,tools,loops,rules}.md` → skill: [ruby](./backend/languages/ruby/skills.md)
+- rust/ — `languages/rust/{hooks,skills,tools,loops,rules}.md` → skill: [rust](./backend/languages/rust/skills.md)
+- scala/ — `languages/scala/{hooks,skills,tools,loops,rules}.md` → skill: [scala](./backend/languages/scala/skills.md)
+- solidity/ — `languages/solidity/{hooks,skills,tools,loops,rules}.md` → skill: [solidity](./backend/languages/solidity/skills.md)
+- zig/ — `languages/zig/{hooks,skills,tools,loops,rules}.md` → skill: [zig](./backend/languages/zig/skills.md)
+
+## middleware (13)
+
+- docker/ — `languages/docker/{hooks,skills,tools,loops,rules}.md` → skill: [docker](./middleware/languages/docker/skills.md)
+- metal/ — `languages/metal/{hooks,skills,tools,loops,rules}.md` → skill: [metal](./middleware/languages/metal/skills.md)
+- mongodb/ — `languages/mongodb/{hooks,skills,tools,loops,rules}.md` → skill: [mongodb](./middleware/languages/mongodb/skills.md)
+- postgres/ — `languages/postgres/{hooks,skills,tools,loops,rules}.md` → skill: [postgres](./middleware/languages/postgres/skills.md)
+- powershell/ — `languages/powershell/{hooks,skills,tools,loops,rules}.md` → skill: [powershell](./middleware/languages/powershell/skills.md)
+- queues/ — `languages/queues/{hooks,skills,tools,loops,rules}.md` → skill: [queues](./middleware/languages/queues/skills.md)
+- redis/ — `languages/redis/{hooks,skills,tools,loops,rules}.md` → skill: [redis](./middleware/languages/redis/skills.md)
+- shell/ — `languages/shell/{hooks,skills,tools,loops,rules}.md` → skill: [shell](./middleware/languages/shell/skills.md)
+- sql/ — `languages/sql/{hooks,skills,tools,loops,rules}.md` → skill: [sql](./middleware/languages/sql/skills.md)
+- sqlite/ — `languages/sqlite/{hooks,skills,tools,loops,rules}.md` → skill: [sqlite](./middleware/languages/sqlite/skills.md)
+- tauri/ — `languages/tauri/{hooks,skills,tools,loops,rules}.md` → skill: [tauri](./middleware/languages/tauri/skills.md)
+- terraform/ — `languages/terraform/{hooks,skills,tools,loops,rules}.md` → skill: [terraform](./middleware/languages/terraform/skills.md)
+- tokio/ — `languages/tokio/{hooks,skills,tools,loops,rules}.md` → skill: [tokio](./middleware/languages/tokio/skills.md)
+
+Total languages: 60

@@ -1,0 +1,13 @@
+{
+  "name": "suite-gate",
+  "description": "Validate a test suite: worked/boundary/oracle layers, 90%+ mutation kill rate, grade caps (wrong-output=C, spec-violation=B, kill<70=C+).",
+  "parameters": {
+    "worked_done": { "type": "boolean", "description": "true: spec worked examples asserted exactly" },
+    "boundary_done": { "type": "boolean", "description": "true: t-1/t/t+1 boundaries covered" },
+    "oracle_done": { "type": "boolean", "description": "true: naive-oracle differential comparison present" },
+    "kill_rate": { "type": "number", "description": "mutation kill rate, gate at 90" },
+    "has_wrong_output": { "type": "boolean", "description": "true: reproduced wrong-output finding exists" },
+    "spec_violated": { "type": "boolean", "description": "true: unfixed spec violation exists" }
+  },
+  "required": ["worked_done", "boundary_done", "oracle_done", "kill_rate"]
+}

@@ -1,0 +1,14 @@
+Timestamp: 2026-11-01T20:57:57Z
+
+FILE: /Users/stewartbarteau/Desktop/N3/design/global_active_mind.atoma_map | size=215M | sha256=16b8fef77e112cdeb031f775b927758ed55fa669094e8b20cea9890e238f9aa4
+FILE: /Users/stewartbarteau/Desktop/N3/design/live_brain.atoma_map | size=206M | sha256=e4fe34f4aa484ef00a341d66a1517fabefa1261680b41af7e23732ed3a6b9e8d
+FILE: /Users/stewartbarteau/Desktop/N3/design/boundary_lexicon.atoma_lex | size=2.5M | sha256=672b1af1bb25b5a37b3f4eae9418aa4a0284c6cc3602c63b65819eb525996749
+FILE: /Users/stewartbarteau/Desktop/N3/design/geometric_memories.atoma_mem | size=4.0K | sha256=913c498dd48ae042c65df9c00251e304aca6749e29c900cd2c45ebc6b2428916
+FILE: /Users/stewartbarteau/Desktop/N3/design/mlir_atom_catalog.atoma_ir | size=4.0K | sha256=9e16fb18f32ae1119205e690cf0b361aed2c65d7db9b34d273e87ce02c15156e
+FILE: /Users/stewartbarteau/Desktop/N3/design/mlir_atom_catalog.db | size= 48K | sha256=f58d4762a6e990a6d0ef65751651803604c09d8ebabc85b0e5de730a0f678c0e
+FILE: /Users/stewartbarteau/Desktop/N3/design/global_active_mind.atoma_map.wal | size=340K | sha256=814a147de9eae513a8d8cf6462f0489dbc8c9e3a9946ab554174c3128fec0c50
+FILE: /Users/stewartbarteau/Desktop/N3/vault-extract-20261101.log | size=844K | sha256=f9249f3d07db298f913277c5a16ee4263780195b0346eb31b00c98c92cb2d072
+DIR: /Users/stewartbarteau/Desktop/N3/kimi-frontend-kit | size=9.8M | files=     225
+DIR: /Users/stewartbarteau/Desktop/N3/staging-2026-10-30 | size= 14M | files=     708
+DIR: /Users/stewartbarteau/Desktop/N3/staging-tools-2026-10-30 | size= 88K | files=       8
+DIR: /Users/stewartbarteau/Desktop/N3/AtomaDB-RAG-PAMI | size= 19G | files=  279611

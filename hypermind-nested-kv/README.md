@@ -4,6 +4,69 @@ Binary `hypermind-mcp`. Tools: `map.ingest / query / attend / traverse /
 lexical / reweight / carve / dissolve / compact / checkpoint / snapshot /
 recover / health / export_passport / create`.
 
+## Persistent graph/KV authority
+
+SurrealDB is the persistent authority for the distilled multi-model HyperMind
+graph: typed atoms, typed edges, immutable `H3xT2/r_12` address revisions,
+model-source/distillation provenance, and the nested Hyperbolic KV. The `r_12`
+quotient is currently recorded as **opaque**; no executable group action is
+claimed yet. See [HYPERBOLIC-KV-SURREAL-DESIGN.md](HYPERBOLIC-KV-SURREAL-DESIGN.md)
+and `schema/0003_nested_hyperbolic_kv.surql`.
+
+The research harness loads this canonical `hypermind-mcp` executable as a
+plugin and uses MCP as its transport. The harness must not connect to SurrealDB
+directly. Plugin lifecycle and MCP transport are two roles of one binary, not
+separate implementations. With `HYPERMIND_SURREAL=on`, MCP startup is
+Surreal-only and must not create `.hypermind`; `shadow` startup fails closed.
+
+The authoritative nested KV schema stores binary transformer K/V tensor pages
+indexed by model/request, layer, KV head, token interval, HyperMind address, and
+causal trajectory. Positional identity is the native H3 address plus the
+Toroidal Phase Positional Encoder (T2), never RoPE or Euclidean position.
+String KV operations fail closed in Surreal mode. The binary
+inference-runtime transport is still an open integration gate; schema presence
+alone is not a forward-pass certification.
+
+Universal cross-model recall applies to distilled **atoms and trajectories**:
+teacher fingerprints are append-only audit lineage, never a recall/rank key.
+Raw transformer K/V pages remain exact-model and exact-TPE cache entries.
+Migrations `0005` and `0006` add immutable admission/trajectory lineage and
+protect atom content, H3/T2 addresses, and migration digests from update.
+Startup checks the pinned migration digests and critical live field definitions.
+The live database currently has no admitted model lineage or trajectories, so
+the universal-recall and forward-pass reuse certification gates remain open.
+
+Migration `0007_globalmind_distillation_trajectories.surql` defines the next
+isolated GlobalMind contract: one cognitive hub with twelve surrounding wells,
+immutable surprise observations and frozen-weight/trajectory packets,
+reconstructable rank-0 atoms, typed rank-1 steps, rank-2 loop receipts, binary
+rank-8 local charts, adaptive-computation receipts, and links from exact-model
+tensor pages to wells and crystallized trajectories. It has passed a clean
+SurrealDB 3.3.5 schema replay and targeted
+constraint checks, but has not been applied to quarantined `hypermind/core`.
+The admission lifecycle and recall rules are specified in
+[GLOBALMIND-SURREAL-INTEGRATION.md](GLOBALMIND-SURREAL-INTEGRATION.md).
+Migration `0008_superposition_holding.surql` adds immutable hold, candidate
+branch, zero-emission counterfactual iteration, and collapse/fail-closed
+receipts. A collapsed branch still passes the normal judge, replay, and
+crystallization pipeline before it may alter shared memory.
+The fresh typed writer is the sibling `globalmind-runtime` crate. It owns
+distillation, trajectory, prediction-error, and superposition transactions and
+refuses the quarantined `hypermind/core` database without an explicit override.
+Migration `0009_immutable_tensor_kv.surql` freezes transformer tensor identity
+and payloads. Migration `0010_native_distillation_ingress.surql` adds immutable
+artifact receipts and append-only run events, and binds every admitted
+trajectory to exact TPPE configuration, expanding-radius law, and boundary
+receipts. TPPE is a dynamic spiral-out; constant-radius corkscrew behavior,
+RoPE fallback, radius regression, or boundary failure rejects replay. The
+current TPPE binding is reference-level only: its Rust runtime and real-model
+parity gates remain open.
+Migration `0011_atomic_trajectory_cells.surql` closes the persistent cell
+bundle: rank-1 packets mint immutable edges plus crystallization proofs, rank-2
+packets mint closed-loop proofs, rank-8 packets anchor native tangent buffers,
+and each trajectory step records TPPE radius, revolution, and boundary-margin
+state. The schema is verified; a real walked trajectory is still required.
+
 See `PLAIN-LANGUAGE-SPEC.md` for the system in plain words,
 `SYMPLECTIC-ENVELOPE-SPEC.md` for the traversal contract,
 `BASETEN-GRANT-PACK.md` for measured numbers,
@@ -64,9 +127,9 @@ DNHG sources are excluded from the competition evidence chain.
 - **Proof 1 — Euclidean model:** `map.read_euclid` returns flat R^dim rows
   (Poincare 3 + IDF-dir 3 + phase 2 + salience 1); self-cosine 1.0 live.
   No hyperbolic math, no TPE knowledge required by the caller.
-- **Proof 1 — nested KV active:** `map.kv_store`/`map.kv_fetch` with
-  producer lineage + accumulating hit receipts; MISS taps hunger;
-  cache snapshotted + recovered with the map (1 entry round-trip proven).
+- **Historical file-mode proof — legacy string KV:** `map.kv_store`/
+  `map.kv_fetch` snapshot round-trip. This is isolated to
+  `HYPERMIND_SURREAL=off` and is not the transformer tensor-cache authority.
 - **Proof 2 — walk ingestion:** `multimodel_walk.py`: 5 reasoning steps,
   each reads prior KV → queries map → stores conclusion → ingests trace.
   6/6 KV readable, 5/5 traces ingested, snapshot `fc1ec189` @ 2,079 atoms.

@@ -1,0 +1,11 @@
+{
+  "name": "react-conventions-gate",
+  "description": "Validate React 18/19 conventions: Server-Component-first, deep leaf client boundary, serializable props, level-correct state, Suspense/actions async.",
+  "parameters": {
+    "server_by_default": { "type": "boolean", "description": "true: Server Component default, 'use client' pushed to leaves" },
+    "boundary": { "type": "string", "description": "'deep-leaf-client'" },
+    "state_level": { "type": "string", "description": "'local' | 'lifted-shared' | 'zustand-global' | 'tanstack-server'" },
+    "async_model": { "type": "string", "description": "'suspense-action'" }
+  },
+  "required": ["server_by_default", "boundary", "state_level", "async_model"]
+}

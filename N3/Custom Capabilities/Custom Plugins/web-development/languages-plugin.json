@@ -1,0 +1,1762 @@
+{
+  "name": "languages",
+  "description": "best practices for 60 languages: a skill loaded when you touch a language's files, and checkers you must run before finishing",
+  "version": "0.1.0",
+  "enabled": true,
+  "languages": [
+    {
+      "id": "python",
+      "exts": [
+        ".py",
+        ".pyi"
+      ],
+      "words": [
+        "python",
+        "pytest",
+        "pyproject"
+      ],
+      "skill": "plugins/web-development/backend/languages/python/skills.md",
+      "checks": [
+        "ruff",
+        "mypy",
+        "pyright",
+        "pytest",
+        "flake8",
+        "pylint",
+        "unittest"
+      ],
+      "version": {
+        "pinned": "Python 3.14",
+        "checked": "2026-10-07",
+        "source": "this machine",
+        "floor": "3.10",
+        "cmd": "python3 --version"
+      },
+      "tools": [
+        "run_python",
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "javascript",
+      "exts": [
+        ".js",
+        ".mjs",
+        ".cjs",
+        ".jsx"
+      ],
+      "words": [
+        "javascript",
+        "node.js",
+        "nodejs"
+      ],
+      "skill": "plugins/web-development/frontend/languages/javascript/skills.md",
+      "checks": [
+        "eslint",
+        "prettier",
+        "vitest",
+        "jest",
+        "mocha",
+        "node --test",
+        "biome",
+        "pnpm"
+      ],
+      "version": {
+        "pinned": "Node.js 24 LTS, ECMAScript 2025",
+        "checked": "2026-10-07",
+        "source": "this machine and the web, Sep 2026",
+        "floor": "Node 20",
+        "cmd": "node --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "typescript",
+      "exts": [
+        ".ts",
+        ".tsx",
+        ".mts",
+        ".cts"
+      ],
+      "words": [
+        "typescript"
+      ],
+      "skill": "plugins/web-development/frontend/languages/typescript/skills.md",
+      "checks": [
+        "tsc",
+        "eslint",
+        "prettier",
+        "vitest",
+        "jest",
+        "biome"
+      ],
+      "version": {
+        "pinned": "TypeScript 7.0",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "TypeScript 5.0",
+        "cmd": "tsc --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "rust",
+      "exts": [
+        ".rs"
+      ],
+      "words": [
+        "rust",
+        "cargo",
+        "rustc",
+        "clippy"
+      ],
+      "skill": "plugins/web-development/backend/languages/rust/skills.md",
+      "checks": [
+        "cargo clippy",
+        "cargo test",
+        "cargo check",
+        "cargo fmt",
+        "rustfmt",
+        "cargo nextest"
+      ],
+      "version": {
+        "pinned": "Rust 1.99, edition 2024",
+        "checked": "2026-10-07",
+        "source": "this machine",
+        "floor": "Rust 1.75",
+        "cmd": "rustc --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "go",
+      "exts": [
+        ".go"
+      ],
+      "words": [
+        "golang",
+        "go mod",
+        "go vet"
+      ],
+      "skill": "plugins/web-development/backend/languages/go/skills.md",
+      "checks": [
+        "go vet",
+        "go test",
+        "gofmt",
+        "staticcheck",
+        "golangci-lint"
+      ],
+      "version": {
+        "pinned": "Go 1.26",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "Go 1.22",
+        "cmd": "go version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "java",
+      "exts": [
+        ".java"
+      ],
+      "words": [
+        "java",
+        "maven",
+        "gradle",
+        "spring boot"
+      ],
+      "skill": "plugins/web-development/backend/languages/java/skills.md",
+      "checks": [
+        "mvn",
+        "mvnw",
+        "gradle",
+        "gradlew",
+        "javac",
+        "checkstyle",
+        "spotbugs"
+      ],
+      "version": {
+        "pinned": "Java 25 LTS",
+        "checked": "2026-10-07",
+        "source": "not verified online; from knowledge",
+        "floor": "Java 17",
+        "cmd": "java -version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "kotlin",
+      "exts": [
+        ".kt",
+        ".kts"
+      ],
+      "words": [
+        "kotlin",
+        "ktlint",
+        "detekt"
+      ],
+      "skill": "plugins/web-development/backend/languages/kotlin/skills.md",
+      "checks": [
+        "gradle",
+        "gradlew",
+        "ktlint",
+        "detekt",
+        "kotlinc"
+      ],
+      "version": {
+        "pinned": "Kotlin 2.3",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "Kotlin 2.0",
+        "cmd": "kotlinc -version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "csharp",
+      "exts": [
+        ".cs"
+      ],
+      "words": [
+        "c#",
+        "csharp",
+        "dotnet"
+      ],
+      "skill": "plugins/web-development/backend/languages/csharp/skills.md",
+      "checks": [
+        "dotnet build",
+        "dotnet test",
+        "dotnet format"
+      ],
+      "version": {
+        "pinned": "C# 14 on .NET 10 LTS",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "C# 12 / .NET 8",
+        "cmd": "dotnet --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "dotnet",
+      "exts": [
+        ".csproj",
+        ".sln",
+        ".slnx",
+        ".props",
+        ".targets"
+      ],
+      "words": [
+        "dotnet",
+        "nuget",
+        "msbuild"
+      ],
+      "skill": "plugins/web-development/backend/languages/dotnet/skills.md",
+      "checks": [
+        "dotnet build",
+        "dotnet test",
+        "dotnet format"
+      ],
+      "version": {
+        "pinned": "NEEDS-VERIFY (project-pin-driven; SDK MISSING on this machine 2026-10-30)",
+        "checked": "2026-10-30",
+        "source": "this machine (dotnet not installed)",
+        "floor": ".NET 8",
+        "cmd": "dotnet --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "c",
+      "exts": [
+        ".c",
+        ".h"
+      ],
+      "words": [],
+      "skill": "plugins/web-development/backend/languages/c/skills.md",
+      "checks": [
+        "gcc",
+        "clang",
+        "cmake",
+        "make",
+        "cppcheck",
+        "clang-tidy",
+        "valgrind"
+      ],
+      "version": {
+        "pinned": "C23 (ISO/IEC 9899:2024)",
+        "checked": "2026-10-07",
+        "source": "this machine",
+        "floor": "C17",
+        "cmd": "clang --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "cpp",
+      "exts": [
+        ".cc",
+        ".cpp",
+        ".cxx",
+        ".hpp",
+        ".hh",
+        ".hxx"
+      ],
+      "words": [
+        "c++",
+        "cpp"
+      ],
+      "skill": "plugins/web-development/backend/languages/cpp/skills.md",
+      "checks": [
+        "g++",
+        "clang++",
+        "cmake",
+        "make",
+        "ctest",
+        "clang-tidy",
+        "cppcheck"
+      ],
+      "version": {
+        "pinned": "C++23 (ISO/IEC 14882:2024)",
+        "checked": "2026-10-07",
+        "source": "this machine",
+        "floor": "C++20",
+        "cmd": "clang++ --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "swift",
+      "exts": [
+        ".swift"
+      ],
+      "words": [
+        "swift",
+        "swiftui",
+        "swiftlint",
+        "xcodebuild"
+      ],
+      "skill": "plugins/web-development/frontend/languages/swift/skills.md",
+      "checks": [
+        "swift build",
+        "swift test",
+        "swiftlint",
+        "swift-format",
+        "xcodebuild"
+      ],
+      "version": {
+        "pinned": "Swift 6.4",
+        "checked": "2026-10-07",
+        "source": "this machine",
+        "floor": "Swift 5.9",
+        "cmd": "swiftc --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "sql",
+      "exts": [
+        ".sql"
+      ],
+      "words": [
+        "sql",
+        "postgres",
+        "postgresql",
+        "sqlite",
+        "mysql"
+      ],
+      "skill": "plugins/web-development/middleware/languages/sql/skills.md",
+      "checks": [
+        "sqlfluff",
+        "psql",
+        "sqlite3",
+        "pg_prove"
+      ],
+      "version": {
+        "pinned": "SQL:2023, PostgreSQL 18, SQLite 3.54",
+        "checked": "2026-10-07",
+        "source": "this machine; PostgreSQL 18 not verified online",
+        "floor": "PostgreSQL 14",
+        "cmd": "sqlite3 --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "shell",
+      "exts": [
+        ".sh",
+        ".bash",
+        ".zsh"
+      ],
+      "words": [
+        "bash",
+        "shell script",
+        "shellcheck"
+      ],
+      "skill": "plugins/web-development/middleware/languages/shell/skills.md",
+      "checks": [
+        "shellcheck",
+        "shfmt",
+        "bash -n",
+        "sh -n",
+        "bats"
+      ],
+      "version": {
+        "pinned": "Bash 5.3",
+        "checked": "2026-10-07",
+        "source": "this machine; 5.3 not verified online",
+        "floor": "Bash 3.2",
+        "cmd": "bash --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "ruby",
+      "exts": [
+        ".rb"
+      ],
+      "words": [
+        "ruby",
+        "rails",
+        "rspec"
+      ],
+      "skill": "plugins/web-development/backend/languages/ruby/skills.md",
+      "checks": [
+        "rubocop",
+        "rspec",
+        "rake",
+        "ruby -c",
+        "ruby -wc",
+        "brakeman"
+      ],
+      "version": {
+        "pinned": "Ruby 4.0",
+        "checked": "2026-10-30",
+        "source": "this machine (ruby 4.0.7, gem 4.0.20; rubocop/rspec MISSING)",
+        "floor": "Ruby 3.2",
+        "cmd": "ruby --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "php",
+      "exts": [
+        ".php"
+      ],
+      "words": [
+        "php",
+        "laravel",
+        "phpunit"
+      ],
+      "skill": "plugins/web-development/backend/languages/php/skills.md",
+      "checks": [
+        "phpstan",
+        "psalm",
+        "phpunit",
+        "php -l",
+        "phpcs",
+        "php-cs-fixer",
+        "pest"
+      ],
+      "version": {
+        "pinned": "PHP 8.5",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "PHP 8.2",
+        "cmd": "php --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "dart",
+      "exts": [
+        ".dart"
+      ],
+      "words": [
+        "dart",
+        "flutter"
+      ],
+      "skill": "plugins/web-development/frontend/languages/dart/skills.md",
+      "checks": [
+        "dart format",
+        "dart analyze",
+        "dart test",
+        "flutter analyze",
+        "flutter test"
+      ],
+      "version": {
+        "pinned": "Dart 3.11",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "Dart 3.0",
+        "cmd": "dart --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "objc",
+      "exts": [
+        ".m",
+        ".mm"
+      ],
+      "words": [
+        "objective-c",
+        "objc"
+      ],
+      "skill": "plugins/web-development/backend/languages/objc/skills.md",
+      "checks": [
+        "clang",
+        "xcodebuild",
+        "clang-format",
+        "xctest"
+      ],
+      "version": {
+        "pinned": "Apple clang 21 with Xcode 27.0",
+        "checked": "2026-10-07",
+        "source": "this machine",
+        "floor": "ARC-era Objective-C 2.0",
+        "cmd": "clang --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "r",
+      "exts": [
+        ".r",
+        ".rmd"
+      ],
+      "words": [
+        "rscript",
+        "tidyverse",
+        "testthat"
+      ],
+      "skill": "plugins/web-development/backend/languages/r/skills.md",
+      "checks": [
+        "lintr",
+        "styler",
+        "testthat",
+        "devtools::test",
+        "r cmd check"
+      ],
+      "version": {
+        "pinned": "R 4.6",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "R 4.1",
+        "cmd": "Rscript --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "julia",
+      "exts": [
+        ".jl"
+      ],
+      "words": [
+        "julia"
+      ],
+      "skill": "plugins/web-development/backend/languages/julia/skills.md",
+      "checks": [
+        "pkg.test",
+        "juliaformatter",
+        "aqua",
+        "jet"
+      ],
+      "version": {
+        "pinned": "Julia 1.12",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "Julia 1.9",
+        "cmd": "julia --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "matlab",
+      "exts": [],
+      "words": [
+        "matlab",
+        "octave"
+      ],
+      "skill": "plugins/web-development/backend/languages/matlab/skills.md",
+      "checks": [
+        "runtests",
+        "checkcode",
+        "mlint",
+        "matlab -batch",
+        "octave"
+      ],
+      "version": {
+        "pinned": "the latest MathWorks release (or GNU Octave)",
+        "checked": "2026-10-07",
+        "source": "not verified online",
+        "floor": "R2019b (arguments blocks)",
+        "cmd": "octave --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "fortran",
+      "exts": [
+        ".f90",
+        ".f95",
+        ".f03",
+        ".f08",
+        ".f",
+        ".for"
+      ],
+      "words": [
+        "fortran",
+        "gfortran"
+      ],
+      "skill": "plugins/web-development/backend/languages/fortran/skills.md",
+      "checks": [
+        "gfortran",
+        "fpm test",
+        "fprettify",
+        "flang"
+      ],
+      "version": {
+        "pinned": "Fortran 2023, gfortran 16",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "Fortran 2018",
+        "cmd": "gfortran --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "lean",
+      "exts": [
+        ".lean"
+      ],
+      "words": [
+        "lean 4",
+        "mathlib"
+      ],
+      "skill": "plugins/web-development/backend/languages/lean/skills.md",
+      "checks": [
+        "lake build",
+        "lake test",
+        "lean "
+      ],
+      "version": {
+        "pinned": "Lean 4.34",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "Lean 4.0",
+        "cmd": "lean --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "scala",
+      "exts": [
+        ".scala",
+        ".sc"
+      ],
+      "words": [
+        "scala",
+        "sbt"
+      ],
+      "skill": "plugins/web-development/backend/languages/scala/skills.md",
+      "checks": [
+        "sbt",
+        "scala-cli",
+        "scalafmt",
+        "scalafix",
+        "mill"
+      ],
+      "version": {
+        "pinned": "Scala 3.8",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "Scala 3.3 LTS",
+        "cmd": "scala-cli version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "elixir",
+      "exts": [
+        ".ex",
+        ".exs"
+      ],
+      "words": [
+        "elixir",
+        "phoenix"
+      ],
+      "skill": "plugins/web-development/backend/languages/elixir/skills.md",
+      "checks": [
+        "mix format",
+        "mix credo",
+        "mix dialyzer",
+        "mix test",
+        "mix compile"
+      ],
+      "version": {
+        "pinned": "Elixir 1.20 on OTP 28",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "Elixir 1.15",
+        "cmd": "elixir --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "erlang",
+      "exts": [
+        ".erl",
+        ".hrl"
+      ],
+      "words": [
+        "erlang",
+        "rebar3"
+      ],
+      "skill": "plugins/web-development/backend/languages/erlang/skills.md",
+      "checks": [
+        "rebar3",
+        "erlc",
+        "dialyzer",
+        "escript"
+      ],
+      "version": {
+        "pinned": "Erlang/OTP 28",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "OTP 26",
+        "cmd": "erl -noshell -eval 'io:format(\"~s~n\",[erlang:system_info(otp_release)]),halt().'"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "perl",
+      "exts": [
+        ".pl",
+        ".pm"
+      ],
+      "words": [
+        "perl"
+      ],
+      "skill": "plugins/web-development/backend/languages/perl/skills.md",
+      "checks": [
+        "perlcritic",
+        "perltidy",
+        "prove",
+        "perl -c",
+        "perl -wc"
+      ],
+      "version": {
+        "pinned": "Perl 5.34.1",
+        "checked": "2026-10-30",
+        "source": "this machine (perl 5.34.1, cpan 1.64; perlcritic/perltidy MISSING)",
+        "floor": "Perl 5.10",
+        "cmd": "perl -e 'print $]'"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "groovy",
+      "exts": [
+        ".groovy",
+        ".gvy"
+      ],
+      "words": [
+        "groovy",
+        "jenkinsfile"
+      ],
+      "skill": "plugins/web-development/backend/languages/groovy/skills.md",
+      "checks": [
+        "codenarc",
+        "gradlew",
+        "gradle",
+        "npm-groovy-lint"
+      ],
+      "version": {
+        "pinned": "Groovy 5.0",
+        "checked": "2026-10-07",
+        "source": "not verified online",
+        "floor": "Groovy 3.0",
+        "cmd": "groovy --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "haskell",
+      "exts": [
+        ".hs",
+        ".lhs"
+      ],
+      "words": [
+        "haskell",
+        "ghc",
+        "cabal"
+      ],
+      "skill": "plugins/web-development/backend/languages/haskell/skills.md",
+      "checks": [
+        "cabal build",
+        "cabal test",
+        "stack test",
+        "hlint",
+        "ormolu",
+        "fourmolu",
+        "ghc -wall"
+      ],
+      "version": {
+        "pinned": "GHC 9.14",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "GHC 9.6",
+        "cmd": "ghc --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "ocaml",
+      "exts": [
+        ".ml",
+        ".mli"
+      ],
+      "words": [
+        "ocaml",
+        "dune"
+      ],
+      "skill": "plugins/web-development/backend/languages/ocaml/skills.md",
+      "checks": [
+        "dune build",
+        "dune test",
+        "dune runtest",
+        "ocamlformat"
+      ],
+      "version": {
+        "pinned": "OCaml 5.4",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "OCaml 5.0",
+        "cmd": "ocaml -version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "fsharp",
+      "exts": [
+        ".fs",
+        ".fsx",
+        ".fsi"
+      ],
+      "words": [
+        "f#",
+        "fsharp"
+      ],
+      "skill": "plugins/web-development/backend/languages/fsharp/skills.md",
+      "checks": [
+        "dotnet build",
+        "dotnet test",
+        "fantomas",
+        "dotnet fsi"
+      ],
+      "version": {
+        "pinned": "F# 10 on .NET 10",
+        "checked": "2026-10-07",
+        "source": "from knowledge, with .NET 10 confirmed by the web",
+        "floor": "F# 8",
+        "cmd": "dotnet --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "clojure",
+      "exts": [
+        ".clj",
+        ".cljs",
+        ".cljc",
+        ".edn"
+      ],
+      "words": [
+        "clojure",
+        "clojurescript"
+      ],
+      "skill": "plugins/web-development/backend/languages/clojure/skills.md",
+      "checks": [
+        "clj-kondo",
+        "cljfmt",
+        "lein test",
+        "clojure -x",
+        "clojure -m",
+        "clj -x",
+        "clj -m",
+        "kaocha"
+      ],
+      "version": {
+        "pinned": "Clojure 1.12",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "Clojure 1.11",
+        "cmd": "clojure --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "zig",
+      "exts": [
+        ".zig"
+      ],
+      "words": [
+        "zig"
+      ],
+      "skill": "plugins/web-development/backend/languages/zig/skills.md",
+      "checks": [
+        "zig fmt",
+        "zig build",
+        "zig test"
+      ],
+      "version": {
+        "pinned": "Zig 0.16",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "Zig 0.13",
+        "cmd": "zig version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "assembly",
+      "exts": [
+        ".asm",
+        ".s"
+      ],
+      "words": [
+        "assembly",
+        "nasm"
+      ],
+      "skill": "plugins/web-development/backend/languages/assembly/skills.md",
+      "checks": [
+        "nasm",
+        "yasm",
+        "clang -c",
+        "gcc -c",
+        "llvm-mc",
+        "objdump",
+        "otool"
+      ],
+      "version": {
+        "pinned": "AArch64 (Arm ARM) and x86-64 System V",
+        "checked": "2026-10-07",
+        "source": "this machine",
+        "floor": "the ABI in the first rule",
+        "cmd": "clang --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "lua",
+      "exts": [
+        ".lua"
+      ],
+      "words": [
+        "lua",
+        "luajit"
+      ],
+      "skill": "plugins/web-development/backend/languages/lua/skills.md",
+      "checks": [
+        "luacheck",
+        "stylua",
+        "busted",
+        "luau-analyze"
+      ],
+      "version": {
+        "pinned": "Lua 5.4",
+        "checked": "2026-10-07",
+        "source": "not verified online",
+        "floor": "Lua 5.1 semantics where LuaJIT is the target",
+        "cmd": "lua -v"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "powershell",
+      "exts": [
+        ".ps1",
+        ".psm1",
+        ".psd1"
+      ],
+      "words": [
+        "powershell",
+        "pwsh"
+      ],
+      "skill": "plugins/web-development/middleware/languages/powershell/skills.md",
+      "checks": [
+        "invoke-scriptanalyzer",
+        "invoke-pester"
+      ],
+      "version": {
+        "pinned": "PowerShell 7.6 LTS",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "PowerShell 7.2",
+        "cmd": "pwsh --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "terraform",
+      "exts": [
+        ".tf",
+        ".tfvars",
+        ".hcl"
+      ],
+      "words": [
+        "terraform",
+        "opentofu",
+        "hcl"
+      ],
+      "skill": "plugins/web-development/middleware/languages/terraform/skills.md",
+      "checks": [
+        "terraform fmt",
+        "terraform validate",
+        "tflint",
+        "tofu validate",
+        "tofu fmt",
+        "checkov",
+        "trivy config"
+      ],
+      "version": {
+        "pinned": "Terraform 1.15",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "Terraform 1.6 (native tests)",
+        "cmd": "terraform version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "glsl",
+      "exts": [
+        ".glsl",
+        ".vert",
+        ".frag",
+        ".geom",
+        ".comp",
+        ".tesc",
+        ".tese"
+      ],
+      "words": [
+        "glsl",
+        "fragment shader",
+        "vertex shader"
+      ],
+      "skill": "plugins/web-development/frontend/languages/glsl/skills.md",
+      "checks": [
+        "glslangvalidator",
+        "glslc",
+        "spirv-val"
+      ],
+      "version": {
+        "pinned": "GLSL 4.60 and GLSL ES 3.20",
+        "checked": "2026-10-07",
+        "source": "not verified online; from knowledge",
+        "floor": "GLSL ES 3.00",
+        "cmd": "glslangValidator --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "hlsl",
+      "exts": [
+        ".hlsl",
+        ".hlsli",
+        ".fx"
+      ],
+      "words": [
+        "hlsl"
+      ],
+      "skill": "plugins/web-development/backend/languages/hlsl/skills.md",
+      "checks": [
+        "dxc",
+        "fxc"
+      ],
+      "version": {
+        "pinned": "Shader Model 6.8 with DXC",
+        "checked": "2026-10-07",
+        "source": "not verified online; from knowledge",
+        "floor": "Shader Model 6.0",
+        "cmd": "dxc --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "metal",
+      "exts": [
+        ".metal"
+      ],
+      "words": [
+        "metal shading language",
+        "msl"
+      ],
+      "skill": "plugins/web-development/middleware/languages/metal/skills.md",
+      "checks": [
+        "xcrun -sdk macosx metal",
+        "xcrun metal",
+        "metallib",
+        "metal -std"
+      ],
+      "version": {
+        "pinned": "Metal Shading Language 4.0",
+        "checked": "2026-10-07",
+        "source": "this machine",
+        "floor": "Metal 3.0",
+        "cmd": "xcrun -sdk macosx metal --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "solidity",
+      "exts": [
+        ".sol"
+      ],
+      "words": [
+        "solidity",
+        "smart contract"
+      ],
+      "skill": "plugins/web-development/backend/languages/solidity/skills.md",
+      "checks": [
+        "forge test",
+        "forge build",
+        "forge fmt",
+        "slither",
+        "solhint",
+        "solc",
+        "hardhat test"
+      ],
+      "version": {
+        "pinned": "Solidity 0.8.37",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "Solidity 0.8.20",
+        "cmd": "solc --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "cobol",
+      "exts": [
+        ".cob",
+        ".cbl",
+        ".cobol",
+        ".cpy"
+      ],
+      "words": [
+        "cobol",
+        "gnucobol"
+      ],
+      "skill": "plugins/web-development/backend/languages/cobol/skills.md",
+      "checks": [
+        "cobc",
+        "cobol-check"
+      ],
+      "version": {
+        "pinned": "COBOL (ISO/IEC 1989:2023), GnuCOBOL 3.2",
+        "checked": "2026-10-07",
+        "source": "web, Sep 2026",
+        "floor": "COBOL 2002 features",
+        "cmd": "cobc --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "zustand",
+      "exts": [],
+      "words": [
+        "zustand",
+        "useShallow",
+        "useStore"
+      ],
+      "skill": "plugins/web-development/frontend/languages/zustand/skills.md",
+      "checks": [
+        "tsc",
+        "eslint",
+        "prettier",
+        "vitest"
+      ],
+      "version": {
+        "pinned": "Zustand v5 (NEEDS-VERIFY 2026-10-30)",
+        "checked": "2026-10-30",
+        "source": "this machine (node v26.9.0 installed, tsc MISSING)",
+        "floor": "Zustand v4",
+        "cmd": "node --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "vite",
+      "exts": [
+        ".ts",
+        ".mts"
+      ],
+      "words": [
+        "vite",
+        "vite.config",
+        "import.meta.env",
+        "optimizeDeps"
+      ],
+      "skill": "plugins/web-development/frontend/languages/vite/skills.md",
+      "checks": [
+        "tsc",
+        "vite build",
+        "vite preview",
+        "eslint",
+        "prettier"
+      ],
+      "version": {
+        "pinned": "Vite v6/v7-era (NEEDS-VERIFY 2026-10-30)",
+        "checked": "2026-10-30",
+        "source": "this machine (node v26.9.0 installed)",
+        "floor": "Vite v5",
+        "cmd": "npx vite --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "tailwind",
+      "exts": [
+        ".css"
+      ],
+      "words": [
+        "tailwind",
+        "tailwindcss",
+        "@theme",
+        "tailwind.config"
+      ],
+      "skill": "plugins/web-development/frontend/languages/tailwind/skills.md",
+      "checks": [
+        "vite build",
+        "tailwindcss",
+        "prettier",
+        "eslint"
+      ],
+      "version": {
+        "pinned": "Tailwind v3 + v4; v5 NEEDS-VERIFY 2026-10-30",
+        "checked": "2026-10-30",
+        "source": "this machine (node v26.9.0 installed)",
+        "floor": "Tailwind v3",
+        "cmd": "npx tailwindcss --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "html",
+      "exts": [
+        ".html",
+        ".htm"
+      ],
+      "words": [
+        "html",
+        "html-validate",
+        "a11y",
+        "axe"
+      ],
+      "skill": "plugins/web-development/frontend/languages/html/skills.md",
+      "checks": [
+        "html-validate",
+        "prettier",
+        "eslint",
+        "axe"
+      ],
+      "version": {
+        "pinned": "HTML5 living standard (WHATWG)",
+        "checked": "2026-10-30",
+        "source": "this machine (node v26.9.0 installed)",
+        "floor": "HTML5",
+        "cmd": "npx html-validate --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "tokio",
+      "exts": [
+        ".rs"
+      ],
+      "words": [
+        "tokio",
+        "async rust",
+        "semaphore",
+        "spawn_blocking"
+      ],
+      "skill": "plugins/web-development/middleware/languages/tokio/skills.md",
+      "checks": [
+        "cargo clippy",
+        "cargo test",
+        "cargo check",
+        "cargo fmt"
+      ],
+      "version": {
+        "pinned": "Tokio 1.x on Rust 1.99, edition 2024",
+        "checked": "2026-10-30",
+        "source": "this machine (rustc 1.99.0 installed)",
+        "floor": "Tokio 1.0 / Rust 1.75",
+        "cmd": "rustc --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "wasm",
+      "exts": [
+        ".rs"
+      ],
+      "words": [
+        "wasm",
+        "wasm-pack",
+        "wasm-bindgen",
+        "wasm-opt",
+        "trunk"
+      ],
+      "skill": "plugins/web-development/frontend/languages/wasm/skills.md",
+      "checks": [
+        "wasm-pack",
+        "wasm-opt",
+        "cargo clippy",
+        "cargo test",
+        "trunk"
+      ],
+      "version": {
+        "pinned": "wasm-pack 0.13-era / wasm-bindgen 0.2-era / trunk 0.2-era (NEEDS-VERIFY 2026-10-30)",
+        "checked": "2026-10-30",
+        "source": "this machine (rustc 1.99.0 installed)",
+        "floor": "wasm-bindgen 0.2 / Rust 1.75",
+        "cmd": "wasm-pack --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "codemirror",
+      "exts": [
+        ".ts",
+        ".tsx",
+        ".js"
+      ],
+      "words": [
+        "codemirror",
+        "editorview",
+        "editorstate"
+      ],
+      "skill": "plugins/web-development/frontend/languages/codemirror/skills.md",
+      "checks": [
+        "tsc",
+        "eslint",
+        "prettier",
+        "vitest"
+      ],
+      "version": {
+        "pinned": "CodeMirror 6.x extension set",
+        "checked": "2026-10-30",
+        "source": "this machine + project pin 2026-10-30",
+        "floor": "CodeMirror 6.0",
+        "cmd": "npm ls @codemirror/state"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "monaco",
+      "exts": [
+        ".ts",
+        ".tsx",
+        ".js"
+      ],
+      "words": [
+        "monaco",
+        "itextmodel",
+        "monaco-editor"
+      ],
+      "skill": "plugins/web-development/frontend/languages/monaco/skills.md",
+      "checks": [
+        "tsc",
+        "eslint",
+        "prettier"
+      ],
+      "version": {
+        "pinned": "Monaco 0.5x-era API",
+        "checked": "2026-10-30",
+        "source": "this machine + project pin 2026-10-30",
+        "floor": "Monaco 0.34",
+        "cmd": "npm ls monaco-editor"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "react-three-fiber",
+      "exts": [
+        ".tsx",
+        ".ts",
+        ".jsx"
+      ],
+      "words": [
+        "react-three-fiber",
+        "r3f",
+        "useframe",
+        "canvas",
+        "drei"
+      ],
+      "skill": "plugins/web-development/frontend/languages/react-three-fiber/skills.md",
+      "checks": [
+        "tsc",
+        "eslint",
+        "prettier"
+      ],
+      "version": {
+        "pinned": "R3F v8/v9-era + three.js current",
+        "checked": "2026-10-30",
+        "source": "this machine + project pin 2026-10-30",
+        "floor": "R3F v8",
+        "cmd": "npm ls @react-three/fiber three"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "react-flow",
+      "exts": [
+        ".tsx",
+        ".ts"
+      ],
+      "words": [
+        "react-flow",
+        "xyflow",
+        "reactflow",
+        "elkjs",
+        "dag"
+      ],
+      "skill": "plugins/web-development/frontend/languages/react-flow/skills.md",
+      "checks": [
+        "tsc",
+        "eslint",
+        "prettier"
+      ],
+      "version": {
+        "pinned": "@xyflow/react v12-era + elkjs",
+        "checked": "2026-10-30",
+        "source": "this machine + project pin 2026-10-30",
+        "floor": "@xyflow/react v11",
+        "cmd": "npm ls @xyflow/react elkjs"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "dockview",
+      "exts": [
+        ".tsx",
+        ".ts"
+      ],
+      "words": [
+        "dockview",
+        "dockviewapi"
+      ],
+      "skill": "plugins/web-development/frontend/languages/dockview/skills.md",
+      "checks": [
+        "tsc",
+        "eslint",
+        "prettier"
+      ],
+      "version": {
+        "pinned": "Dockview v4-era API",
+        "checked": "2026-10-30",
+        "source": "this machine + project pin 2026-10-30",
+        "floor": "Dockview v3",
+        "cmd": "npm ls dockview"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "tauri",
+      "exts": [
+        ".rs",
+        ".ts"
+      ],
+      "words": [
+        "tauri",
+        "tauri.conf.json",
+        "invoke",
+        "capabilities"
+      ],
+      "skill": "plugins/web-development/middleware/languages/tauri/skills.md",
+      "checks": [
+        "cargo clippy",
+        "cargo test",
+        "cargo fmt",
+        "tsc"
+      ],
+      "version": {
+        "pinned": "Tauri 2.0-era (NEEDS-VERIFY 2026-10-30: confirm latest 2.x via registry)",
+        "checked": "2026-10-30",
+        "source": "this machine + project pin 2026-10-30",
+        "floor": "Tauri 2.0",
+        "cmd": "cargo tree -p tauri"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "postgres",
+      "exts": [
+        ".sql"
+      ],
+      "words": [
+        "postgres",
+        "postgresql",
+        "psql",
+        "pgbouncer"
+      ],
+      "skill": "plugins/web-development/middleware/languages/postgres/skills.md",
+      "checks": [
+        "psql",
+        "pg_prove",
+        "sqlfluff"
+      ],
+      "version": {
+        "pinned": "PostgreSQL 18-era, 17.11 client VERIFIED (NEEDS-VERIFY 2026-10-30: PG18 server)",
+        "checked": "2026-10-30",
+        "source": "this machine + project pin 2026-10-30",
+        "floor": "PostgreSQL 14",
+        "cmd": "psql --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "sqlite",
+      "exts": [
+        ".sql",
+        ".db",
+        ".sqlite"
+      ],
+      "words": [
+        "sqlite",
+        "wal",
+        "pragma"
+      ],
+      "skill": "plugins/web-development/middleware/languages/sqlite/skills.md",
+      "checks": [
+        "sqlite3",
+        "sqlfluff"
+      ],
+      "version": {
+        "pinned": "SQLite 3.54.0 VERIFIED 2026-10-30",
+        "checked": "2026-10-30",
+        "source": "this machine + project pin 2026-10-30",
+        "floor": "SQLite 3.40",
+        "cmd": "sqlite3 --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "docker",
+      "exts": [
+        "Dockerfile",
+        ".dockerfile",
+        "docker-compose.yml"
+      ],
+      "words": [
+        "docker",
+        "compose",
+        "container",
+        "hadolint"
+      ],
+      "skill": "plugins/web-development/middleware/languages/docker/skills.md",
+      "checks": [
+        "docker",
+        "hadolint",
+        "compose"
+      ],
+      "version": {
+        "pinned": "Docker 29.7.1 VERIFIED 2026-10-30 (compose/hadolint/trivy NEEDS-VERIFY: not installed)",
+        "checked": "2026-10-30",
+        "source": "this machine 2026-10-30",
+        "floor": "Docker 24",
+        "cmd": "docker --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "queues",
+      "exts": [],
+      "words": [
+        "queue",
+        "nats",
+        "rabbitmq",
+        "sqs",
+        "kafka",
+        "dlq",
+        "pubsub"
+      ],
+      "skill": "plugins/web-development/middleware/languages/queues/skills.md",
+      "checks": [],
+      "version": {
+        "pinned": "broker-agnostic contract",
+        "floor": "none"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "redis",
+      "exts": [],
+      "words": [
+        "redis",
+        "cache",
+        "ttl",
+        "eviction",
+        "valkey"
+      ],
+      "skill": "plugins/web-development/middleware/languages/redis/skills.md",
+      "checks": [
+        "redis-cli"
+      ],
+      "version": {
+        "pinned": "NEEDS-VERIFY 2026-10-30: redis-cli MISSING, no version measured",
+        "checked": "2026-10-30",
+        "source": "this machine + project pin 2026-10-30",
+        "floor": "project server pin (unrecorded)",
+        "cmd": "redis-cli --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    },
+    {
+      "id": "mongodb",
+      "exts": [],
+      "words": [
+        "mongodb",
+        "mongo",
+        "mongosh",
+        "document",
+        "aggregation"
+      ],
+      "skill": "plugins/web-development/middleware/languages/mongodb/skills.md",
+      "checks": [
+        "mongosh"
+      ],
+      "version": {
+        "pinned": "NEEDS-VERIFY 2026-10-30: mongosh MISSING, no version measured",
+        "checked": "2026-10-30",
+        "source": "this machine + project pin 2026-10-30",
+        "floor": "project server pin (unrecorded)",
+        "cmd": "mongosh --version"
+      },
+      "tools": [
+        "vm_exec"
+      ]
+    }
+  ],
+  "canonical_root": "plugins/web-development/{frontend,backend,middleware}/languages/<lang>/"
+}

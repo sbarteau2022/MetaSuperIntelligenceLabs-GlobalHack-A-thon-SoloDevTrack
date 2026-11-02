@@ -1,0 +1,28 @@
+# GlobalMind overall audit — 2026-11-02
+
+Status: **not certified for the proposed GlobalMind/TIT claims**. This is a source-and-receipt audit; prior live receipts were inspected, not rerun. The quarantined `hypermind/core` database was not touched.
+
+## What the evidence supports
+
+The native binary trace, extraction, frozen-policy judging, replay, isolated Surreal restart/reconciliation, exact-model tensor-K/V page round trip, Capability Atlas policy gates, and harness fail-closed component tests have recorded receipts in `results/queue1-vertical-slice-receipt.txt`. This is an integration slice, with a real frozen weight-backed **single Layer 3 reconstruction**, not a full Qwen model execution. Control/observed bit parity proves observer nonperturbation within that reconstruction. The tensor-K/V parity has the same scope. The judge is independent as a frozen code/policy boundary; it does not judge semantic truth.
+
+## Blocking findings
+
+1. **Model-neutral mind is unproven.** `globalmind-runtime/src/extract/mod.rs` excludes teacher identity from the atom key, but keys rank-0 on kind, dtype, shape, layer, head and payload digest. Exact identical payloads can coalesce; equivalent knowledge across architectures is neither canonicalized nor tested. `address_for` derives coordinates from the content digest, so address proximity has no established semantic meaning. Rank-8 charts are bounded weight slices, not a demonstrated distilled Jacobian of task behavior. A multi-teacher, held-out semantic transfer test is required before claiming model-agnostic knowledge or model swapping.
+2. **Forward-pass scope is overstated.** `globalmind-runtime/src/trace/qwen36.rs` loads Layer 3 projections, embedding, final norm and LM head, then emits logits from that partial path. Its parity is internal to this path. It does not establish equivalence to the complete frozen teacher, adaptive layer skipping, TIT, or reasoning quality. Relabel all receipts and judge material accordingly.
+3. **TPPE recurrence has been repaired at the component boundary.** The current `tppe_states_for_positions` carries one state across positions without token-ID replay, and `TppeState::step` derives revolutions from unwrapped phase. The Layer-3 Q/K TPPE arms rotate by toroidal phase and radial scale without RoPE frequency mixing. These are source and component-test facts, not proof of the proposed full toroidal isotropic attention kernel or replacement of non-attention layers. The `tppe_state_for_position` code cited in the first audit pass was superseded by concurrent work before this update.
+4. **TPPE geometry requires further qualification.** `validate` cross-checks derived revolutions, Poincare radius, boundary margin and hyperboloid lift. The high-radius probe caught rounded-equal represented radii; `step` now rejects them, and both laws fail closed in the bounded native test (`results/queue2/tppe-high-radius-boundary-2026-11-02.txt`). The Lorentz residual tolerance still scales as `64*EPS*x0^2`; an analytical floating-point error bound remains open. One derived revolution is now the common radial endpoint, with equality checked through `TppeState`. An independent held-out quality/resource comparison remains open.
+5. **Crystallization was corrected after the old receipt.** `results/distillation/replay-crystallize-audit-report.txt` describes the earlier per-entity implementation. Current `GlobalMindStore::admit_crystallization` submits events, packets, atoms, trajectory and charts in one Surreal transaction. The poisoned-bundle integration test passed, and a fresh candidate-bound Layer-3 run crystallized and balanced after restart (`results/queue1-layer3-candidate-v2-receipt.txt`). This still does not establish full-model or semantic distillation quality.
+6. **Queue 2 has no promoted winner.** `results/queue2/ADVERSARIAL-AUDIT-2026-11-02.md` invalidates the original TPPE bench and flags A1 pseudo-logits and the unmatched geometry control. The v3 smoke in `results/queue2/tppe-bench-v3-smoke-2026-11-02.txt` uses real Layer-3 outputs and three timing repeats, but only two next-token predictions. It is a wiring smoke, not encoder qualification. The synthetic geometry probes cannot establish a hyperbolic benefit.
+7. **Free-energy, Landauer, and compounding intelligence are hypotheses.** No measured joules, heat, complete-model quality frontier, cross-model transfer, or quadratic scaling receipt exists in the inspected Queue 1/2 reports. Do not state these as achieved.
+
+## Required closure order
+
+1. Correct old receipts to identify the Layer-3 partial model and distinguish the superseded per-entity transaction from the current atomic bundle.
+2. Freeze the revised TPPE state, phase-to-revolution rule, Q/K kernel and one-turn matched-budget identities; add high-radius numeric and held-out prefix-causality evidence.
+3. Compare native Qwen full-model logits with the custom path on a fixed tape; then run held-out TPPE arms with real logits, counterbalanced timing, uncertainty and resource measurements. Keep the old v1 bench void.
+4. Run multi-teacher same-knowledge/different-payload and architecture-swap tests. Define semantic canonicalization and provenance before claiming model neutrality.
+5. Preserve the current atomic-bundle restart receipt; rerun the isolated ingest again if a different encoder is selected. Test a process crash during commit separately from a normal restart.
+6. Only then run matched memory-value, geometry, partial-forward and energy ablations. Preserve baseline and adverse results; bench mechanisms that fail the preregistered frontier.
+
+No live database migration, teacher promotion, commit or push was performed by this audit.

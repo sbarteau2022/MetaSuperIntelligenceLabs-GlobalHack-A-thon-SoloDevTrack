@@ -1,0 +1,43 @@
+# Real frozen-artifact candidate roster. Missing eligibility and independent
+# judge receipts intentionally prevent `open`; `verify` is allowed.
+workspace = globalmind
+method = fresh-globalmind-distillation-v1
+configuration_digest = abd24302c897da5d3c7eb3043821bd18ddf206e3046e89c15ffc33bd97bd5523
+tpe_version = tppe-reference-v1
+tpe_configuration_digest = 07e0dbab82fa9181b1210daadf2eb4f64d46a6a0d799e0e356e29869e09e92de
+
+model.0.provider = stamsam
+model.0.name = Qwen3.6-35B-A3B-Claude-4.7-Opus-Reasoning-Distilled-MLX-oQ4-MTP
+model.0.revision = local-frozen-2026-10-22
+model.0.modality = text
+
+model.0.artifact.0.role = weights-00001
+model.0.artifact.0.path = /Users/stewartbarteau/models/fused/Qwen3.6-MoE-Combined/model-00001-of-00004.safetensors
+model.0.artifact.0.sha256 = b9bfd13788da9e65fa9e7d5f436b89e4d25b9cc10fdc958dd61ee6b60d37cb9d
+model.0.artifact.1.role = weights-00002
+model.0.artifact.1.path = /Users/stewartbarteau/models/fused/Qwen3.6-MoE-Combined/model-00002-of-00004.safetensors
+model.0.artifact.1.sha256 = fd930505f30014da6e6f1b3fe08ec69050c46a2bb5a5154010fda183ad9212ef
+model.0.artifact.2.role = weights-00003
+model.0.artifact.2.path = /Users/stewartbarteau/models/fused/Qwen3.6-MoE-Combined/model-00003-of-00004.safetensors
+model.0.artifact.2.sha256 = fb31d89560b48cfae24ed034b5f9a9b4096c816e73124a0976aeef897b4bcf37
+model.0.artifact.3.role = weights-00004
+model.0.artifact.3.path = /Users/stewartbarteau/models/fused/Qwen3.6-MoE-Combined/model-00004-of-00004.safetensors
+model.0.artifact.3.sha256 = c2104cb58e02ade1754e71ea133d9fcf27930f3ad71e67a06d6ff69b1ddc063b
+model.0.artifact.4.role = mtp-weights
+model.0.artifact.4.path = /Users/stewartbarteau/models/fused/Qwen3.6-MoE-Combined/model-mtp.safetensors
+model.0.artifact.4.sha256 = 5e73b5d07a55db699de850c65ec6620faee2c160884a010c6847c442077c7c5e
+model.0.artifact.5.role = weight-index
+model.0.artifact.5.path = /Users/stewartbarteau/models/fused/Qwen3.6-MoE-Combined/model.safetensors.index.json
+model.0.artifact.5.sha256 = c118f13c0dcb729e4ca2e3d653ab193067551eb1a6410badb5192eb426104f36
+model.0.artifact.6.role = model-config
+model.0.artifact.6.path = /Users/stewartbarteau/models/fused/Qwen3.6-MoE-Combined/config.json
+model.0.artifact.6.sha256 = f10e27901b51cbee6c1d91e66a04fdd8fd3a86db02621e117d5bcc33b68f283e
+model.0.artifact.7.role = tokenizer
+model.0.artifact.7.path = /Users/stewartbarteau/models/fused/Qwen3.6-MoE-Combined/tokenizer.json
+model.0.artifact.7.sha256 = a5cd9732badce41de57e6efce8302930ded1c1188c5f81feb2bd6c24c4a1941f
+model.0.artifact.8.role = tokenizer-config
+model.0.artifact.8.path = /Users/stewartbarteau/models/fused/Qwen3.6-MoE-Combined/tokenizer_config.json
+model.0.artifact.8.sha256 = 855e12b09163ab7d3671f9295e4ce520a9fe97e983907946c763cb5bd2e34de9
+model.0.artifact.9.role = chat-template
+model.0.artifact.9.path = /Users/stewartbarteau/models/fused/Qwen3.6-MoE-Combined/chat_template.jinja
+model.0.artifact.9.sha256 = 55d4931433fe502b794226ee7f4d206a6bdd436ac9f80eb7d8ebb4c639f9ea0c

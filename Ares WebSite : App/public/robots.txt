@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://atoma.example.com/sitemap.xml

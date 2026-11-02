@@ -1,0 +1,90 @@
+GLOBALMIND LANE B — REAL TENSOR K/V QUALIFICATION REPORT
+========================================================
+status: PASS (all 7 required gates passed)
+canonical_workspace: /Users/stewartbarteau/Desktop/GitHub/MetaSuperIntelligenceLabs-GlobalHack-A-thon-SoloDevTrack
+model_directory: /Users/stewartbarteau/models/fused/Qwen3.6-MoE-Combined
+model_id: stamsam/Qwen3.6-35B-A3B-Claude-4.7-Opus-Reasoning-Distilled-MLX-oQ4-MTP
+model_revision: local-frozen-2026-10-22
+model_roster_digest: 2341d9dfe7723e73e6f145b8a71446b4e2476a4b2a6f041c0af1380629a70cba
+manifest_input_digest: a7a0e22f00e9a89fb104ea4e8dde4c481c734890088e133d484248bea5360a94
+tpe_contract_file_sha256: 8b50715ac84650d9d1333757da82d382537591d74b4a0c016fbf2d79768ae456
+tpe_version: tppe-layer3-candidate-v2
+tpe_configuration_digest: 8b50715ac84650d9d1333757da82d382537591d74b4a0c016fbf2d79768ae456
+address_contract_digest: f91fb405f54b5bac454808e571c116819b6329061b6ce44817447559f1449a04
+tensor_contract_digest: 188b798e010c62a796ac12be43ea77054f7fc903dd854218ec3e945177b0b298
+prefix_tokens: [151644, 872, 198, 12801]
+decode_token: 3582
+prefix_digest: 988e1a7deca4006476e670854b39a89e3e3d6d057be42a28828e8552b006909b
+request_digest: d6f57c03b34d1eff8686705e509d678b1331db2a5822c41e72fd9ba001b4d32e
+phase_state_digest: d3b6b384e99dac864504842b8b1e9dc90c29ec215bb71c702aa9cd1edd703eaf
+
+ISOLATED SURREALDB 3.3.5 INSTANCE
+---------------------------------
+endpoint: http://127.0.0.1:62958
+namespace: globalmind_tensor_kv_iso
+database: tensor_kv_qual_001
+quarantined_core_touched: false (port 8000 untouched)
+pid_before_restart: 12982
+pid_after_restart: 12991
+
+GATE RECEIPTS
+-------------
+Gate 1 (Create TensorSession): PASS | session_id=kv_session_qwen36_layer3_qual_001 | latency_ms=18.865
+Gate 2 (Write TensorPage head=0): PASS | page_id=kv_page_qwen36_l3_h0_0_4_r1 | shape=[4, 256] | dtype=f32 | layout=token_major | key_bytes=4096 | value_bytes=4096 | key_sha256=7ae9089c17606f62bdadfd9bad8adb624a1b27326a9bdf077d4e710f019d5dec | value_sha256=4afd2ff7fa493819985b4bb2700b8af062d7a320b8895018f401d70524409ff0 | latency_ms=31.792
+Gate 2 (Write TensorPage head=1): PASS | page_id=kv_page_qwen36_l3_h1_0_4_r1 | shape=[4, 256] | dtype=f32 | layout=token_major | key_bytes=4096 | value_bytes=4096 | key_sha256=ae535b115dcbc4a35b9467013c6ab5d9554a28ae2aaee92e7df9b002980c04d7 | value_sha256=521d82d8a49a30ad5f6b29019ff8cb3e1deac00eb87d9b155eeb9d6248dd196c | latency_ms=26.084
+Gate 3 (Restart SurrealDB & Reverify Contract): PASS | pid_before=12982 -> pid_after=12991 | restart_latency_ms=646.541
+Gate 4 (Fetch & Byte-for-Byte Digest Equality head=0): PASS | key_sha256_match=true | value_sha256_match=true | byte_equal=true | fetch_latency_ms=10.818
+Gate 4 (Fetch & Byte-for-Byte Digest Equality head=1): PASS | key_sha256_match=true | value_sha256_match=true | byte_equal=true | fetch_latency_ms=11.843
+Gate 5 (Inject Fetched KV & Prove Decode/Logit Parity): PASS | layer=3 | vocab_size=248320 | max_hidden_abs_diff=0.00000000 | max_logit_abs_diff=0.00000000 | reference_logits_sha256=0d8b0dc0ba661cf2fee843ecfcb297738958b504bc9b31e69121686b5efaa7bc | injected_logits_sha256=0d8b0dc0ba661cf2fee843ecfcb297738958b504bc9b31e69121686b5efaa7bc | perturbed_control_logits_sha256=23a4e401142d972afaa243eaeff43cb229fd73595ff6a4e52342a0622e6a1e80 | top1_token_id=96156 | top1_logit=13.903345 | inject_decode_latency_ms=281.778
+Gate 6 (Single-Field Identity Mutations & Write/Readonly Rejections): PASS | lookup_identity_misses=20/20 | write_and_readonly_rejections=11/11 | latency_ms=425.796
+  - lookup_mutation[workspace]: MISS (cache miss: no matching active TensorSession)
+  - lookup_mutation[model_id]: MISS (cache miss: no matching active TensorSession)
+  - lookup_mutation[model_revision]: MISS (cache miss: no matching active TensorSession)
+  - lookup_mutation[model_digest]: MISS (cache miss: no matching active TensorSession)
+  - lookup_mutation[request_digest]: MISS (cache miss: no matching active TensorSession)
+  - lookup_mutation[prefix_digest]: MISS (cache miss: no matching active TensorSession)
+  - lookup_mutation[tensor_contract_digest]: MISS (cache miss: no matching active TensorSession)
+  - lookup_mutation[tpe_version]: MISS (cache miss: no matching active TensorSession)
+  - lookup_mutation[tpe_configuration_digest]: MISS (cache miss: no matching active TensorSession)
+  - lookup_mutation[address_contract_digest]: MISS (cache miss: no matching active TensorSession)
+  - lookup_mutation[geometry_space]: MISS (cache miss: no matching active TensorSession)
+  - lookup_mutation[layer]: MISS (cache miss: no matching active TensorPage)
+  - lookup_mutation[kv_head]: MISS (cache miss: no matching active TensorPage)
+  - lookup_mutation[token_start]: MISS (cache miss: no matching active TensorPage)
+  - lookup_mutation[token_end]: MISS (cache miss: no matching active TensorPage)
+  - lookup_mutation[tensor_shape]: MISS (cache miss: no matching active TensorPage)
+  - lookup_mutation[dtype]: MISS (cache miss: no matching active TensorSession)
+  - lookup_mutation[layout]: MISS (cache miss: no matching active TensorPage)
+  - lookup_mutation[address]: MISS (cache miss: no matching active TensorPage)
+  - lookup_mutation[phase_state_digest]: MISS (cache miss: no matching active TensorPage)
+  - write_or_readonly_check[write_session_missing]: REJECTED (active tensor session does not exist)
+  - write_or_readonly_check[write_workspace_mismatch]: REJECTED (tensor page workspace does not match its session)
+  - write_or_readonly_check[write_dtype_mismatch]: REJECTED (tensor page dtype does not match its session)
+  - write_or_readonly_check[write_layer_out_of_bounds]: REJECTED (tensor page layer or KV head is outside its session)
+  - write_or_readonly_check[write_kv_head_out_of_bounds]: REJECTED (tensor page layer or KV head is outside its session)
+  - write_or_readonly_check[write_key_digest_mismatch]: REJECTED (tensor page K/V digest mismatch)
+  - write_or_readonly_check[write_value_digest_mismatch]: REJECTED (tensor page K/V digest mismatch)
+  - write_or_readonly_check[write_shape_byte_mismatch]: REJECTED (dense tensor payload size does not match shape and dtype)
+  - write_or_readonly_check[write_duplicate_coordinate_revision]: REJECTED (SurrealDB statement 2 failed: "Database index `transformer_kv_page_identity` already contains [workspace:globalmind, transformer_kv_session:kv_session_qwen36_layer3_qual_001, 3, 0, 0, 4, 1], with record `transformer_kv_page:kv_page_qwen36_l3_h0_0_4_r1`")
+  - write_or_readonly_check[readonly_session_model_digest]: REJECTED (SurrealDB statement 1 failed: "Found changed value for field `model_digest`, with record `transformer_kv_session:kv_session_qwen36_layer3_qual_001`, but field is readonly")
+  - write_or_readonly_check[readonly_page_key_digest]: REJECTED (SurrealDB statement 1 failed: "Found changed value for field `key_digest`, with record `transformer_kv_page:kv_page_qwen36_l3_h0_0_4_r1`, but field is readonly")
+
+GATE 7 — REAL HARDWARE LATENCY & MEMORY MEASUREMENTS
+----------------------------------------------------
+manifest_rehash_verify_ms: 33837.887
+model_weights_binary_load_ms: 39.858
+uninterrupted_forward_pass_ms: 321.837
+surreal_isolated_boot_and_schema_ms: 6319.402
+session_create_ms: 18.865
+page_write_head0_ms: 31.792
+page_write_head1_ms: 26.084
+surreal_restart_ms: 646.541
+page_fetch_head0_ms: 10.818
+page_fetch_head1_ms: 11.843
+injected_decode_forward_pass_ms: 281.778
+gate6_identity_and_immutability_checks_ms: 425.796
+total_qualification_suite_ms: 42638.899
+test_process_rss_after_model_load_bytes: 590741504
+test_process_rss_final_bytes: 599474176
+surreal_process_rss_before_restart_bytes: 110559232
+surreal_process_rss_after_restart_bytes: 84246528

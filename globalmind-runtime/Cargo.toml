@@ -1,0 +1,33 @@
+[package]
+name = "globalmind-runtime"
+version = "0.1.0"
+edition = "2024"
+description = "Typed GlobalMind distillation, trajectory, and SurrealDB admission runtime"
+license = "UNLICENSED"
+
+[dependencies]
+serde_json = "1"
+sha2 = "0.10"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "globalmind-contract"
+path = "src/bin/globalmind_contract.rs"
+
+[[bin]]
+name = "globalmind-distill"
+path = "src/bin/globalmind_distill.rs"
+
+[[bin]]
+name = "globalmind-hold"
+path = "src/bin/globalmind_hold.rs"
+
+[[bin]]
+name = "globalmind-tppe-qualify"
+path = "src/bin/globalmind_tppe_qualify.rs"
+
+[[bin]]
+name = "globalmind-stage"
+path = "src/bin/globalmind_stage.rs"

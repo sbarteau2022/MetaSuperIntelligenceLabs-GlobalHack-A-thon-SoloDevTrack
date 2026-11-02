@@ -1,5 +1,6 @@
 use crate::capability::CapabilityGate;
 use crate::energy::EnergyBudget;
+use crate::json::{self, Json};
 use crate::judge::Judge;
 use crate::mcp_client::McpChild;
 use crate::receipt::{Receipt, ReceiptLog};
@@ -13,6 +14,25 @@ pub struct EngineReport {
     pub failed: Vec<String>,
     pub skipped: Vec<String>,
     pub escalated: Vec<String>,
+}
+
+/// Typed result of one live packet execution (P0-2/P0-5 closure).
+///
+/// `n3_receipts` carries the EXACT `receipt_sha256` digests bound by the
+/// server — never `"present"` markers or descriptive prose. The mint
+/// (`ReceiptLog::append`) chains these into `evidence_hash`.
+#[derive(Debug, Clone, Default)]
+pub struct PacketOutcome {
+    pub output: String,
+    pub all_pass: bool,
+    pub judge_ids: Vec<String>,
+    pub energy_j: f64,
+    pub erased_bits: u64,
+    pub n3_receipts: Vec<String>,
+    /// `Some` when the child transport broke (respawn-and-retry signal).
+    /// Judge failures leave this `None` (escalate, never identical-retry).
+    pub transport_error: Option<String>,
+    pub degraded: Option<String>,
 }
 
 pub struct Engine {
@@ -60,11 +80,12 @@ impl Engine {
 
     /// Execute one packet through the live N3 child.
     /// For each `map.*` tool_call: capability-gate admit, then mcp.call,
-    /// then judge the RETURNED inner text. Returns (output_text, all_pass,
-    /// judge_ids, energy_j, erased_bits, receipt_present, degraded_note).
-    /// Transport errors fail the attempt; the caller decides retry/escalate.
-    /// Identical retry is forbidden by the failure doctrine: the tool set is
-    /// fixed, so a transport error retries at most once, then escalates.
+    /// then judge the RETURNED inner text. Returns [`PacketOutcome`] (typed:
+    /// output, judges, energy, exact bound N3 digests, transport flag,
+    /// degraded note). Transport errors fail the attempt; the caller decides
+    /// retry/escalate. Identical retry is forbidden by the failure doctrine:
+    /// the tool set is fixed, so a transport error retries at most once
+    /// (with a respawned child — fresh execution conditions), then escalates.
     #[allow(clippy::too_many_arguments)]
     pub fn execute_packet_n3(
         &self,
@@ -74,13 +95,13 @@ impl Engine {
         gate: &CapabilityGate,
         swarm_run_id: &str,
         attempt: u32,
-    ) -> (String, bool, Vec<String>, f64, u64, bool, Option<String>) {
+    ) -> PacketOutcome {
         let mut outputs: Vec<String> = Vec::new();
         let mut all_pass = true;
         let mut judge_ids: Vec<String> = Vec::new();
         let mut energy = 0.0f64;
         let mut erased = 0u64;
-        let mut receipt_present = true;
+        let mut n3_receipts: Vec<String> = Vec::new();
         let mut degraded: Option<String> = None;
         let mut transport_error: Option<String> = None;
 
@@ -108,21 +129,46 @@ impl Engine {
                 );
                 continue;
             }
-            match mcp.call(&tc.tool, &tc.args_json) {
-                Ok((inner, has_receipt, dt_ns)) => {
+            // Strict boundary: packet args parse to typed JSON before any
+            // wire contact. Malformed args are a deterministic packet defect
+            // (judge-fail, no transport), never verbatim-spliced text.
+            let args: Json = match json::parse(&tc.args_json) {
+                Ok(Json::Obj(_)) => json::parse(&tc.args_json).unwrap_or(Json::Null),
+                Ok(_) => {
+                    outputs.push(format!(
+                        "args not an object: packet={} tool={}",
+                        packet.id, tc.tool
+                    ));
+                    all_pass = false;
+                    degraded = Some(format!("args-not-object:{}", tc.tool));
+                    continue;
+                }
+                Err(e) => {
+                    outputs.push(format!(
+                        "args malformed: packet={} tool={} {}",
+                        packet.id, tc.tool, e
+                    ));
+                    all_pass = false;
+                    degraded = Some(format!("args-malformed:{}", tc.tool));
+                    continue;
+                }
+            };
+            match mcp.call(&tc.tool, &args) {
+                Ok(out) => {
+                    let inner = json::write(&out.inner);
                     // Measured energy: wall time as J surrogate + declared tokens.
                     let cost =
-                        dt_ns as f64 * 1e-9 + (packet.declared_context_tokens as f64) * 0.0005;
+                        out.dt_ns as f64 * 1e-9 + (packet.declared_context_tokens as f64) * 0.0005;
                     energy += cost;
                     erased += (packet.declared_context_tokens as u64) * 4;
-                    receipt_present = receipt_present && has_receipt;
+                    n3_receipts.push(out.receipt_sha256.clone());
                     let recorded = sink.record_call(
                         &call_key,
                         &tc.tool,
                         &tc.args_json,
-                        dt_ns,
+                        out.dt_ns,
                         true,
-                        if has_receipt { Some("present") } else { None },
+                        n3_receipts.last().map(|s| s.as_str()),
                     );
                     if recorded.is_err() {
                         all_pass = false;
@@ -174,7 +220,7 @@ impl Engine {
                 packet.id, attempt
             );
             all_pass = false;
-            receipt_present = false;
+            n3_receipts.clear();
             degraded = Some("n3-not-invoked".into());
         }
         // GAP-2: joined-output judging (opt-in). The packet's judges run once
@@ -190,20 +236,21 @@ impl Engine {
                 degraded = Some("judge-fail:joined".into());
             }
         }
-        if !receipt_present {
+        if n3_receipts.is_empty() {
             all_pass = false;
             degraded = Some("missing-receipt".into());
         }
         let _ = swarm_run_id;
-        (
-            out,
+        PacketOutcome {
+            output: out,
             all_pass,
             judge_ids,
-            energy,
-            erased,
-            receipt_present,
+            energy_j: energy,
+            erased_bits: erased,
+            n3_receipts,
+            transport_error,
             degraded,
-        )
+        }
     }
 
     /// Fail-closed local orchestrator. This path intentionally has no packet
@@ -238,17 +285,18 @@ impl Engine {
                 .collect::<Vec<_>>();
             let cost = 0.0;
 
-            let now = 0u64;
-            plan.packets[pkt_idx].status = PacketStatus::Escalated;
+            plan.packets[pkt_idx].status = PacketStatus::Running;
             receipts.append(Receipt {
                 packet_id: next.clone(),
                 attempt,
                 outcome: "ESCALATE".into(),
                 judge_ids,
-                evidence_hash: "executor=unavailable;required=run_sequential_n3".into(),
+                evidence_hash: String::new(),
                 energy_joules: cost,
                 erased_bits: 0,
-                timestamp_ms: now,
+                timestamp_ms: 0,
+                prev_hash: String::new(),
+                n3_receipts: vec![],
             });
             report.escalated.push(next);
             // skip dependents
@@ -333,10 +381,12 @@ impl Engine {
                         attempt,
                         outcome: "FAIL".into(),
                         judge_ids,
-                        evidence_hash: "executor=unavailable;required=run_parallel_n3".into(),
+                        evidence_hash: String::new(),
                         energy_joules: 0.0,
                         erased_bits: 0,
                         timestamp_ms: 0,
+                        prev_hash: String::new(),
+                        n3_receipts: vec![],
                     });
                     report.failed.push(id.clone());
                     remaining.remove(id);
@@ -383,48 +433,42 @@ impl Engine {
             let attempt = plan.packets[pkt_idx].attempts;
             let snapshot = plan.packets[pkt_idx].clone();
 
-            let (output, mut all_pass, judge_ids, cost, erased, receipt_present, degraded) =
-                self.execute_packet_n3(&snapshot, mcp, sink, gate, swarm_run_id, attempt);
-            let transport = degraded
-                .as_deref()
-                .map(|d| d.starts_with("transport-error"))
-                .unwrap_or(false);
+            let mut out = self.execute_packet_n3(&snapshot, mcp, sink, gate, swarm_run_id, attempt);
+            let transport = out.transport_error.is_some();
             // Identical-retry guard: transport errors get ONE retry max.
             if transport && attempt > 1 {
-                all_pass = false;
+                out.all_pass = false;
             }
-            if budget.can_afford(cost) {
-                budget.charge(cost, erased);
+            if budget.can_afford(out.energy_j) {
+                budget.charge(out.energy_j, out.erased_bits);
             } else {
-                all_pass = false;
+                out.all_pass = false;
             }
             let verdict_recorded = sink.record_verdict(
                 &format!("{}:{}", snapshot.id, attempt),
                 &snapshot.id,
-                if all_pass { "PASS" } else { "FAIL" },
-                &judge_ids.join(","),
+                if out.all_pass { "PASS" } else { "FAIL" },
+                &out.judge_ids.join(","),
             );
             if verdict_recorded.is_err() {
-                all_pass = false;
+                out.all_pass = false;
             }
 
-            let now = 0u64;
-            if all_pass {
+            if out.all_pass {
                 plan.packets[pkt_idx].status = PacketStatus::Passed;
+                // Chain mint: exact N3 digests bound into the receipt;
+                // append() stamps prev/timestamp and recomputes the hash.
                 receipts.append(Receipt {
                     packet_id: next.clone(),
                     attempt,
                     outcome: "PASS".into(),
-                    judge_ids,
-                    evidence_hash: format!(
-                        "swarm={} receipt={} degraded={}",
-                        swarm_run_id,
-                        if receipt_present { "present" } else { "absent" },
-                        degraded.as_deref().unwrap_or("none")
-                    ),
-                    energy_joules: cost,
-                    erased_bits: erased,
-                    timestamp_ms: now,
+                    judge_ids: out.judge_ids,
+                    evidence_hash: String::new(),
+                    energy_joules: out.energy_j,
+                    erased_bits: out.erased_bits,
+                    timestamp_ms: 0,
+                    prev_hash: String::new(),
+                    n3_receipts: out.n3_receipts,
                 });
                 report.passed.push(next);
             } else if attempt < snapshot.retry_policy.max_rounds
@@ -438,17 +482,13 @@ impl Engine {
                     packet_id: next.clone(),
                     attempt,
                     outcome: "ESCALATE".into(),
-                    judge_ids,
-                    evidence_hash: format!(
-                        "swarm={} receipt={} degraded={} output={}",
-                        swarm_run_id,
-                        if receipt_present { "present" } else { "absent" },
-                        degraded.as_deref().unwrap_or("none"),
-                        output.chars().take(200).collect::<String>()
-                    ),
-                    energy_joules: cost,
-                    erased_bits: erased,
-                    timestamp_ms: now,
+                    judge_ids: out.judge_ids,
+                    evidence_hash: String::new(),
+                    energy_joules: out.energy_j,
+                    erased_bits: out.erased_bits,
+                    timestamp_ms: 0,
+                    prev_hash: String::new(),
+                    n3_receipts: out.n3_receipts,
                 });
                 report.escalated.push(next);
                 let deps: Vec<String> = plan
@@ -522,45 +562,39 @@ impl Engine {
                     plan.packets[pkt_idx].attempts += 1;
                     let attempt = plan.packets[pkt_idx].attempts;
                     let snapshot = plan.packets[pkt_idx].clone();
-                    let (_, mut all_pass, judge_ids, cost, erased, receipt_present, degraded) =
+                    let mut out =
                         self.execute_packet_n3(&snapshot, mcp, sink, gate, swarm_run_id, attempt);
-                    let transport = degraded
-                        .as_deref()
-                        .map(|d| d.starts_with("transport-error"))
-                        .unwrap_or(false);
+                    let transport = out.transport_error.is_some();
                     if transport && attempt > 1 {
-                        all_pass = false;
+                        out.all_pass = false;
                     }
-                    if budget.can_afford(cost) {
-                        budget.charge(cost, erased);
+                    if budget.can_afford(out.energy_j) {
+                        budget.charge(out.energy_j, out.erased_bits);
                     } else {
-                        all_pass = false;
+                        out.all_pass = false;
                     }
                     let verdict_recorded = sink.record_verdict(
                         &format!("{}:{}", snapshot.id, attempt),
                         &snapshot.id,
-                        if all_pass { "PASS" } else { "FAIL" },
-                        &judge_ids.join(","),
+                        if out.all_pass { "PASS" } else { "FAIL" },
+                        &out.judge_ids.join(","),
                     );
                     if verdict_recorded.is_err() {
-                        all_pass = false;
+                        out.all_pass = false;
                     }
-                    if all_pass {
+                    if out.all_pass {
                         plan.packets[pkt_idx].status = PacketStatus::Passed;
                         receipts.append(Receipt {
                             packet_id: id.clone(),
                             attempt,
                             outcome: "PASS".into(),
-                            judge_ids,
-                            evidence_hash: format!(
-                                "swarm={} receipt={} degraded={}",
-                                swarm_run_id,
-                                if receipt_present { "present" } else { "absent" },
-                                degraded.as_deref().unwrap_or("none")
-                            ),
-                            energy_joules: cost,
-                            erased_bits: erased,
+                            judge_ids: out.judge_ids,
+                            evidence_hash: String::new(),
+                            energy_joules: out.energy_j,
+                            erased_bits: out.erased_bits,
                             timestamp_ms: 0,
+                            prev_hash: String::new(),
+                            n3_receipts: out.n3_receipts,
                         });
                         report.passed.push(id.clone());
                     } else {

@@ -1,0 +1,3 @@
+VERDICT: defect
+DEFECT: D1 range goes one past the end
+On a miss the loop reaches the last index and reads past the end, raising IndexError.

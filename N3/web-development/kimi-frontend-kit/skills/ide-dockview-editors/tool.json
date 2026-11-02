@@ -1,0 +1,10 @@
+{
+  "name": "workbench-gate",
+  "description": "Validate IDE workbench setup: Dockview CSS imported, editors reused via compartments (never destroyed), responsive or fixed-workbench geometry.",
+  "parameters": {
+    "dockview_css": { "type": "boolean", "description": "true: dockview CSS imported" },
+    "editor_reused": { "type": "boolean", "description": "true: EditorView reused via Compartment" },
+    "layout_mode": { "type": "string", "description": "'responsive' or 'fixed-workbench'" }
+  },
+  "required": ["dockview_css", "editor_reused", "layout_mode"]
+}

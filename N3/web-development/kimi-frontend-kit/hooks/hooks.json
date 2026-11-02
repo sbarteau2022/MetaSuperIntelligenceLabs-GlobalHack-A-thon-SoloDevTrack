@@ -1,0 +1,52 @@
+{
+  "kimi-session-context": {
+    "enabled": true,
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "./scripts/session-init.sh",
+        "timeout": 10
+      }
+    ]
+  },
+  "kimi-frontier-pre-guard": {
+    "enabled": true,
+    "PreToolUse": [
+      {
+        "matcher": "write_file|edit_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/pre-tool-guard.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "kimi-post-edit-verifier": {
+    "enabled": true,
+    "PostToolUse": [
+      {
+        "matcher": "write_file|edit_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/post-edit-verify.sh",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  },
+  "kimi-stop-completion-gate": {
+    "enabled": true,
+    "Stop": [
+      {
+        "type": "command",
+        "command": "./scripts/stop-completion-gate.sh",
+        "timeout": 25
+      }
+    ]
+  }
+}

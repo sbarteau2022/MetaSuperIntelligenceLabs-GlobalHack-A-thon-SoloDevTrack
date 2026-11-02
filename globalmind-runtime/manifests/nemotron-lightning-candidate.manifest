@@ -1,0 +1,41 @@
+# Real frozen-artifact candidate roster for NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit-Abliterated. Digests computed
+# from disk 2026-11-02. Missing eligibility and independent judge
+# receipts intentionally prevent `open`; `verify` is allowed.
+workspace = globalmind
+method = fresh-globalmind-distillation-v1
+configuration_digest = abd24302c897da5d3c7eb3043821bd18ddf206e3046e89c15ffc33bd97bd5523
+tpe_version = tppe-reference-v1
+tpe_configuration_digest = 07e0dbab82fa9181b1210daadf2eb4f64d46a6a0d799e0e356e29869e09e92de
+
+model.0.provider = local
+model.0.name = NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit-Abliterated
+model.0.revision = local-frozen-2026-11-02
+model.0.modality = text
+
+model.0.artifact.0.role = model-00001-of-00004
+model.0.artifact.0.path = /Users/stewartbarteau/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit-Abliterated/model-00001-of-00004.safetensors
+model.0.artifact.0.sha256 = ef4384412404b9bd1192646d15396b9784c0adf828277f72cf800d823e9acfce
+model.0.artifact.1.role = model-00002-of-00004
+model.0.artifact.1.path = /Users/stewartbarteau/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit-Abliterated/model-00002-of-00004.safetensors
+model.0.artifact.1.sha256 = a34a8838d818a1389249ee79e81e70df5bf9d0d32e0d254327289ace11f27de5
+model.0.artifact.2.role = model-00003-of-00004
+model.0.artifact.2.path = /Users/stewartbarteau/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit-Abliterated/model-00003-of-00004.safetensors
+model.0.artifact.2.sha256 = 310681db39560d0c84c27de663388b96647bacf1464ec12618c99650d45bc824
+model.0.artifact.3.role = model-00004-of-00004
+model.0.artifact.3.path = /Users/stewartbarteau/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit-Abliterated/model-00004-of-00004.safetensors
+model.0.artifact.3.sha256 = 8fa2e23b69b7a0304ffd492bc89efc9f553236fa1d481d67e7c9a8ffb598da5a
+model.0.artifact.4.role = mtp-4bit
+model.0.artifact.4.path = /Users/stewartbarteau/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit-Abliterated/mtp-4bit.safetensors
+model.0.artifact.4.sha256 = 4953d2323861b48db04d01e86559eb8b944f750ca1c1088409e2a65c6350f5f7
+model.0.artifact.5.role = model-index
+model.0.artifact.5.path = /Users/stewartbarteau/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit-Abliterated/model.safetensors.index.json
+model.0.artifact.5.sha256 = 4c12ae32746441ec65e94d8cf312462ac10ab0d3c80513bba3d1c1ca3f2ed9ca
+model.0.artifact.6.role = config
+model.0.artifact.6.path = /Users/stewartbarteau/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit-Abliterated/config.json
+model.0.artifact.6.sha256 = 2d4bdc543efd8ccd68fccbf1231b1d1216ab2a0482229ea5638d448127973b27
+model.0.artifact.7.role = tokenizer
+model.0.artifact.7.path = /Users/stewartbarteau/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit-Abliterated/tokenizer.json
+model.0.artifact.7.sha256 = 623c34567aebb18582765289fbe23d901c62704d6518d71866e0e58db892b5b7
+model.0.artifact.8.role = tokenizer_config
+model.0.artifact.8.path = /Users/stewartbarteau/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit-Abliterated/tokenizer_config.json
+model.0.artifact.8.sha256 = ec380f0a6c0c2e294eb2435f5ec521fb2121cfc970e6ebf023d06829714a4eaa

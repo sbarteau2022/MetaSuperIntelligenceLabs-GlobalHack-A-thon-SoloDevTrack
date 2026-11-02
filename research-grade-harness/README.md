@@ -29,12 +29,12 @@ These default checks prove deterministic code contracts, not a live runtime.
 The live N3 gate is separate and intentionally fails when its binary is absent:
 
 ```sh
-HYPERMIND_MCP_BIN=/absolute/path/to/hypermind-mcp \
+HYPERMIND_SURREAL=off HYPERMIND_MCP_BIN=/absolute/path/to/hypermind-mcp \
   cargo test --features live-n3 --test engine_n3 -- --test-threads=1
 ```
 
 The CLI `run` command validates and then fails closed until it is wired to a
-live executor. The `bench` command is disabled by default. To inspect the old
+live executor. `resume` chain-verifies the prior file (forged lines rejected, exit non-zero). Receipts carry prev/chain/ts/n3 fields. The `bench` command is disabled by default. To inspect the old
 scaffold only, compile with `--features synthetic-scaffold`; never cite its
 numbers as results.
 
@@ -45,17 +45,19 @@ numbers as results.
 - Hardware energy calibration and real-model comparative benchmarks: not yet
   qualified; the design spec labels them proposed.
 
-## Standalone HyperbolicMap and KV plugin
+## HyperMind graph/KV plugin
 
-The external plugin source lives at `../hyperbolic-map-nested-kv-plugin` (a
-sibling folder, independent of N3). Build its `hypermind-mcp` executable, then
-set `HYPERBOLIC_MAP_PLUGIN_BIN` to the absolute binary path. `MapPlugin::load`
+The canonical plugin source is `../hypermind-nested-kv`. Build its
+`hypermind-mcp` executable, then set `HYPERBOLIC_MAP_PLUGIN_BIN` to that absolute
+binary path. Plugin describes harness lifecycle; MCP describes transport. They
+are one executable, not separate graph/KV implementations. `MapPlugin::load`
 checks advertised map/KV tools and a receipted health call before registering
-it; `unload` closes the process. The old `live-n3` path remains for historical
-compatibility and must not be used as evidence of an independent plugin.
+it; `unload` closes the process. The harness never connects directly to
+SurrealDB. The old `live-n3` path remains for historical compatibility and must
+not be used as evidence of an independent plugin. The standalone `../hyperbolic-map-nested-kv-plugin` directory is absent.
 
 ```sh
-HYPERBOLIC_MAP_PLUGIN_BIN=/absolute/path/to/hyperbolic-map-nested-kv-plugin/target/debug/hypermind-mcp \
+HYPERMIND_SURREAL=off HYPERBOLIC_MAP_PLUGIN_BIN=/absolute/path/to/hypermind-nested-kv/target/debug/hypermind-mcp \
   cargo test --features live-map-plugin --test map_plugin_live
 ```
 

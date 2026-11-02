@@ -1,9 +1,8 @@
-//! SurrealDB persistence layer (steps 1-2-3: shadow dual-write + edges + adjacency).
+//! SurrealDB persistence layer for the single HyperMind graph authority.
 //!
 //! Transport is sync std-only HTTP/1.1 POST to `/sql` (text/plain body), so
 //! the binary gains zero new dependencies. Every method returns
-//! `Result<Value, String>`; callers treat Err as shadow-log-and-continue
-//! (JSONL/snapshot stay canonical until an explicit cutover flips the mode).
+//! `Result<Value, String>`; authority-mode callers fail closed on errors.
 //!
 //! Namespace/database/endpoint come from env at `Store::from_env` time:
 //! `HYPERMIND_SURREAL_URL` (default `http://127.0.0.1:8000`),
@@ -19,8 +18,7 @@ use std::time::Duration;
 pub enum SurrealMode {
     /// No SurrealDB traffic at all.
     Off,
-    /// Dual-write: memory + JSONL stay canonical; SurrealDB errors are
-    /// returned to the caller for logging, never fatal.
+    /// Migration-only mode. MCP startup rejects it to prevent split authority.
     Shadow,
     /// SurrealDB is canonical (set only after parity passes).
     On,
@@ -83,13 +81,20 @@ impl Store {
             (Some(u), Some(p)) => (u, p),
             _ => return Ok(None),
         };
-        let body = format!(
-            "{{\"user\":{},\"pass\":{},\"ns\":{},\"db\":{}}}",
-            sq(user),
-            sq(pass),
-            sq(&self.ns),
-            sq(&self.db)
-        );
+        // Root users authenticate at root scope; adding ns/db changes the
+        // requested auth scope and SurrealDB 3.3 rejects valid root creds.
+        // Database-scoped users still require ns/db in the signin payload.
+        let body = if user == "root" {
+            format!("{{\"user\":{},\"pass\":{}}}", sq(user), sq(pass))
+        } else {
+            format!(
+                "{{\"user\":{},\"pass\":{},\"ns\":{},\"db\":{}}}",
+                sq(user),
+                sq(pass),
+                sq(&self.ns),
+                sq(&self.db)
+            )
+        };
         let resp = http_post_raw(&self.host, self.port, "/signin", "application/json", &body, None)?;
         serde_json::from_str::<Value>(&resp)
             .ok()
@@ -134,6 +139,60 @@ impl Store {
         r.into_iter().next().ok_or_else(|| "surreal: empty result".into())
     }
 
+    /// Fail closed if an upgrade points this binary at a different memory
+    /// contract. Historical migration rows are append-only; the original 0004
+    /// row is retained and its TPE correction has a separate pinned version.
+    pub fn verify_contract(&self) -> Result<(), String> {
+        for (version, expected) in [
+            ("0004_tpe_contract_correction", "31c467e26dd81d9fddf61e10b605e6726a25b7c0cb573c399d73d79fec7f1246"),
+            ("0005_universal_atom_lineage", "a2c4a85303874233048b73d18e36538f38c05e36b2503c37499b6489a92729c0"),
+            ("0006_immutable_atom_address", "f91fb405f54b5bac454808e571c116819b6329061b6ce44817447559f1449a04"),
+        ] {
+            let rows = self.one(&format!(
+                "SELECT digest FROM schema_migration WHERE version = {} LIMIT 1;",
+                sq(version)
+            ))?;
+            let actual = rows.as_array().and_then(|r| r.first())
+                .and_then(|r| r.get("digest")).and_then(Value::as_str);
+            if actual != Some(expected) {
+                return Err(format!("surreal: contract migration {version} missing or drifted"));
+            }
+        }
+        for (table, fields) in [
+            ("transformer_kv_session", &["model_digest", "toroidal_phase_encoder_version", "address_contract_digest"][..]),
+            ("transformer_kv_page", &["key_tensor", "value_tensor", "tensor_shape", "address"][..]),
+            ("distillation_admission", &["model_source", "source_artifact_digest", "eligibility_receipt_digest"][..]),
+            ("atom_origin", &["atom", "admission", "source_step_digest"][..]),
+            ("distilled_trajectory", &["atoms", "trajectory_digest", "judge_receipt_digest"][..]),
+            ("trajectory_origin", &["trajectory", "admission", "source_walk_digest"][..]),
+            ("atom", &["external_id", "content_text", "content_digest", "provenance"][..]),
+            ("atom_address", &["atom", "h3_lorentz", "t2_phase", "revision"][..]),
+            ("schema_migration", &["version", "digest"][..]),
+        ] {
+            let info = self.one(&format!("INFO FOR TABLE {table};"))?;
+            let definitions = info.get("fields").and_then(Value::as_object)
+                .ok_or_else(|| format!("surreal: contract table {table} missing"))?;
+            for field in fields {
+                let definition = definitions.get(*field).and_then(Value::as_str)
+                    .ok_or_else(|| format!("surreal: contract field {table}.{field} missing"))?;
+                if (table == "transformer_kv_page" && (*field == "key_tensor" || *field == "value_tensor"))
+                    && !definition.contains("TYPE bytes") {
+                    return Err(format!("surreal: contract field {table}.{field} is not binary"));
+                }
+                if (table == "schema_migration" || table == "distillation_admission"
+                    || table == "atom_origin" || table == "distilled_trajectory"
+                    || table == "trajectory_origin" || table == "atom"
+                    || table == "atom_address") && !definition.contains("READONLY") {
+                    return Err(format!("surreal: contract field {table}.{field} is mutable"));
+                }
+            }
+            if table == "transformer_kv_session" && definitions.contains_key("position_encoding") {
+                return Err("surreal: RoPE/Euclidean position field is inadmissible".into());
+            }
+        }
+        Ok(())
+    }
+
     pub fn upsert_atom(
         &self,
         id: u64,
@@ -147,7 +206,7 @@ impl Store {
         digest: &str,
     ) -> Result<Value, String> {
         let q = format!(
-            "UPSERT atom:{} CONTENT {{ workspace: workspace:hypermind, external_id: {}, content_kind: 'text', content_text: {}, content_uri: NONE, content_digest: '{}', domain: {}, rank: {}, salience: {:?}, provenance: {}, taint: {}, pinned: {}, current_address: atom_address:{}, created_at: time::now(), updated_at: time::now() }} RETURN NONE;",
+            "CREATE atom:{} CONTENT {{ workspace: workspace:hypermind, external_id: {}, content_kind: 'text', content_text: {}, content_uri: NONE, content_digest: '{}', domain: {}, rank: {}, salience: {:?}, provenance: {}, taint: {}, pinned: {}, current_address: atom_address:{}, created_at: time::now(), updated_at: time::now() }} RETURN NONE;",
             id,
             sq(&id.to_string()),
             sq(text),
@@ -170,13 +229,47 @@ impl Store {
         phase: &[f64; 2],
     ) -> Result<Value, String> {
         let q = format!(
-            "UPSERT atom_address:{} CONTENT {{ workspace: workspace:hypermind, atom: atom:{}, h3_lorentz: [{}], t2_phase: [{}], geometry_model: 'hash-idf-rank', geometry_version: 'H3xT2-Lorentz-canonical-v2', revision: 1, active: true, created_at: time::now() }} RETURN NONE;",
+            "CREATE atom_address:{} CONTENT {{ workspace: workspace:hypermind, atom: atom:{}, h3_lorentz: [{}], t2_phase: [{}], geometry_model: 'hash-idf-rank', geometry_version: 'H3xT2-Lorentz-canonical-v2', revision: 1, active: true, created_at: time::now() }} RETURN NONE;",
             id,
             id,
             floats(coord),
             floats(phase)
         );
         self.one(&q)
+    }
+
+    /// Admit a new atom and its first address in one transaction. CREATE
+    /// refuses an existing id; neither record may be silently rewritten.
+    pub fn create_atom_with_address(
+        &self,
+        id: u64,
+        text: &str,
+        salience: f64,
+        rank: u8,
+        provenance: &str,
+        taint: &str,
+        domain: &str,
+        pinned: bool,
+        digest: &str,
+        coord: &[f64; 4],
+        phase: &[f64; 2],
+    ) -> Result<(), String> {
+        let query = format!(
+            "BEGIN TRANSACTION; \
+             CREATE atom:{id} CONTENT {{ workspace: workspace:hypermind, external_id: {external_id}, content_kind: 'text', content_text: {text}, content_uri: NONE, content_digest: {digest}, domain: {domain}, rank: {rank}, salience: {salience:?}, provenance: {provenance}, taint: {taint}, pinned: {pinned}, current_address: atom_address:{id}, created_at: time::now(), updated_at: time::now() }} RETURN NONE; \
+             CREATE atom_address:{id} CONTENT {{ workspace: workspace:hypermind, atom: atom:{id}, h3_lorentz: [{coord}], t2_phase: [{phase}], geometry_model: 'hash-idf-rank', geometry_version: 'H3xT2-Lorentz-canonical-v2', revision: 1, active: true, created_at: time::now() }} RETURN NONE; \
+             COMMIT TRANSACTION;",
+            external_id = sq(&id.to_string()),
+            text = sq(text),
+            digest = sq(digest),
+            domain = sq(domain),
+            provenance = sq(provenance),
+            taint = sq(taint),
+            coord = floats(coord),
+            phase = floats(phase),
+        );
+        self.sql(&query)?;
+        Ok(())
     }
 
     /// Explicit edge create. `kind` must already be validated by the caller
@@ -364,6 +457,14 @@ impl Store {
                     .collect()
             })
             .unwrap_or_default())
+    }
+
+    /// Surreal-authority startup hydration. Addresses are dereferenced in the
+    /// query so the MCP process needs no file snapshot or JSONL ledger.
+    pub fn load_atoms(&self) -> Result<Value, String> {
+        self.one(
+            "SELECT external_id, content_text, salience, rank, provenance, taint, domain, pinned, current_address.h3_lorentz AS coord, current_address.t2_phase AS phase FROM atom ORDER BY external_id;",
+        )
     }
 
     /// Auth errors must surface (fail LOUD); missing-table errors stay

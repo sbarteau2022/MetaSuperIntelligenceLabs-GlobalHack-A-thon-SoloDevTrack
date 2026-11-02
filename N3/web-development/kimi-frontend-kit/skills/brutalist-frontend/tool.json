@@ -1,0 +1,12 @@
+{
+  "name": "brutalist-gate",
+  "description": "Validate an industrial-brutalist UI config: one substrate, square corners, no gradients, restrained terminal-green.",
+  "parameters": {
+    "substrate": { "type": "string", "description": "'swiss-print' or 'tactical-terminal'" },
+    "use_border_radius": { "type": "boolean", "description": "must be false (90-degree corners only)" },
+    "use_gradient": { "type": "boolean", "description": "must be false (gradients prohibited)" },
+    "text_color": { "type": "string", "description": "body text color token" },
+    "terminal_green_target": { "type": "string", "description": "'single-indicator' if terminal green is used" }
+  },
+  "required": ["substrate", "use_border_radius", "use_gradient"]
+}

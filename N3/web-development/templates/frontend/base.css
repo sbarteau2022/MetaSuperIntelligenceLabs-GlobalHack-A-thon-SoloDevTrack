@@ -1,0 +1,58 @@
+/**
+ * base.css — frontend template.
+ *
+ * Status: PROPOSED. Date: 2026-10-30.
+ * Placeholder for a Tailwind-style import (no tailwind dependency assumed —
+ * replace this comment with `@import "tailwindcss";` only if the project
+ * adopts Tailwind CSS v4.0.0 or later):
+ *   @import "tailwindcss";
+ * Design tokens live in ../../frontend-design-language/tokens/tokens.css
+ * (canonical source; this file consumes Tier 2 semantic tokens ONLY —
+ * never Tier 1 literals, never literal colors — RULES.md rules 25-28).
+ */
+
+@layer reset, base, theme, components, utilities;
+
+:root {
+  background-color: var(--color-bg-canvas);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+}
+
+/* Skip link: first tab stop, visible on focus (RULES.md rule 16). */
+.skip-link {
+  position: absolute;
+  inset-inline-start: var(--space-4);
+  inset-block-start: var(--space-4);
+  padding-inline: var(--space-4);
+  padding-block: var(--space-2);
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-link);
+  border-radius: var(--radius-control);
+  transform: translateY(-200%);
+  z-index: 100;
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+/* Focus ring: semantic tokens only, no literal colors (rules 20/26). */
+:focus-visible {
+  outline-width: var(--ui-focus-ring-width);
+  outline-style: solid;
+  outline-color: var(--color-focus-ring);
+  outline-offset: var(--ui-focus-ring-offset);
+}
+
+/* Reduced motion: honor the OS setting for all non-essential motion (rule 19). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+    scroll-behavior: auto;
+  }
+}

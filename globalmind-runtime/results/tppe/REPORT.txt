@@ -1,0 +1,43 @@
+Lane 2 — TPPE qualification runner — end-of-lane report
+Date: 2026-11-02
+
+SUPERSEDED 2026-11-02: This report's bench decision is invalid. The old runner
+assigned full-forward zero error and zero time, compared a byte-derived drive
+against itself, omitted state bytes from dominance, and did not implement real
+RoPE. Preserve the numbers below only as historical raw output. No encoder was
+validly benched. See `../../results/queue2/ADVERSARIAL-AUDIT-2026-11-02.md` and
+`../../results/queue2/tppe-bench-v2-smoke.txt`.
+
+Hardware: Apple M5 Pro, arm64, macOS 27.0.1
+Files (lane-owned only): src/bin/globalmind_tppe_qualify.rs, results/tppe/
+(src/tppe.rs unchanged; codec gained decode_frame under lane 1 ownership)
+
+INPUT (identical real traces for every candidate)
+Trace stream built from actual frozen-weight bytes sliced from the
+inventoried roster artifact
+/Users/stewartbarteau/models/fused/Qwen3.6-MoE-Combined/model-00001-of-00004.safetensors
+(shard sha256 b9bfd13788da9e65fa9e7d5f436b89e4d25b9cc10fdc958dd61ee6a161fef9837b2760dd8d089f),
+8 lane-1 envelopes, shape [64,16] f32, layer 3.
+trace_set_digest=ea282503025a62dccaf62ad3a696cbb5fcd250ed0cc559016e1c52e104019b9b
+
+COMMAND
+globalmind-tppe-qualify /tmp/gm-lanes/real-trace.gmtr  (exit 0)
+
+MEASURED FRONTIER (mean phase error / wall / state bytes, 8 steps)
+[HISTORICAL RAW OUTPUT ONLY — VOID, not encoder-quality evidence]
+linear_log_v1        0.073904 / 1us / 64B   -> benched_dominated [VOID]
+log_v1               0.073904 / 0us / 64B   -> benched_dominated [VOID]
+angle_only_control   0.073904 / 0us / 16B   -> benched_dominated [VOID]
+rope_control         0.171731 / 0us / 16B   -> benched_dominated [VOID]
+full_forward_control 0.000000 / 0us / 32768B -> frontier (quality ceiling) [VOID]
+
+VERDICT
+VOID. No encoder was validly benched or promoted by this run. The
+corrected v2 runner (same real Layer-3 Q/K boundary, real next-token
+NLL) leaves the decision OPEN; a contamination-checked held-out task
+suite with counterbalanced repeats is required. See
+`../../results/queue2/tppe-bench-v2-smoke.txt`.
+
+UNTOUCHED GATES
+Real-model quality bakeoff on activation traces; latency at sequence
+scale; TPPE runtime qualification remains reference-level.

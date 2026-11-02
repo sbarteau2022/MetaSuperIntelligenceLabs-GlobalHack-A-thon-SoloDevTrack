@@ -1,0 +1,32 @@
+contract = globalmind-whitehead-gamma12-v1
+geometry_space = H3xT2/r_12
+manifold = H3xT2
+quotient_symbol = r_12
+coordinate_model = lorentz4-plus-torus2
+ambient_group = PSL(2,Z[i])
+subgroup_symbol = Gamma_12
+subgroup_definition = Gamma_0(2+2i)_congruence_stabilizer_of_P1_Z_i_mod_2_plus_2i
+ideal_generator = 2+2i
+ideal_norm = 8
+projective_line_cardinality = 12
+subgroup_index = 12
+h3_action = hermitian_spinor_congruence_M_X_M_dagger
+t2_coupling = resonant_2_to_1_character_plus_coset_holonomy
+kuramoto_invariant = theta_fast_minus_2_theta_slow_mod_2pi
+central_hub_label = L0_Coordinator
+central_hub_lorentz = [1.0,0.0,0.0,0.0]
+central_hub_t2_phase = [0.0,0.0]
+peer_well_count = 12
+peer_well_frame = regular_icosahedron_golden_shell
+poincare_shell_radius = 2_minus_phi
+welch_simplex_coherence_bound = 1_over_sqrt_5
+tie_break_rule = lowest_ordinal_within_1e-12
+overlap_policy = minimal_icosahedral_adjacent_only
+default_database_status = specified
+quarantined_core = forbidden
+
+# This contract defines the executable Whitehead 12-around-1 subgroup
+# specification and unified (H3 x T2) / Gamma_12 quotient action for
+# GlobalMind. It replaces uncoupled prose claims that inferred a quotient
+# merely from the shared integer 12.
+

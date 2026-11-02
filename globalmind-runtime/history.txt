@@ -1,0 +1,69 @@
+#V2
+CREATE workspace:globalmind CONTENT { slug: 'globalmind', created_at: time::now() };
+SELECT count() AS count FROM model_source GROUP ALL; SELECT count() AS count FROM distillation_admission GROUP ALL; SELECT count() AS count FROM distillation_run GROUP ALL; SELECT count() AS count FROM distillation_run_event GROUP ALL;
+-- HyperMind canonical graph schema for SurrealDB 3.3.5.
+-- JSONL migration is intentionally outside this migration.
+DEFINE TABLE IF NOT EXISTS workspace SCHEMAFULL TYPE NORMAL
+-- Nested Hyperbolic KV and multi-model distillation provenance.
+-- Additive migration for SurrealDB 3.3.5.
+-- Runtime authority remains hypermind-mcp; direct harness DB writes are forbidden.
+DEFINE TABLE IF NOT EXISTS geometry_space SCHEMAFULL TYPE NORMAL
+-- Replace the empty legacy string KV schema with typed transformer K/V pages.
+-- Tensor payloads are bytes, never text or JSON.
+REMOVE TABLE IF EXISTS kv_grounded_in;
+REMOVE TABLE IF EXISTS kv_depends_on;
+REMOVE TABLE IF EXISTS kv_value_revision;
+REMOVE TABLE IF EXISTS kv_key;
+REMOVE TABLE IF EXISTS kv_namespace;
+DEFINE TABLE IF NOT EXISTS transformer_kv_session SCHEMAFULL TYPE NORMAL
+-- Additive contract: shared atoms/trajectories are teacher invariant.
+-- Model lineage is audit-only and never a semantic retrieval or rank key.
+-- All admitted records are append-only; a correction gets a new record id.
+DEFINE TABLE IF NOT EXISTS distillation_admission SCHEMAFULL TYPE NORMAL
+-- Version updates may append new address revisions, but may not alter a
+-- previously admitted atom's content or an existing H3 x T2 address record.
+-- current_address remains mutable only to point to a newly created revision.
+DEFINE FIELD OVERWRITE workspace ON atom TYPE record<workspace> READONLY;
+DEFINE FIELD OVERWRITE external_id ON atom TYPE string READONLY;
+DEFINE FIELD OVERWRITE content_kind ON atom TYPE string
+-- GlobalMind distillation, cognitive-well, trajectory, and tensor-KV binding.
+-- Additive migration for SurrealDB 3.3.5. Existing/quarantined rows remain
+-- untouched: every new admission field is optional on the legacy tables.
+DEFINE TABLE IF NOT EXISTS cognitive_hub SCHEMAFULL TYPE NORMAL
+-- GlobalMind superposition-holding receipts.
+-- Runtime candidates are held without external emission, iterated, and then
+-- collapsed onto one replayable branch or failed closed.
+DEFINE TABLE IF NOT EXISTS superposition_hold SCHEMAFULL TYPE NORMAL
+-- Exact transformer K/V identity and payload are immutable after admission.
+-- Runtime counters, access time, closure, and active state remain mutable.
+DEFINE FIELD OVERWRITE workspace ON transformer_kv_session TYPE record<workspace> READONLY;
+DEFINE FIELD OVERWRITE model_id ON transformer_kv_session TYPE string READONLY;
+DEFINE FIELD OVERWRITE model_revision ON transformer_kv_session TYPE string READONLY;
+DEFINE FIELD OVERWRITE model_digest ON transformer_kv_session TYPE string READONLY;
+DEFINE FIELD OVERWRITE request_digest ON transformer_kv_session TYPE string READONLY;
+DEFINE FIELD OVERWRITE dtype ON transformer_kv_session TYPE string
+-- Native, append-only ingress receipts for fresh GlobalMind distillation.
+-- The run envelope never changes state; ordered events carry lifecycle state.
+DEFINE FIELD OVERWRITE workspace ON model_source TYPE record<workspace> READONLY;
+DEFINE FIELD OVERWRITE provider ON model_source TYPE string READONLY;
+DEFINE FIELD OVERWRITE model ON model_source TYPE string READONLY;
+DEFINE FIELD OVERWRITE revision ON model_source TYPE string READONLY;
+DEFINE FIELD OVERWRITE modality ON model_source TYPE string
+-- Complete the append-only trajectory cell bundle. A recallable trajectory
+-- owns its rank-1 edge proofs, rank-2 loop proofs, and audit-only origins.
+DEFINE TABLE IF NOT EXISTS edge_crystallization SCHEMAFULL TYPE NORMAL
+CREATE workspace:`cliwalk` CONTENT { slug: 'cliwalk' } RETURN NONE;
+CREATE geometry_space:`h3t2` CONTENT { name: 'h3t2', manifold: 'H3xT2', quotient_symbol: 'Gamma12', quotient_status: 'specified', coordinate_model: 'lorentz-t2', contract_version: 'v1', contract_digest: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' } RETURN NONE;
+CREATE cognitive_hub:`hub` CONTENT { workspace: workspace:`cliwalk`, geometry_space: geometry_space:`h3t2`, label: 'hub', h3_center_lorentz: [1.0, 0.0, 0.0, 0.0], t2_phase: [0.0, 0.0], reference_contract_digest: 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', status: 'specified' } RETURN NONE;
+CREATE cognitive_well:`well0` CONTENT { workspace: workspace:`cliwalk`, geometry_space: geometry_space:`h3t2`, ordinal: 0, label: 'well0', h3_center_lorentz: [1.0, 0.0, 0.0, 0.0], t2_sector: 0, boundary_contract_digest: '9999999999999999999999999999999999999999999999999999999999999999', status: 'specified' } RETURN NONE;
+CREATE cognitive_well:`well1` CONTENT { workspace: workspace:`cliwalk`, geometry_space: geometry_space:`h3t2`, ordinal: 1, label: 'well1', h3_center_lorentz: [1.0, 0.0, 0.0, 0.0], t2_sector: 1, boundary_contract_digest: '9999999999999999999999999999999999999999999999999999999999999999', status: 'specified' } RETURN NONE;
+CREATE cognitive_well:`well2` CONTENT { workspace: workspace:`cliwalk`, geometry_space: geometry_space:`h3t2`, ordinal: 2, label: 'well2', h3_center_lorentz: [1.0, 0.0, 0.0, 0.0], t2_sector: 2, boundary_contract_digest: '9999999999999999999999999999999999999999999999999999999999999999', status: 'specified' } RETURN NONE;
+CREATE cognitive_well:`well3` CONTENT { workspace: workspace:`cliwalk`, geometry_space: geometry_space:`h3t2`, ordinal: 3, label: 'well3', h3_center_lorentz: [1.0, 0.0, 0.0, 0.0], t2_sector: 3, boundary_contract_digest: '9999999999999999999999999999999999999999999999999999999999999999', status: 'specified' } RETURN NONE;
+CREATE cognitive_well:`well4` CONTENT { workspace: workspace:`cliwalk`, geometry_space: geometry_space:`h3t2`, ordinal: 4, label: 'well4', h3_center_lorentz: [1.0, 0.0, 0.0, 0.0], t2_sector: 4, boundary_contract_digest: '9999999999999999999999999999999999999999999999999999999999999999', status: 'specified' } RETURN NONE;
+CREATE cognitive_well:`well5` CONTENT { workspace: workspace:`cliwalk`, geometry_space: geometry_space:`h3t2`, ordinal: 5, label: 'well5', h3_center_lorentz: [1.0, 0.0, 0.0, 0.0], t2_sector: 5, boundary_contract_digest: '9999999999999999999999999999999999999999999999999999999999999999', status: 'specified' } RETURN NONE;
+CREATE cognitive_well:`well6` CONTENT { workspace: workspace:`cliwalk`, geometry_space: geometry_space:`h3t2`, ordinal: 6, label: 'well6', h3_center_lorentz: [1.0, 0.0, 0.0, 0.0], t2_sector: 6, boundary_contract_digest: '9999999999999999999999999999999999999999999999999999999999999999', status: 'specified' } RETURN NONE;
+CREATE cognitive_well:`well7` CONTENT { workspace: workspace:`cliwalk`, geometry_space: geometry_space:`h3t2`, ordinal: 7, label: 'well7', h3_center_lorentz: [1.0, 0.0, 0.0, 0.0], t2_sector: 7, boundary_contract_digest: '9999999999999999999999999999999999999999999999999999999999999999', status: 'specified' } RETURN NONE;
+CREATE cognitive_well:`well8` CONTENT { workspace: workspace:`cliwalk`, geometry_space: geometry_space:`h3t2`, ordinal: 8, label: 'well8', h3_center_lorentz: [1.0, 0.0, 0.0, 0.0], t2_sector: 8, boundary_contract_digest: '9999999999999999999999999999999999999999999999999999999999999999', status: 'specified' } RETURN NONE;
+CREATE cognitive_well:`well9` CONTENT { workspace: workspace:`cliwalk`, geometry_space: geometry_space:`h3t2`, ordinal: 9, label: 'well9', h3_center_lorentz: [1.0, 0.0, 0.0, 0.0], t2_sector: 9, boundary_contract_digest: '9999999999999999999999999999999999999999999999999999999999999999', status: 'specified' } RETURN NONE;
+CREATE cognitive_well:`well10` CONTENT { workspace: workspace:`cliwalk`, geometry_space: geometry_space:`h3t2`, ordinal: 10, label: 'well10', h3_center_lorentz: [1.0, 0.0, 0.0, 0.0], t2_sector: 10, boundary_contract_digest: '9999999999999999999999999999999999999999999999999999999999999999', status: 'specified' } RETURN NONE;
+CREATE cognitive_well:`well11` CONTENT { workspace: workspace:`cliwalk`, geometry_space: geometry_space:`h3t2`, ordinal: 11, label: 'well11', h3_center_lorentz: [1.0, 0.0, 0.0, 0.0], t2_sector: 11, boundary_contract_digest: '9999999999999999999999999999999999999999999999999999999999999999', status: 'specified' } RETURN NONE;

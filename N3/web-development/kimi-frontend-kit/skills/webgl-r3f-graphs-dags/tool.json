@@ -1,0 +1,11 @@
+{
+  "name": "r3f-frame-gate",
+  "description": "Validate R3F/graph frame discipline: no setState in useFrame, GPU-safe props, canvas/WebGL rendering for graphs over 200 nodes.",
+  "parameters": {
+    "set_state_in_frame": { "type": "boolean", "description": "must be false" },
+    "animated_prop": { "type": "string", "description": "'transform' or 'opacity' only" },
+    "node_count": { "type": "number", "description": "graph node count" },
+    "node_mode": { "type": "string", "description": "'canvas-webgl' required when node_count > 200" }
+  },
+  "required": ["set_state_in_frame", "animated_prop", "node_count", "node_mode"]
+}

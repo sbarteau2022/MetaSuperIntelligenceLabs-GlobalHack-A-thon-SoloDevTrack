@@ -1,0 +1,11 @@
+{
+  "name": "doc-gate",
+  "description": "Validate docs for a stranger in a hurry: clean-machine quickstart tested, typed API with errors + example, model + change guide, decisions/limits with evidence.",
+  "parameters": {
+    "quickstart_tested": { "type": "boolean", "description": "true: exact commands + expected output, tested on clean checkout" },
+    "api_typed": { "type": "boolean", "description": "true: inputs typed with ranges, outputs, errors, one example each" },
+    "examples_runnable": { "type": "boolean", "description": "true: examples run as shown" },
+    "decisions_logged": { "type": "boolean", "description": "true: decisions/limits/known bugs recorded with evidence" }
+  },
+  "required": ["quickstart_tested", "api_typed", "examples_runnable", "decisions_logged"]
+}

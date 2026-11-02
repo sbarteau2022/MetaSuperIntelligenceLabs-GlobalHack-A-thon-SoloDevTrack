@@ -1,0 +1,1 @@
+{"description":"Two-tool MCP server: ts_check (TypeScript 7.1) and ts_to_rust (supported subset)","main":"server.js","name":"ts-to-rust-mcp","private":true,"version":"0.1.0"}

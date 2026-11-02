@@ -1,0 +1,11 @@
+{
+  "name": "techdebt-gate",
+  "description": "Validate a tech-debt pass: evidenced inventory with paths, cost-of-leaving vs cost-to-fix pricing, ranked payoff, behavior pinned before changes, prevention check added.",
+  "parameters": {
+    "evidenced": { "type": "boolean", "description": "true: each item has file path + evidence" },
+    "priced": { "type": "boolean", "description": "true: leaving-cost and fix-cost estimated per item" },
+    "ranked": { "type": "boolean", "description": "true: ranked by leaving-cost / fix-cost, deferrals dated" },
+    "pinned": { "type": "boolean", "description": "true: behavior pinned by tests, one small change per commit, prevention check added" }
+  },
+  "required": ["evidenced", "priced", "ranked", "pinned"]
+}

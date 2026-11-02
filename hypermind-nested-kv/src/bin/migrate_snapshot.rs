@@ -239,9 +239,9 @@ fn main() -> Result<(), String> {
         writeln!(output, "BEGIN TRANSACTION;").map_err(|error| error.to_string())?;
         for atom in chunk {
             let content_digest = sha256(atom.text.as_bytes());
-            writeln!(output, "UPSERT atom:{} CONTENT {{ workspace: workspace:hypermind, external_id: {}, content_kind: 'text', content_text: {}, content_uri: NONE, content_digest: '{}', domain: {}, rank: {}, salience: {:?}, provenance: {}, taint: {}, pinned: {}, current_address: atom_address:{}, created_at: time::now(), updated_at: time::now() }} RETURN NONE;", atom.id, quoted(&atom.id.to_string()), quoted(&atom.text), content_digest, quoted(&atom.domain), atom.rank, atom.salience, quoted(&atom.provenance), quoted(&atom.taint), atom.pinned, atom.id)
+            writeln!(output, "CREATE atom:{} CONTENT {{ workspace: workspace:hypermind, external_id: {}, content_kind: 'text', content_text: {}, content_uri: NONE, content_digest: '{}', domain: {}, rank: {}, salience: {:?}, provenance: {}, taint: {}, pinned: {}, current_address: atom_address:{}, created_at: time::now(), updated_at: time::now() }} RETURN NONE;", atom.id, quoted(&atom.id.to_string()), quoted(&atom.text), content_digest, quoted(&atom.domain), atom.rank, atom.salience, quoted(&atom.provenance), quoted(&atom.taint), atom.pinned, atom.id)
                 .map_err(|error| error.to_string())?;
-            writeln!(output, "UPSERT atom_address:{} CONTENT {{ workspace: workspace:hypermind, atom: atom:{}, h3_lorentz: [{}], t2_phase: [{}], geometry_model: 'hash-idf-rank', geometry_version: 'H3xT2-Lorentz-canonical-v2', revision: 1, active: true, created_at: time::now() }} RETURN NONE;", atom.id, atom.id, array(&atom.coord), array(&atom.phase))
+            writeln!(output, "CREATE atom_address:{} CONTENT {{ workspace: workspace:hypermind, atom: atom:{}, h3_lorentz: [{}], t2_phase: [{}], geometry_model: 'hash-idf-rank', geometry_version: 'H3xT2-Lorentz-canonical-v2', revision: 1, active: true, created_at: time::now() }} RETURN NONE;", atom.id, atom.id, array(&atom.coord), array(&atom.phase))
                 .map_err(|error| error.to_string())?;
         }
         writeln!(output, "COMMIT TRANSACTION;").map_err(|error| error.to_string())?;

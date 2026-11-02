@@ -1,0 +1,42 @@
+{
+  "version": "1.0.0",
+  "slice": "Agent B1 (Swarm), Wave 3-FINAL — disjoint from B2 decomposition/prereg",
+  "date": "2026-10-31",
+  "status": "COMPILED",
+  "source": "N3/web-development/swarm/compiled/swarm.rs",
+  "contract": "carved-swarm + kimi-swarm routing logic compiled to a DAG: Explorer -> Architect (contracts gate) -> 3 parallel coders (disjoint OWNS) -> Critic (sole verifier) -> Governor (ImmuneGate permit). Every node has a judge fn (pass/fail) + receipt struct. Reuses A5/A6 compiled subagents + ok_computer_loop bounds by reference.",
+  "read_only_refs_not_modified": [
+    "orchestrator/src/swarm/mod.rs (Governor: OneForOne/OneForAll, RestartIntensity, ProcessState)",
+    "orchestrator/src/routing/mod.rs (typed handoff edges)",
+    "schema/carved_swarm.fbs (FlatHandoffPacket wire shape)",
+    "kimi-frontend-kit/subagents/SUBAGENT_SWARM_LOGIC.md (node order + ownership)",
+    "design/CARVED_SWARM_SPEC.md (Three Layers, Twelve Around One)",
+    "harness tier4-carved-swarm-immune.md (7-step chain, crash-recovery, intensity)",
+    "N3/web-development/subagents/compiled/*.rs (A5/A6, called by #[path], never duplicated)",
+    "N3/web-development/workflows/compiled/ok_computer_loop.rs (bounds mirrored: 3/2/4)"
+  ],
+  "nodes": [
+    {"id": "Explorer", "fn": "node_explorer", "in": "SwarmPacket", "out": "explorer_mod::ExplorerBrief", "reuse": "explorer_mod::UiExplorer (A5)", "judge": "judge_explorer", "receipt": "NodeReceipt"},
+    {"id": "Architect", "fn": "node_architect", "in": "SwarmPacket + ExplorerBrief", "out": "architect_mod::ArchitectOutput", "reuse": "architect_mod::StateDagArchitect (A5)", "judge": "judge_architect", "receipt": "NodeReceipt"},
+    {"id": "SurfaceCoder", "fn": "node_surface", "in": "SwarmPacket + ArchitectOutput", "out": "surface_mod::SurfaceCoderOutput", "reuse": "surface_mod::SurfaceMotionCoder (A5)", "judge": "judge_surface", "receipt": "NodeReceipt"},
+    {"id": "GraphCoder", "fn": "node_graph", "in": "SwarmPacket + ArchitectOutput", "out": "graph_mod::GraphCoderOutput", "reuse": "graph_mod::WebglGraphCoder (A6)", "judge": "judge_graph", "receipt": "NodeReceipt"},
+    {"id": "WorkbenchCoder", "fn": "node_workbench", "in": "SwarmPacket + ArchitectOutput", "out": "workbench_mod::WorkbenchCoderOutput", "reuse": "workbench_mod::WorkbenchIdeCoder (A6)", "judge": "judge_workbench", "receipt": "NodeReceipt"},
+    {"id": "Critic", "fn": "node_critic", "in": "SwarmPacket + CriticInput + files", "out": "critic_mod::CriticOutput", "reuse": "critic_mod::VisualQaCritic (A6)", "judge": "judge_critic", "receipt": "NodeReceipt"},
+    {"id": "Governor", "fn": "node_governor", "in": "round NodeReceipts", "out": "GovernorPermit", "reuse": "none (IS the supervision layer)", "judge": "judge_governor", "receipt": "NodeReceipt"}
+  ],
+  "edges": [
+    {"from": "Packet", "to": "Explorer", "artifact": "SwarmPacket"},
+    {"from": "Explorer", "to": "Architect", "artifact": "ExplorerBrief"},
+    {"from": "Architect", "to": "SurfaceCoder", "artifact": "ArchitectOutput.contracts_ready gate"},
+    {"from": "Architect", "to": "GraphCoder", "artifact": "ArchitectOutput.contracts_ready gate"},
+    {"from": "Architect", "to": "WorkbenchCoder", "artifact": "ArchitectOutput.contracts_ready gate"},
+    {"from": "SurfaceCoder+GraphCoder+WorkbenchCoder", "to": "Critic", "artifact": "files[] + CriticInput evidence"},
+    {"from": "Critic", "to": "Governor", "artifact": "round NodeReceipts"},
+    {"from": "Governor", "to": "Receipt", "artifact": "SwarmReceipt terminal"}
+  ],
+  "judges": ["judge_explorer", "judge_architect", "judge_surface", "judge_graph", "judge_workbench", "judge_critic", "judge_governor"],
+  "bounds": {"MAX_ROUNDS": 3, "MAX_STRIKES": 2, "MAX_NODE_ATTEMPTS_PER_ROUND": 4},
+  "escalation": {"strategy": "OneForOne (default) | OneForAll (live variant)", "two_strike_rule": "2 consecutive failures at same node -> one re-entry -> terminal Escalated", "intensity": "RestartIntensity { max_restarts: 2, within_ticks: 3 }"},
+  "swarm_api": {"struct": "Swarm", "spawn": "Swarm::spawn(strategy, intensity)", "run": "swarm.run(&packet, &mut evidence)", "collect": "Swarm::collect(&receipt)"},
+  "ts_gates": "N/A — pure-Rust DAG, no TS-subset surface (recorded, not skipped)"
+}

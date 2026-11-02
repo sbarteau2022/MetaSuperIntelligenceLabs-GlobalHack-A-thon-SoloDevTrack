@@ -1,0 +1,30 @@
+Lane 4 — Independent judge — end-of-lane report
+Date: 2026-11-02
+Hardware: Apple M5 Pro, arm64, macOS 27.0.1
+Files (lane-owned only): src/judge/mod.rs (+ lib.rs registration)
+
+WHAT LANDED
+IndependentJudge with a frozen JudgePolicy (min_mean_square, max_chart_rank)
+fixed at construction; no setter or tuning API exists. judge() consumes a
+frozen ExtractedCandidate plus JudgeEvidence and emits an immutable
+JudgeReceipt binding candidate digest, verdict, reason, policy digest,
+evidence digest, and novelty receipt digest. Rejection paths: duplicate
+candidate digest (novelty), non-finite evidence, rank-0 energy below the
+frozen floor, chart rank above the frozen cap, chart without tangent basis.
+The judge cannot mutate candidates (immutable borrow only) and cannot tune
+thresholds after seeing results (policy is Copy, set once).
+
+COMMANDS AND RESULTS
+cargo test --lib -> 25 passed, 0 failed (includes 2 judge tests)
+  pass_reject_and_duplicate_paths (pass, duplicate reject, weak reject)
+  receipts_are_deterministic_and_policy_bound (same inputs -> same receipt;
+  different frozen policy -> different receipt)
+
+COUNTS (lane 5 consumption)
+candidates judged: 5 (2 rank-0, 2 rank-1, 1 rank-2); passed: 5; rejected: 0
+in the integration walk. Unit tests additionally exercise 2 reject paths.
+
+UNTOUCHED GATES
+Eligibility/judge receipts for real model rosters (the manifests' missing
+eligibility_receipt_digest / judge_receipt_digest) remain an owner/judge
+decision; this lane provides the judge, it does not mint roster receipts.

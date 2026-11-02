@@ -1,0 +1,78 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--headless"
+      ]
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest"
+      ]
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.context7.com/mcp"
+      ]
+    },
+    "framelink-figma": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "figma-developer-mcp",
+        "--figma-api-key=YOUR_FIGMA_API_KEY"
+      ]
+    },
+    "repomix": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "repomix",
+        "--mcp"
+      ]
+    },
+    "ark-ui": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@ark-ui/mcp"
+      ]
+    },
+    "ux-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@elsahafy/ux-mcp-server"
+      ]
+    },
+    "ts-to-rust": {
+      "command": "/opt/homebrew/bin/node",
+      "args": [
+        "/Users/stewartbarteau/Desktop/AtomaApp/mcp-servers/ts-to-rust/server.js"
+      ],
+      "env": {}
+    },
+    "open-design": {
+      "command": "/Applications/Open Design.app/Contents/Frameworks/Open Design Helper.app/Contents/MacOS/Open Design Helper",
+      "args": [
+        "/Applications/Open Design.app/Contents/Resources/app/prebundled/daemon/daemon-cli.mjs",
+        "mcp"
+      ],
+      "env": {
+        "OD_DATA_DIR": "/Users/stewartbarteau/Library/Application Support/Open Design/namespaces/release-stable/data",
+        "ELECTRON_RUN_AS_NODE": "1"
+      }
+    },
+    "vite-react": {
+      "url": "http://localhost:5173/__mcp/sse"
+    }
+  }
+}

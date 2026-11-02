@@ -1,0 +1,31 @@
+[package]
+name = "ares-backend"
+version = "0.1.0"
+edition = "2021"
+description = "Ares base backend: Phase 0 core governance (permit-in-dispatch, chained audit, Merkle vault, carved views, statutory registry) + the research-grade harness (RG-AH) as native runtime modules under the Rust/Tokio systems-engineering doctrine. One binary, loopback only (:4810)."
+
+[lib]
+name = "ares_backend"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ares-backend"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "sync"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+futures = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# Integration boundaries are explicit instead of hidden crates:
+# HyperDX receives append-only OTLP telemetry; Qdrant is the append-only
+# RAG/session-memory store; governance authority stays in SurrealDB.
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "test-util"] }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

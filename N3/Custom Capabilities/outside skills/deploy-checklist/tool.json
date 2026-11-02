@@ -1,0 +1,11 @@
+{
+  "name": "deploy-gate",
+  "description": "Validate a deploy: suite green on clean checkout, migrations reversible, config out of repo, rollback tried, health signals watched, change confirmed by measurement.",
+  "parameters": {
+    "suite_green": { "type": "boolean", "description": "true: suite green on clean checkout" },
+    "rollback_ready": { "type": "boolean", "description": "true: rollback step written and tried" },
+    "secrets_ok": { "type": "boolean", "description": "true: config/secrets present, none in repo" },
+    "watch_signals": { "type": "boolean", "description": "true: health signals named and watched (errors, latency, canary)" }
+  },
+  "required": ["suite_green", "rollback_ready", "secrets_ok", "watch_signals"]
+}

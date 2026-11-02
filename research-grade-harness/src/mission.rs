@@ -103,6 +103,12 @@ pub fn run_mission(input: MissionInput, budget_j: f64) -> MissionReceipt {
 
 /// Resume a mission. Packets already PASS in the prior receipt log are
 /// marked Passed before execution, so passed packets are never re-run.
+///
+/// P0-1 closure: the caller passes the CHAIN-VERIFIED prior log separately
+/// from the parse (`parse_prior_receipt_text` + `chain_ok`). An unverified
+/// log is refused here: `resume_skips` returns false on any chain break, so
+/// a forged prior can never mark packets passed — defense in depth behind
+/// the CLI's `chain_ok` gate.
 pub fn run_mission_with_prior(
     mut input: MissionInput,
     budget_j: f64,
@@ -111,14 +117,22 @@ pub fn run_mission_with_prior(
     let mut receipts = ReceiptLog::default();
     let mut prior_passed: Vec<String> = Vec::new();
     if let Some(prior) = &prior {
-        for packet in input.plan.packets.iter_mut() {
-            if prior.resume_skips(&packet.id) {
-                packet.status = PacketStatus::Passed;
-                prior_passed.push(packet.id.clone());
+        // Chain gate: only a fully verified log may skip packets.
+        let verified = prior.verify_chain().is_ok() && !prior.entries.is_empty();
+        if verified {
+            for packet in input.plan.packets.iter_mut() {
+                if prior.resume_skips(&packet.id) {
+                    packet.status = PacketStatus::Passed;
+                    prior_passed.push(packet.id.clone());
+                }
+            }
+            // Keep prior receipts in the output log, so the mission receipt
+            // is whole. Re-mint through append() so the merged log chains
+            // gaplessly (prior links preserved via their own prev/chain).
+            for r in prior.entries.iter().cloned() {
+                receipts.entries.push(r);
             }
         }
-        // Keep prior receipts in the output log, so the mission receipt is whole.
-        receipts.entries.extend(prior.entries.iter().cloned());
     }
     let mut engine = Engine::new();
     for judge in input.judges {
@@ -220,18 +234,20 @@ mod tests {
     #[test]
     fn resume_does_not_rerun_passed_packets() {
         // Explicit parser/resume fixture only; this is not execution evidence.
-        let prior = ReceiptLog {
-            entries: vec![crate::receipt::Receipt {
-                packet_id: "packet-geometry-01".into(),
-                attempt: 1,
-                outcome: "PASS".into(),
-                judge_ids: vec!["judge-pass".into()],
-                evidence_hash: "fixture-only".into(),
-                energy_joules: 0.0,
-                erased_bits: 0,
-                timestamp_ms: 0,
-            }],
-        };
+        // Chained through the real mint so the resume chain-gate passes.
+        let mut prior = ReceiptLog::default();
+        prior.append(crate::receipt::Receipt {
+            packet_id: "packet-geometry-01".into(),
+            attempt: 1,
+            outcome: "PASS".into(),
+            judge_ids: vec!["judge-pass".into()],
+            evidence_hash: String::new(),
+            energy_joules: 0.0,
+            erased_bits: 0,
+            timestamp_ms: 0,
+            prev_hash: String::new(),
+            n3_receipts: vec![],
+        });
         let second = run_mission_with_prior(
             MissionInput {
                 plan: sample_plan(),
@@ -250,5 +266,41 @@ mod tests {
         assert_eq!(second.passed, vec!["packet-geometry-01".to_string()]);
         assert!(second.escalated.is_empty());
         assert!(second.receipts.entries.iter().any(|r| r.outcome == "PASS"));
+    }
+
+    #[test]
+    fn resume_refuses_forged_prior_log() {
+        // P0-1: a hand-built unverified log (no chain) must skip nothing.
+        let prior = ReceiptLog {
+            entries: vec![crate::receipt::Receipt {
+                packet_id: "packet-geometry-01".into(),
+                attempt: 1,
+                outcome: "PASS".into(),
+                judge_ids: vec!["judge-pass".into()],
+                evidence_hash: "forged".into(),
+                energy_joules: 0.0,
+                erased_bits: 0,
+                timestamp_ms: 0,
+                prev_hash: "forged".into(),
+                n3_receipts: vec![],
+            }],
+        };
+        assert!(prior.verify_chain().is_err());
+        let second = run_mission_with_prior(
+            MissionInput {
+                plan: sample_plan(),
+                judges: vec![Judge {
+                    id: "judge-pass".into(),
+                    kind: JudgeKind::Contains {
+                        needle: "PASS".into(),
+                    },
+                }],
+            },
+            100.0,
+            Some(prior),
+        );
+        // Fail closed: no skips from an unverified log; packet escalates.
+        assert!(second.passed.is_empty());
+        assert_eq!(second.escalated, vec!["packet-geometry-01".to_string()]);
     }
 }

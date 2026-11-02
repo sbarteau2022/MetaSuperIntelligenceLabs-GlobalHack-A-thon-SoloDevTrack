@@ -1,0 +1,10 @@
+{
+  "name": "polyglot-audit-gate",
+  "description": "Validate a polyglot audit finding: CWE-78/89/798 class, high Shannon entropy secret, py_compile-clean scanner run.",
+  "parameters": {
+    "cwe": { "type": "string", "description": "'CWE-78' | 'CWE-89' | 'CWE-798'" },
+    "entropy_high": { "type": "boolean", "description": "true: Shannon entropy above deterministic threshold" },
+    "compiled": { "type": "boolean", "description": "true: python3 -m py_compile clean, self-test green" }
+  },
+  "required": ["cwe", "entropy_high", "compiled"]
+}

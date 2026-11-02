@@ -1,0 +1,142 @@
+Stages 5-7 (replay / crystallize / audit): implementation report
+SUPERSEDED TRANSACTION NOTE (2026-11-02): The per-entity-transaction note
+below describes this historical run. Current admit_crystallization sends
+events, packets, atoms, trajectory and charts in one Surreal transaction.
+The isolated poisoned-bundle integration test passed; the old run receipt
+must still be repeated under the corrected TPPE before current qualification.
+Date: 2026-11-02 (UTC). Owner: replay+integration agent (this session).
+FIXTURE LABEL 2026-11-02: the distilled atoms/trajectories evidenced
+here are integration fixtures produced under
+tppe_linear_log_v1_candidate (staged replay hardcodes
+RadialLaw::LinearLogV1). They prove the pipeline works; they do not
+prove linear_log_v1 is the winning positional encoder. No encoder is
+promoted or benched; the held-out bakeoff decision is OPEN
+(results/queue2/tppe-bench-v2-smoke.txt). If the bakeoff selects any
+other arm, trace -> extract -> judge -> open new run -> replay ->
+crystallize -> audit -> tensor K/V qualification must be re-executed
+(not redesigned) under the winner.
+Scope: globalmind-runtime/src/replay/ (new), tests/
+distillation_surreal_live.rs (new), additive branches in src/bin/
+globalmind_distill.rs + one `pub mod replay;` line in src/lib.rs, this
+report, README rows. No other lane's files were edited (trace/extract/
+judge/store/model/tppe read-only; their concurrent edits were left intact).
+Nothing staged, committed, or pushed.
+
+1. What was built
+- src/replay/mod.rs: stage-5 walker. Verifies candidate digests
+  (recomputed from teacher-neutral fields), single frozen judge policy,
+  no duplicate passes; builds admitted+rejected packets; reconstructs
+  rank-0 atoms (finite Lorentz coords, teacher-neutral content binding);
+  walks rank-1 transitions in order with REAL TppeState stepping
+  (exact T2 phase continuity, strict radial expansion, positive
+  boundary margins, revolution counters); proves every rank-2 loop
+  closes in step space (degenerate loops fail closed); validates
+  rank-8 charts by tangent-bytes match to a real weight envelope,
+  dense-dtype mapping (quantized fail closed), and mandatory
+  marginal-gain/numerical receipts; emits a ReplayPassed trajectory.
+  Any identity drift (model, radial law, TPE config, address
+  contract, runtime, digest) is a miss via verify_bindings, never a
+  conversion. upgrade_for_crystallization promotes to Crystallized.
+- src/replay/artifact.rs: immutable GMRW v1 walk artifact (inputs +
+  expected digests, trailing sha256). Crystallize re-runs replay from
+  decoded inputs and compares digests; restart = decode + re-verify.
+- Run-scoped identities: packets/atoms/steps/edges/loops/charts carry
+  a run tag plus content suffix, so two runs over identical candidates
+  keep disjoint ids (found live: digest-only ids collided on rerun and
+  the store correctly refused the cross-bound write).
+- Bin branches (isolated patch; `run` untouched):
+  replay <manifest> <trace.gmtrace> <law> <walk.gmwalk>: rehash,
+  decode frames, in-process extract+judge (schedule-v1 evidence:
+  exact F32 chart stats, aggregate F32 otherwise, F32-only),
+  fail-closed on passed charts without receipt producers, emit walk.
+  crystallize <manifest> <walk>: rehash, decode, manifest binding
+  check, replay re-verification, ingress-or-resume, idempotent phase
+  events, ordered-atomic admit (packets -> atoms -> trajectory ->
+  charts), readback, restart instruction. Failed runs get a Failed
+  event; terminal runs refuse further writes.
+  audit <manifest> <walk> [report]: rehash, re-verify, per-id
+  reconciliation (packets/atoms/header/steps/loops/edges/charts/
+  events), Completed or Failed terminal event, plain-text report.
+- tests/distillation_surreal_live.rs: full pipeline on an isolated
+  file-backed SurrealDB 3.3.5 (schema 0001,0003..0011): .gmtrace
+  roundtrip, extract, judge, replay, artifact restart proof,
+  ingress, events, packets, atoms, trajectory, duplicate-write
+  atomicity, PROCESS RESTART, re-verification from persisted rows,
+  completed event, exact reconciliation, report.
+
+2. Honesty notes (read before trusting)
+- Envelopes are constructed in process and the manifest artifact is a
+  temp stub with owner-pending receipt placeholders (same level as the
+  lane-5 walk). Real: rehash, extract, judge, replay, TPPE stepping,
+  store transactions, restart, reconciliation. No real model forward
+  pass ran (no trace producer wiring in this lane).
+- Crystallize is ordered-atomic, NOT single-transaction: the store
+  exposes one atomic tx per entity, and combining them needs store.rs
+  changes owned by another lane. Everything is pre-validated before
+  the first write; audit detects any crash prefix.
+- Evidence schedule v1 is F32-only; non-F32 envelopes are excluded
+  and recorded. Quarantined hypermind/core never contacted.
+
+3. Observed evidence
+- Gates (globalmind-runtime/): cargo fmt --check PASS; cargo check
+  --tests PASS; cargo clippy --all-targets: only 3 lints, all in
+  src/trace/qwen36.rs (trace lane, untouched); zero lints in
+  src/replay/, the new test, or the new bin branches.
+- cargo test (full suite): lib 52 passed; capability_atlas_audit 3;
+  distillation_surreal_live 1 (new); surreal_integration 1 (lane 5,
+  no regression); tensor_kv_qualification 1; whitehead 7; doc 0.
+  0 failed everywhere.
+- Replay unit tests (12): walk+loop+TPPE continuity, run-disjoint
+  ids, binding miss on 6 drift classes, discontinuity/degenerate
+  fail-closed, rejection exclusion with verdict records, chart
+  validate/missing-receipt/quantized-envelope-miss, quantized dtype
+  refusal, candidate tamper + policy drift, evidence finite/NaN/
+  empty, artifact roundtrip + restart-identical + tamper/truncate/
+  magic rejection, CLI fixture roundtrip.
+- Integration test: envelopes -> .gmtrace roundtrip -> extract ->
+  judge (5/5 pass) -> replay (2 atoms, 2 steps, 1 loop, 0 charts)
+  -> artifact decode + re-replay identical -> ingress -> events
+  1..3 -> 5 packets -> 2 atoms -> trajectory -> duplicate-write
+  atomicity (count stays 1) -> PROCESS RESTART -> re-verified
+  from persisted rows (digest, endpoints, closure identical) ->
+  Completed event -> exact reconciliation -> report. 7.9s.
+- CLI E2E (isolated SurrealDB 3.3.5, ephemeral port, destroyed
+  after): replay ok (5 candidates, receipt ffd7d4e0...); schema
+  0001,0003..0011 applied with 0 errors; seed ok; crystallize ok
+  (5 packets, 2 atoms, 2 steps, 1 loop, readback 5/2); server
+  RESTART on same storage; audit ok, exit 0, balance=PASS (see
+  results/distillation/cli-e2e-audit-report.txt). A PASS report
+  proves the Completed event: any append failure returns Err
+  before the report is written.
+- Fail-closed probes (all exit 1): unknown radial law rejected;
+  tampered walk rejected (file digest mismatch); stale pre-scoping
+  walk rejected (trajectory digest miss); crystallize rerun on a
+  completed run refused (terminal event). Subquery-IN record
+  matching and digest-only cross-run ids both failed live during
+  development and were fixed (per-id checks; run-scoped ids).
+
+4. Exact digests (SHA-256; bin digest includes concurrent trace/
+extract/judge arms landed by other lanes)
+- globalmind-runtime/src/replay/mod.rs:
+  288061aa0539625dd6ec7b987fe5bba720e85d4f3aa609c9f40fcde61ea4b407
+- globalmind-runtime/src/replay/artifact.rs:
+  dcfa2a01b6c9badedc7165474a4ee687e0aef64237f0b2bbc4f68eb578a86ec5
+- globalmind-runtime/tests/distillation_surreal_live.rs:
+  d541e3cdc583355bd2ca30bffbdc8a325538df8281ea9cc2ceae078a79bdadc6
+- globalmind-runtime/src/bin/globalmind_distill.rs:
+  f716af3164ee27b9754534d2dd2f38c3cd51e56f5c6134936b441d423981d85e
+- Runtime: rustc 1.99.0 (Homebrew), SurrealDB 3.3.5 macos/aarch64,
+  Apple M5 Pro, macOS 27.0.1. Quarantined core never contacted;
+  no stray processes or storage remain.
+
+5. Open gates (explicitly NOT claimed)
+- Real model traces (trace lane owns production); real-trace
+  replay/crystallize integration once .gmtrace artifacts exist.
+- Marginal-gain/numerical receipt producer for rank-8 charts;
+  replay CLI refuses passed charts until it exists.
+- Single-transaction crystallize (needs store.rs, another lane).
+- Dedicated extract/judge CLIs now exist (other lanes); replay
+  still runs them in-process from .gmtrace (documented; file-input
+  mode is future work, not a silent behavior change).
+- Chart-bearing walks through crystallize (needs envelope input).
+- No certification claimed; stage + integration evidence only.

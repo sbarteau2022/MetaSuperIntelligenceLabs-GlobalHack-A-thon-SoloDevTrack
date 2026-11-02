@@ -1,0 +1,167 @@
+{
+  "version": "1.0.0",
+  "notes": "Single rule table shared by pre_tool_guard.py (deny), post_edit_verify.py (warn), and audit.py (both). Scope uses glob syntax matched against the root-relative path.",
+  "rules": [
+    {
+      "id": "no-secrets-aws-key",
+      "scope": ["**"],
+      "pattern": "AKIA[0-9A-Z]{16}",
+      "severity": "deny",
+      "message": "Possible AWS access key in file content.",
+      "fix": "Remove the key, rotate it, and load it from a secret manager or .env (never committed)."
+    },
+    {
+      "id": "no-private-key",
+      "scope": ["**"],
+      "pattern": "-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----",
+      "severity": "deny",
+      "message": "Private key material in file content.",
+      "fix": "Remove immediately, rotate the key, use a secret manager."
+    },
+    {
+      "id": "no-hardcoded-password",
+      "scope": [
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.js",
+        "**/*.jsx",
+        "**/*.py",
+        "**/*.json",
+        "**/*.yml",
+        "**/*.yaml"
+      ],
+      "pattern": "(?i)(password|passwd|pwd)\\s*[:=]\\s*['\"][^'\"]{3,}['\"]",
+      "severity": "deny",
+      "message": "Hardcoded password/secret assignment.",
+      "fix": "Read from environment or secret manager; keep only a placeholder in .env.example."
+    },
+    {
+      "id": "no-env-commit",
+      "scope": ["**/.env", "**/.env.*"],
+      "pattern": ".",
+      "severity": "deny",
+      "message": "Real .env file caught by the write guard.",
+      "fix": "Unstage it; only .env.example belongs in version control."
+    },
+    {
+      "id": "no-eval",
+      "scope": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"],
+      "pattern": "\\beval\\s*\\(",
+      "severity": "deny",
+      "message": "eval() is a code-injection surface.",
+      "fix": "Replace with JSON.parse, a lookup table, or a proper parser."
+    },
+    {
+      "id": "no-dangerous-html",
+      "scope": ["**/*.tsx", "**/*.jsx"],
+      "pattern": "dangerouslySetInnerHTML",
+      "severity": "deny",
+      "message": "Raw HTML injection in JSX.",
+      "fix": "Render structured content or sanitize with a reviewed sanitizer at the sink."
+    },
+    {
+      "id": "no-innerhtml-sink",
+      "scope": ["**/*.ts", "**/*.js"],
+      "pattern": "\\.innerHTML\\s*=",
+      "severity": "deny",
+      "message": "innerHTML assignment is an XSS sink.",
+      "fix": "Use textContent / DOM construction or a sanitizer."
+    },
+    {
+      "id": "no-div-button",
+      "scope": ["**/*.tsx", "**/*.jsx", "**/*.html", "**/*.vue", "**/*.svelte"],
+      "pattern": "<div[^>]*role\\s*=\\s*[\"']button[\"']",
+      "severity": "deny",
+      "message": "div-as-button breaks keyboard and screen-reader interaction.",
+      "fix": "Use a native <button>."
+    },
+    {
+      "id": "no-fake-heading",
+      "scope": ["**/*.tsx", "**/*.jsx", "**/*.html", "**/*.vue", "**/*.svelte"],
+      "pattern": "<(div|span)[^>]*class\\s*=\\s*[\"'][^\"']*(h1|h2|h3|heading|title)[^\"']*[\"']",
+      "severity": "warn",
+      "message": "Possible fake heading (styled div/span instead of h1-h6).",
+      "fix": "Use a real heading element with sequential level."
+    },
+    {
+      "id": "no-global-reset",
+      "scope": ["**/*.css"],
+      "pattern": "^\\s*\\*\\s*\\{",
+      "severity": "warn",
+      "message": "Global * reset cannot be overridden by components or lower layers.",
+      "fix": "Target specific elements/conditions instead."
+    },
+    {
+      "id": "no-important",
+      "scope": ["**/*.css"],
+      "pattern": "!important",
+      "severity": "warn",
+      "message": "!important outside the utilities layer hides the real conflict.",
+      "fix": "Fix layer order or scope the rule; keep !important in utilities only."
+    },
+    {
+      "id": "no-transition-all",
+      "scope": ["**/*.css"],
+      "pattern": "transition(-property)?\\s*:\\s*all\\b",
+      "severity": "warn",
+      "message": "transition: all animates unintended properties and hurts performance.",
+      "fix": "List the animated properties explicitly (prefer transform/opacity)."
+    },
+    {
+      "id": "no-linear-ease",
+      "scope": ["**/*.css"],
+      "pattern": "transition-timing-function\\s*:\\s*(linear|ease-in-out)\\b",
+      "severity": "warn",
+      "message": "linear/ease-in-out reads as default/generic motion.",
+      "fix": "Use a token easing curve (see frontend-design-language/tokens/tokens.css)."
+    },
+    {
+      "id": "no-hardcoded-color",
+      "scope": ["**/*.css"],
+      "exclude": ["**/tokens/tokens.css"],
+      "pattern": "#[0-9a-fA-F]{3,8}\\b",
+      "severity": "warn",
+      "message": "Literal color in CSS bypasses the token system.",
+      "fix": "Use a semantic token from frontend-design-language/tokens/."
+    },
+    {
+      "id": "no-todo-stub",
+      "scope": [
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.js",
+        "**/*.jsx",
+        "**/*.py",
+        "**/*.css"
+      ],
+      "pattern": "(TODO|FIXME|XXX|HACK|//\\s*add logic here|\\.\\.\\.)",
+      "severity": "warn",
+      "message": "Stub marker will ship if the stop-gate is bypassed.",
+      "fix": "Implement it now or file a tracked issue and reference its id."
+    },
+    {
+      "id": "no-console-log",
+      "scope": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"],
+      "pattern": "console\\.(log|debug)\\s*\\(",
+      "severity": "warn",
+      "message": "console.log/debug left in code.",
+      "fix": "Remove or route through the logging middleware."
+    },
+    {
+      "id": "no-debugger",
+      "scope": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"],
+      "pattern": "\\bdebugger\\b",
+      "severity": "deny",
+      "message": "debugger statement halts execution for every user.",
+      "fix": "Remove it."
+    },
+    {
+      "id": "no-select-star",
+      "scope": ["**/*.sql", "**/*.ts", "**/*.js", "**/*.py"],
+      "pattern": "(?i)\\bselect\\s+\\*\\b",
+      "severity": "warn",
+      "message": "SELECT * couples queries to schema order and over-fetches.",
+      "fix": "List the columns explicitly."
+    }
+  ]
+}

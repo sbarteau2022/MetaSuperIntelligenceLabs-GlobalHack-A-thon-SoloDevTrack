@@ -1,0 +1,11 @@
+{
+  "name": "ts-conventions-gate",
+  "description": "Validate TypeScript house conventions: const objects over enum, unknown over any, branded domain types, type-only imports, satisfies over as.",
+  "parameters": {
+    "no_enum": { "type": "boolean", "description": "true: no enum declarations" },
+    "no_any": { "type": "boolean", "description": "true: no any (unknown + narrow instead)" },
+    "brand_ok": { "type": "boolean", "description": "true: branded types for domain modeling" },
+    "import_style": { "type": "string", "description": "'type-only' or 'satisfies'" }
+  },
+  "required": ["no_enum", "no_any", "brand_ok", "import_style"]
+}

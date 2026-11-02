@@ -1,0 +1,36 @@
+{
+  "workstream": "B2 (Decomp+Prereg), Wave 3-FINAL",
+  "date": "2026-10-31",
+  "status": "COMPILED",
+  "disjoint": "B1 swarm DAG files untouched; no kimi_* subagent code here",
+  "nodes": [
+    {"kind": "Explorer", "input": "RepoSnapshot", "output": "Inventory", "judge": "InventoryComplete", "owns": []},
+    {"kind": "Architect", "input": "Inventory", "output": "Contracts", "judge": "ContractGate", "owns": ["src/types/", "src/store/"]},
+    {"kind": "SurfaceCoder", "input": "Contracts", "output": "SliceBuild", "judge": "Typecheck", "owns": ["src/components/layout/", "src/components/ui/"]},
+    {"kind": "GraphCoder", "input": "Contracts", "output": "SliceBuild", "judge": "Typecheck", "owns": ["src/components/graph/", "src/components/dag/"]},
+    {"kind": "WorkbenchCoder", "input": "Contracts", "output": "SliceBuild", "judge": "Typecheck", "owns": ["src/components/workbench/", "src/components/editors/"]},
+    {"kind": "Critic", "input": "AssembledBuild", "output": "Verdict", "judge": "VisualQa", "owns": ["qa/verdicts/"]}
+  ],
+  "edges": [
+    ["Explorer", "Architect"],
+    ["Architect", "SurfaceCoder"],
+    ["Architect", "GraphCoder"],
+    ["Architect", "WorkbenchCoder"],
+    ["SurfaceCoder", "Critic"],
+    ["GraphCoder", "Critic"],
+    ["WorkbenchCoder", "Critic"]
+  ],
+  "assembly": {"input": "SliceBuild", "output": "AssembledBuild"},
+  "preregistration": {
+    "plan": "task + dag + judges + criteria (b2_plan)",
+    "seal": "sha256 canonical encoding at seal time + signer + timestamp + nonce",
+    "frozen": "private fields, read-only getters, zero &mut self methods",
+    "amend": "takes &self, returns NEW seal; original untouched"
+  },
+  "hash_samples": {
+    "seal_A_t1730000000_n1": "6d0fecbb10257e79711e5c25a13027e018a1ced6a2b464a98329f84405ee6b9f",
+    "seal_B_t1730000001_n2": "5bf68a1fae80d4f78236c74f9ba42f0924076e24e0c08a103dd627803785566a",
+    "seal_C_mutated_content": "81e9014c7492b4d1dbc28d05e168043ae9d2b9061303f3b28a0a199d37db54a3",
+    "seal_D_amended": "b976e7b405fe5e821251c0a7fe2307c0ef2127d61ece80466b4927b0960b081f"
+  }
+}

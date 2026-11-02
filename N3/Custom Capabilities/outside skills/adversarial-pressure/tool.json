@@ -1,0 +1,12 @@
+{
+  "name": "pressure-gate",
+  "description": "Validate an adversarial pass: findings reproduced with minimal input, severity-labeled, stop after 2 clean rounds; grade capped by mutation kill.",
+  "parameters": {
+    "severity": { "type": "string", "description": "'wrong-output'|'spec-violation'|'test-gap'|'hygiene'" },
+    "reproduced": { "type": "boolean", "description": "true: finding reproduces from minimal input" },
+    "has_input": { "type": "boolean", "description": "true: minimal input recorded" },
+    "findings_rounds": { "type": "number", "description": "clean rounds with nothing new (>= 2 to stop)" },
+    "kill_rate": { "type": "number", "description": "mutation kill rate (grade cap at 70)" }
+  },
+  "required": ["severity", "reproduced", "has_input"]
+}

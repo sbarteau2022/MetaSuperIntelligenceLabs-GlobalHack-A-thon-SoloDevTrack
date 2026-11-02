@@ -121,6 +121,14 @@ impl VpTree {
         best.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         best.into_iter().take(k).map(|x| x.1).collect()
     }
+
+    /// Range query: ids within `radius` of `q_coord` under `dist`.
+    /// The tree MUST have been built with the same metric (pruning soundness).
+    fn range_with(&self, q_coord: &[f64; 4], radius: f64, dist: fn(&[f64; 4], &[f64; 4]) -> f64) -> Vec<u64> {
+        let mut out = Vec::new();
+        search_vp_range(&self.root, q_coord, radius, dist, &mut out);
+        out
+    }
 }
 
 /// Shell-invariant hyperbolic distance: salience-normalized comparison.
@@ -135,6 +143,10 @@ fn shell_dist(a: &[f64; 4], b: &[f64; 4]) -> f64 {
 }
 
 fn build_vp(points: &[Atom]) -> VpNode {
+    build_vp_with(points, shell_dist)
+}
+
+fn build_vp_with(points: &[Atom], dist: fn(&[f64; 4], &[f64; 4]) -> f64) -> VpNode {
     if points.is_empty() {
         return VpNode::Empty;
     }
@@ -151,7 +163,7 @@ fn build_vp(points: &[Atom]) -> VpNode {
         .iter()
         .enumerate()
         .skip(1)
-        .map(|(i, a)| (shell_dist(&vp.coord, &a.coord), i))
+        .map(|(i, a)| (dist(&vp.coord, &a.coord), i))
         .collect();
     with_dist.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     let median_idx = with_dist.len() / 2;
@@ -159,25 +171,60 @@ fn build_vp(points: &[Atom]) -> VpNode {
     let mut left_pts = Vec::new();
     let mut right_pts = Vec::new();
     for (i, a) in points.iter().enumerate().skip(1) {
-        let d = shell_dist(&vp.coord, &a.coord);
+        let d = dist(&vp.coord, &a.coord);
         if d <= mu {
             left_pts.push(a.clone());
         } else {
             right_pts.push(a.clone());
         }
     }
-    // Guard against degenerate splits (all points equidistant).
-    if left_pts.is_empty() && !right_pts.is_empty() {
-        left_pts.push(right_pts.pop().unwrap());
-    }
-    if right_pts.is_empty() && !left_pts.is_empty() && left_pts.len() > 1 {
-        right_pts.push(left_pts.pop().unwrap());
-    }
+    // NO degenerate-split guard: moving a point across the mu partition to
+    // avoid an empty child BREAKS pruning soundness (a d<=mu point in right
+    // is invisible to queries that correctly prune right — audited 9/300
+    // missed range hits, e.g. d=0.26 hidden behind mu=2.17). Empty children
+    // are correct (search matches Empty) and recursion still terminates
+    // (each level drops the vp, strictly smaller sets).
     VpNode::Node {
         vp,
         mu,
-        left: Box::new(build_vp(&left_pts)),
-        right: Box::new(build_vp(&right_pts)),
+        left: Box::new(build_vp_with(&left_pts, dist)),
+        right: Box::new(build_vp_with(&right_pts, dist)),
+    }
+}
+
+/// Exact VP-tree RANGE search: all ids within `radius` of `q_coord`.
+/// Same pruning conditions as knn (tau = radius): a subtree is skipped only
+/// when the triangle inequality proves no member can be in range. No K, no
+/// best-list, no per-node sorts — cost is O(ball + unprunable branches).
+/// This is what makes the refold O(N log N)-shaped instead of O(N^2).
+fn search_vp_range(
+    node: &VpNode,
+    q_coord: &[f64; 4],
+    radius: f64,
+    dist: fn(&[f64; 4], &[f64; 4]) -> f64,
+    out: &mut Vec<u64>,
+) {
+    match node {
+        VpNode::Empty => {}
+        VpNode::Node { vp, mu, left, right } => {
+            let d = dist(q_coord, &vp.coord);
+            // Emission is EXACT (same computation as the brute-force gate).
+            if d <= radius {
+                out.push(vp.id);
+            }
+            // Pruning is PADDED: float rounding in lorentz_inner can violate
+            // the triangle inequality by ~1e-13 near the boundary, flipping a
+            // prune decision and missing a true hit (audited 9/300 seeds).
+            // 1e-9 padding is 100x the error scale: never misses, visits a few
+            // extra boundary branches. Emission stays exact, so output == scan.
+            const PRUNE_EPS: f64 = 1e-9;
+            if d <= *mu + radius + PRUNE_EPS {
+                search_vp_range(left, q_coord, radius, dist, out);
+            }
+            if d >= *mu - radius - PRUNE_EPS {
+                search_vp_range(right, q_coord, radius, dist, out);
+            }
+        }
     }
 }
 
@@ -1056,7 +1103,49 @@ fn basin_append(state: &mut State, atom: &Atom) {
     }
 }
 
+/// Fold candidate generation: EXACT VP-tree range search intersected with
+/// the uncovered set. Same absorbed SET as the full scan (range is exact) —
+/// receipts byte-identical. Cost per seed is O(ball + unprunable branches),
+/// not O(uncovered): the refold is O(N log N)-shaped instead of O(N^2).
+fn fold_candidates(
+    state: &State,
+    raw_vp: &VpNode,
+    seed_coord: &[f64; 4],
+    uncovered: &std::collections::BTreeSet<u64>,
+    fold_radius: f64,
+) -> Vec<u64> {
+    // Small remainders: skip the tree, scan directly.
+    if uncovered.len() <= 64 {
+        return uncovered.iter().copied().collect();
+    }
+    // Ball-side iteration: O(ball) set lookups, NOT O(uncovered) scan.
+    // (The O(uncovered)-per-seed filter was the residual quadratic —
+    //  audit 2026-11-01: 8000 seeds x O(N) filter = the 786ms.)
+    let mut out: Vec<u64> = Vec::new();
+    search_vp_range(raw_vp, seed_coord, fold_radius, hyperbolic_dist, &mut out);
+    out.into_iter().filter(|id| uncovered.contains(id)).collect()
+}
+
 fn rebuild_basins(state: &mut State) {
+    // VP-range fold needs a fresh tree (recover/reweight may leave it stale).
+    ensure_vp(state);
+    // Raw-metric tree for the fold gate (the greedy rule is raw-hyperbolic;
+    // the query tree is shell — different metrics, different trees).
+    // Deterministic shuffle (fixed seed): vp = points[0] would otherwise track
+    // insertion order, which can be adversarially sorted and defeat pruning.
+    // Shuffle makes vantage points random (expected balanced splits); the seed
+    // is FIXED so the tree — and the fold — is bit-deterministic. Fold RESULTS
+    // do not depend on tree order (range is exact either way); only speed does.
+    let mut raw_points: Vec<Atom> = state.atoms.values().cloned().collect();
+    {
+        let mut s: u64 = 0x9e3779b97f4a7c15;
+        for i in (1..raw_points.len()).rev() {
+            s ^= s << 13; s ^= s >> 7; s ^= s << 17;
+            let j = (s % ((i + 1) as u64)) as usize;
+            raw_points.swap(i, j);
+        }
+    }
+    let raw_vp = build_vp_with(&raw_points, hyperbolic_dist);
     let mut by_domain: BTreeMap<String, Vec<u64>> = BTreeMap::new();
     for a in state.atoms.values() {
         by_domain.entry(a.domain.clone()).or_default().push(a.id);
@@ -1078,32 +1167,37 @@ fn rebuild_basins(state: &mut State) {
         // Greedy fold: seed a basin at the first uncovered atom, absorb every
         // atom within the fold radius; repeat. Deterministic in id order.
         let fold_radius = 1.5f64;
-        let mut uncovered: Vec<u64> = ids;
-        while !uncovered.is_empty() {
-            let seed = uncovered.remove(0);
-            let seed_coord = match state.atoms.get(&seed) {
-                Some(a) => a.coord,
+        let mut uncovered: std::collections::BTreeSet<u64> = ids.into_iter().collect();
+        while let Some(seed) = uncovered.iter().next().copied() {
+            uncovered.remove(&seed);
+            let (seed_coord, seed_topic) = match state.atoms.get(&seed) {
+                Some(a) => (a.coord, a.topic),
                 None => continue,
             };
-            let mut members = vec![seed];
-            let mut rest = Vec::new();
-            let seed_topic = state
-                .atoms
-                .get(&seed)
-                .map(|a| topic_embed(&a.text))
-                .unwrap_or([0.0f64; 32]);
-            for id in uncovered {
+            // Candidate ball (verified complete; falls back to full scan).
+            let cands = fold_candidates(state, &raw_vp, &seed_coord, &uncovered, fold_radius);
+            // Same gate as the full scan (cached topics, identical values).
+            let mut absorbed: Vec<u64> = Vec::new();
+            for id in cands {
                 match state.atoms.get(&id) {
                     Some(a)
                         if hyperbolic_dist(&seed_coord, &a.coord) <= fold_radius
-                            && cos_sim(&seed_topic, &topic_embed(&a.text)) >= 0.0 =>
+                            && cos_sim(&seed_topic, &a.topic) >= 0.0 =>
                     {
-                        members.push(id)
+                        absorbed.push(id)
                     }
-                    _ => rest.push(id),
+                    _ => {}
                 }
             }
-            uncovered = rest;
+            // Members: seed + absorbed in ascending id order (byte-identical
+            // to the old scan order: seed was the smallest, rest scanned up).
+            absorbed.sort();
+            let mut members = vec![seed];
+            members.extend(absorbed.iter().copied());
+            // Remove absorbed from the uncovered set (BTreeSet: O(log N) each).
+            for id in absorbed {
+                uncovered.remove(&id);
+            }
             // Centroid = coordinate mean re-projected onto the H3 sheet.
             let n = members.len().max(1) as f64;
             let mut c = [0.0f64; 4];
@@ -1931,28 +2025,39 @@ struct KvEntry {
     receipt: String,
 }
 
+fn kv_invalidation_set(state: &State, key: &str) -> Vec<String> {
+    let mut marked = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut frontier = vec![key.to_string()];
+    while let Some(current) = frontier.pop() {
+        if !seen.insert(current.clone()) {
+            continue;
+        }
+        if state.kv.contains_key(&current) {
+            marked.push(current.clone());
+        }
+        frontier.extend(
+            state
+                .kv
+                .iter()
+                .filter(|(_, entry)| {
+                    !entry.stale && entry.depends_on.iter().any(|dependency| dependency == &current)
+                })
+                .map(|(dependent, _)| dependent.clone()),
+        );
+    }
+    marked
+}
+
 /// Exact invalidation: mark `key` stale and walk downstream to every entry
 /// that (transitively) depends on it. Returns the invalidated key list.
 /// No TTL, no guessing — edges or nothing.
 fn kv_invalidate(state: &mut State, key: &str) -> Vec<String> {
-    let mut marked = vec![];
-    let mut frontier = vec![key.to_string()];
-    while let Some(k) = frontier.pop() {
-        // Mark the node itself if present and not already stale.
-        if let Some(e) = state.kv.get_mut(&k) {
-            if !e.stale {
-                e.stale = true;
-                marked.push(k.clone());
-            }
+    let marked = kv_invalidation_set(state, key);
+    for key in &marked {
+        if let Some(entry) = state.kv.get_mut(key) {
+            entry.stale = true;
         }
-        // Find dependents: entries whose depends_on contains k.
-        let dependents: Vec<String> = state
-            .kv
-            .iter()
-            .filter(|(_, e)| !e.stale && e.depends_on.iter().any(|d| d == &k))
-            .map(|(dk, _)| dk.clone())
-            .collect();
-        frontier.extend(dependents);
     }
     marked
 }
@@ -1994,10 +2099,11 @@ fn open_or_create(root: PathBuf) -> State {
     // only when no snapshot and no map ledger exist, into the map ledger.
     // The old file is left untouched on disk.
     let mut atoms = BTreeMap::new();
-    // 1. Snapshot checkpoint first, if valid. Adopt the WHOLE snapshot
+    // 1. Snapshot checkpoint first, if usable. Adopt the WHOLE snapshot
     // (atoms, basins, hunger, kv, checkpoint, epoch, idf) — restore, don't
     // refold. O(N) backfill only. Refold happens solely for legacy snapshots
-    // without stored basins.
+    // without stored basins. Unusable files are LOUD (stderr + boot continues
+    // from the ledger, never a silent empty map).
     let mut snap_basins: BTreeMap<u64, Basin> = BTreeMap::new();
     let mut snap_hunger: Vec<HungerRow> = Vec::new();
     let mut snap_kv: Vec<KvEntry> = Vec::new();
@@ -2008,29 +2114,52 @@ fn open_or_create(root: PathBuf) -> State {
     let mut snap_idf: Option<std::collections::HashMap<String, f64>> = None;
     let mut snap_has_basins = false;
     {
-        let sp = root.join("map.snapshot.bin");
-        let hp = root.join("map.snapshot.sha256");
-        if sp.exists() {
-            let bytes = std::fs::read(&sp).unwrap_or_default();
-            let digest = hash_bytes(&bytes);
-            let expected = std::fs::read_to_string(&hp).unwrap_or_default().trim().to_string();
-            if expected.is_empty() || expected == digest {
-                if let Ok(snap) = bincode::deserialize::<StateSnapshot>(&bytes) {
-                    for a in snap.atoms {
-                        atoms.insert(a.id, a);
+        match read_snapshot_file(&root) {
+            SnapshotRead::Missing => {}
+            SnapshotRead::Unusable(reason) => {
+                eprintln!("open_or_create: snapshot unusable ({reason}); booting from ledger replay");
+            }
+            SnapshotRead::LegacyRaw(bytes) => {
+                // Best-effort legacy parse (pre-container bincode). Failure
+                // falls through to ledger replay — the durable upgrade path.
+                match bincode::deserialize::<StateSnapshot>(&bytes) {
+                    Ok(snap) => {
+                        eprintln!("open_or_create: legacy snapshot parsed ({} atoms); will rewrite container on next snapshot", snap.atoms.len());
+                        for a in snap.atoms {
+                            atoms.insert(a.id, a);
+                        }
+                        snap_has_basins = !snap.basins.is_empty();
+                        for b in snap.basins {
+                            snap_basins.insert(b.id, b);
+                        }
+                        snap_hunger = snap.hunger;
+                        snap_kv = snap.kv;
+                        snap_checkpoint = snap.checkpoint;
+                        snap_epoch = snap.epoch;
+                        snap_next_basin = snap.next_basin_id;
+                        snap_seq_start = snap.basin_seq_start;
+                        snap_idf = snap.idf;
                     }
-                    snap_has_basins = !snap.basins.is_empty();
-                    for b in snap.basins {
-                        snap_basins.insert(b.id, b);
+                    Err(e) => {
+                        eprintln!("open_or_create: legacy snapshot unparseable ({e}); booting from ledger replay");
                     }
-                    snap_hunger = snap.hunger;
-                    snap_kv = snap.kv;
-                    snap_checkpoint = snap.checkpoint;
-                    snap_epoch = snap.epoch;
-                    snap_next_basin = snap.next_basin_id;
-                    snap_seq_start = snap.basin_seq_start;
-                    snap_idf = snap.idf;
                 }
+            }
+            SnapshotRead::Current(snap) => {
+                for a in snap.atoms {
+                    atoms.insert(a.id, a);
+                }
+                snap_has_basins = !snap.basins.is_empty();
+                for b in snap.basins {
+                    snap_basins.insert(b.id, b);
+                }
+                snap_hunger = snap.hunger;
+                snap_kv = snap.kv;
+                snap_checkpoint = snap.checkpoint;
+                snap_epoch = snap.epoch;
+                snap_next_basin = snap.next_basin_id;
+                snap_seq_start = snap.basin_seq_start;
+                snap_idf = snap.idf;
             }
         }
     }
@@ -2139,10 +2268,14 @@ fn open_or_create(root: PathBuf) -> State {
     let mem_max = atoms.keys().last().copied().unwrap_or(0);
     let next_id = mem_max + 1;
     // Restore (not refold): snapshot basins/hunger/kv/idf adopted as-is.
+    // This constructor is the explicit isolated file-backed path. Never let
+    // ambient/default shadow mode suppress its ledger writes.
+    let mut file_store = Store::from_env();
+    file_store.mode = surreal::SurrealMode::Off;
     let mut basin_state = State {
         root,
         role,
-        store: Store::from_env(),
+        store: file_store,
         db_id_floor: None,
         dedup_index: std::collections::HashMap::new(),
         basins_dirty: false,
@@ -2218,11 +2351,14 @@ fn open_or_create(root: PathBuf) -> State {
         reembed_all(&mut basin_state);
         // Reembed changed coords: topic_embed is text-only — no cache refresh.
     }
-    // Ledger-replayed atoms (not in snapshot basins): incremental append.
-    // Caches were backfilled above, so append sees warm topics.
-    for rid in replayed_ids {
-        if let Some(a) = basin_state.atoms.get(&rid).cloned() {
-            basin_append(&mut basin_state, &a);
+    // Ledger-replayed atoms: incremental append ONLY when snapshot basins
+    // exist (otherwise the refold below covers everything — appending first
+    // would be wasted work on legacy boots).
+    if snap_has_basins {
+        for rid in replayed_ids {
+            if let Some(a) = basin_state.atoms.get(&rid).cloned() {
+                basin_append(&mut basin_state, &a);
+            }
         }
     }
     // Basins: restored as-is when the snapshot carried them (no refold).
@@ -2240,6 +2376,229 @@ fn open_or_create(root: PathBuf) -> State {
     basin_state
 }
 
+fn record_u64(value: &Value) -> Option<u64> {
+    value.as_u64().or_else(|| {
+        value
+            .as_str()
+            .and_then(|s| s.rsplit(':').next())
+            .and_then(|s| s.parse::<u64>().ok())
+    })
+}
+
+fn array_f64<const N: usize>(value: &Value, field: &str) -> Result<[f64; N], String> {
+    let values = value
+        .as_array()
+        .ok_or_else(|| format!("surreal hydration: {field} is not an array"))?;
+    if values.len() != N {
+        return Err(format!(
+            "surreal hydration: {field} expected {N} values, got {}",
+            values.len()
+        ));
+    }
+    let mut out = [0.0; N];
+    for (index, value) in values.iter().enumerate() {
+        out[index] = value
+            .as_f64()
+            .ok_or_else(|| format!("surreal hydration: {field}[{index}] is not numeric"))?;
+    }
+    Ok(out)
+}
+
+fn hydrate_surreal(store: &Store) -> Result<(BTreeMap<u64, Atom>, BTreeMap<String, KvEntry>, u64), String> {
+    let rows = store.load_atoms()?;
+    let mut atoms = BTreeMap::new();
+    for row in rows
+        .as_array()
+        .ok_or_else(|| "surreal hydration: atom result is not an array".to_string())?
+    {
+        let id = row
+            .get("external_id")
+            .and_then(record_u64)
+            .ok_or_else(|| "surreal hydration: atom external_id is invalid".to_string())?;
+        let text = row
+            .get("content_text")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("surreal hydration: atom {id} has no text"))?
+            .to_string();
+        let coord = array_f64::<4>(
+            row.get("coord")
+                .ok_or_else(|| format!("surreal hydration: atom {id} has no address"))?,
+            "coord",
+        )?;
+        let phase = array_f64::<2>(
+            row.get("phase")
+                .ok_or_else(|| format!("surreal hydration: atom {id} has no phase"))?,
+            "phase",
+        )?;
+        let salience = row.get("salience").and_then(Value::as_f64).unwrap_or(0.5);
+        let rank = row
+            .get("rank")
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+            .min(1) as u8;
+        let mut atom = Atom {
+            id,
+            coord,
+            phase,
+            text,
+            salience,
+            provenance: row
+                .get("provenance")
+                .and_then(Value::as_str)
+                .unwrap_or("surrealdb")
+                .to_string(),
+            taint: row
+                .get("taint")
+                .and_then(Value::as_str)
+                .unwrap_or("none")
+                .to_string(),
+            rank,
+            domain: row
+                .get("domain")
+                .and_then(Value::as_str)
+                .unwrap_or("general")
+                .to_string(),
+            pinned: row.get("pinned").and_then(Value::as_bool).unwrap_or(false),
+            symplectic: symplectic_from_triple(&coord, &phase, salience),
+            topic: [0.0; 32],
+            toks_hash: 0,
+        };
+        backfill_atom_cache(&mut atom);
+        atoms.insert(id, atom);
+    }
+
+    // The legacy string cache is deliberately not hydrated in Surreal mode.
+    // Transformer K/V tensor pages have a separate typed schema and boundary.
+    Ok((atoms, BTreeMap::new(), 1))
+}
+
+fn open_surreal(root: PathBuf, store: Store) -> Result<State, String> {
+    store.verify_contract()?;
+    let (atoms, kv, epoch) = hydrate_surreal(&store)?;
+    let raw_role = std::env::var("HYPERMIND_ROLE").ok();
+    let role_denied = matches!(&raw_role, Some(s) if Role::parse(s).is_err());
+    let role = raw_role
+        .and_then(|s| Role::parse(&s).ok())
+        .unwrap_or(Role::PanelAdmin);
+    let points: Vec<Atom> = atoms.values().cloned().collect();
+    let next_id = atoms.keys().last().copied().unwrap_or(0).saturating_add(1);
+    let mut state = State {
+        root,
+        role,
+        role_denied,
+        store,
+        db_id_floor: Some(next_id.saturating_sub(1)),
+        dedup_index: std::collections::HashMap::new(),
+        basins_dirty: false,
+        atoms,
+        basins: BTreeMap::new(),
+        fibers: BTreeMap::new(),
+        next_basin_id: 1,
+        basin_seq_start: 1,
+        ledger_root: hash_bytes(b"surrealdb-authority"),
+        vp: VpTree::build(&points),
+        vp_dirty: false,
+        checkpoint: None,
+        epoch,
+        next_id,
+        kv,
+        idf: None,
+        hunger: BTreeMap::new(),
+    };
+    for atom in state.atoms.values() {
+        state
+            .dedup_index
+            .entry(atom.toks_hash)
+            .or_default()
+            .push(atom.id);
+    }
+    if !state.atoms.is_empty() {
+        let texts: Vec<String> = state.atoms.values().map(|atom| atom.text.clone()).collect();
+        state.idf = Some(calibrate_idf(&texts));
+    }
+    rebuild_basins(&mut state);
+    Ok(state)
+}
+
+/// Snapshot container (iron-out item 2, 2026-11-01): versioned envelope
+/// around the bincode payload. Layout: MAGIC(8) | VERSION u32 LE | LEN u64 LE
+/// | bincode(StateSnapshot) | ... (trailing bytes ignored for forward compat).
+/// - MAGIC "HM3SNAP\0" identifies our files (foreign/corrupt files are LOUD).
+/// - VERSION 1 = current StateSnapshot shape (with topic/toks_hash/sums/fmt/idf).
+/// - Legacy files (raw bincode, no magic): classified as LEGACY, parsed
+///   best-effort for backward compat; unparseable legacy falls back to the
+///   map ledger replay (the durable upgrade path — unchanged).
+/// - Unknown VERSION: loud error (never silent empty boot, never misparse).
+/// - The .sha256 sidecar still covers the WHOLE file (container + payload).
+const SNAPSHOT_MAGIC: &[u8; 8] = b"HM3SNAP\0";
+const SNAPSHOT_VERSION: u32 = 1;
+
+enum SnapshotRead {
+    /// Usable snapshot of a known version.
+    Current(StateSnapshot),
+    /// Pre-container raw bincode (attempt parse; may fail -> ledger fallback).
+    LegacyRaw(Vec<u8>),
+    /// No file present.
+    Missing,
+    /// Present but unusable (bad magic/version/length/truncation).
+    /// String = exact reason (loud, never silent).
+    Unusable(String),
+}
+
+fn read_snapshot_file(root: &std::path::Path) -> SnapshotRead {
+    let sp = root.join("map.snapshot.bin");
+    let hp = root.join("map.snapshot.sha256");
+    if !sp.exists() {
+        return SnapshotRead::Missing;
+    }
+    let bytes = std::fs::read(&sp).unwrap_or_default();
+    let digest = hash_bytes(&bytes);
+    let expected = std::fs::read_to_string(&hp).unwrap_or_default().trim().to_string();
+    if !expected.is_empty() && expected != digest {
+        return SnapshotRead::Unusable(format!(
+            "sha256 mismatch: file digest {digest} != sidecar {expected}"
+        ));
+    }
+    if bytes.len() < 20 {
+        return SnapshotRead::Unusable(format!(
+            "truncated file ({} bytes < 20-byte header)",
+            bytes.len()
+        ));
+    }
+    if &bytes[..8] != SNAPSHOT_MAGIC {
+        return SnapshotRead::LegacyRaw(bytes);
+    }
+    let version = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
+    if version != SNAPSHOT_VERSION {
+        return SnapshotRead::Unusable(format!(
+            "unknown snapshot version {version} (this binary reads v{SNAPSHOT_VERSION}); refusing to misparse"
+        ));
+    }
+    let len = u64::from_le_bytes([
+        bytes[12], bytes[13], bytes[14], bytes[15], bytes[16], bytes[17], bytes[18], bytes[19],
+    ]) as usize;
+    if bytes.len() < 20 + len {
+        return SnapshotRead::Unusable(format!(
+            "truncated payload (header claims {len} bytes, file holds {})",
+            bytes.len() - 20
+        ));
+    }
+    match bincode::deserialize::<StateSnapshot>(&bytes[20..20 + len]) {
+        Ok(snap) => SnapshotRead::Current(snap),
+        Err(e) => SnapshotRead::Unusable(format!("payload parse failed: {e}")),
+    }
+}
+
+fn write_snapshot_container(snap: &StateSnapshot) -> Result<Vec<u8>, String> {
+    let payload = bincode::serialize(snap).map_err(|e| format!("serialize failed: {e}"))?;
+    let mut out = Vec::with_capacity(20 + payload.len());
+    out.extend_from_slice(SNAPSHOT_MAGIC);
+    out.extend_from_slice(&SNAPSHOT_VERSION.to_le_bytes());
+    out.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+    out.extend_from_slice(&payload);
+    Ok(out)
+}
+
 fn snapshot_path(st: &State) -> PathBuf {
     st.root.join("map.snapshot.bin")
 }
@@ -2251,6 +2610,20 @@ fn wal_path(st: &State) -> PathBuf {
 }
 
 fn write_snapshot(st: &mut State) -> Value {
+    if st.store.mode == surreal::SurrealMode::On {
+        return match st.store.counts() {
+            Ok((atoms, addresses, edges)) => json!({
+                "status": "ok",
+                "durability": "surrealdb-native",
+                "atoms": atoms,
+                "addresses": addresses,
+                "edges": edges,
+                "epoch": st.epoch,
+                "note": "no file snapshot created",
+            }),
+            Err(error) => json!({"status":"error","error":error}),
+        };
+    }
     refresh_basin_receipts(st);
     let atoms: Vec<Atom> = st.atoms.values().cloned().collect();
     let snap = StateSnapshot {
@@ -2266,12 +2639,13 @@ fn write_snapshot(st: &mut State) -> Value {
         kv: st.kv.values().cloned().collect(),
         idf: st.idf.clone(),
     };
-    // Internal storage is binary (exiled JSON). Snapshot is content-addressed bincode.
-    let bytes = match bincode::serialize(&snap) {
+    // Internal storage is binary (exiled JSON). Snapshot is content-addressed
+    // bincode inside the versioned container (magic + version + length).
+    let bytes = match write_snapshot_container(&snap) {
         Ok(b) => b,
         Err(e) => {
-            eprintln!("write_snapshot: serialize failed: {}", e);
-            return json!({"status":"error","error":format!("serialize failed: {}", e)});
+            eprintln!("write_snapshot: {e}");
+            return json!({"status":"error","error":e});
         }
     };
     let digest = hash_bytes(&bytes);
@@ -2308,27 +2682,56 @@ fn write_snapshot(st: &mut State) -> Value {
 }
 
 fn recover(st: &mut State) -> Value {
-    let sp = snapshot_path(st);
-    let hp = hash_path(st);
-    if !sp.exists() {
-        return json!({"status":"no-snapshot","atoms":st.atoms.len()});
+    if st.store.mode == surreal::SurrealMode::On {
+        return match hydrate_surreal(&st.store) {
+            Ok((atoms, kv, epoch)) => {
+                st.atoms = atoms;
+                st.kv = kv;
+                st.epoch = epoch;
+                st.next_id = st
+                    .atoms
+                    .keys()
+                    .last()
+                    .copied()
+                    .unwrap_or(0)
+                    .saturating_add(1);
+                st.dedup_index.clear();
+                for atom in st.atoms.values() {
+                    st.dedup_index
+                        .entry(atom.toks_hash)
+                        .or_default()
+                        .push(atom.id);
+                }
+                st.basins.clear();
+                st.next_basin_id = 1;
+                rebuild_basins(st);
+                json!({
+                    "status":"ok",
+                    "durability":"surrealdb-native",
+                    "atoms":st.atoms.len(),
+                    "kv_entries":st.kv.len(),
+                    "epoch":st.epoch,
+                })
+            }
+            Err(error) => json!({"status":"error","error":error}),
+        };
     }
-    let bytes = match std::fs::read(&sp) {
-        Ok(b) => b,
-        Err(e) => {
-            eprintln!("recover: read snapshot failed: {}", e);
-            return json!({"status":"read-error","error":format!("{}", e)});
+    let snap: StateSnapshot = match read_snapshot_file(&st.root) {
+        SnapshotRead::Missing => {
+            return json!({"status":"no-snapshot","atoms":st.atoms.len()});
         }
+        SnapshotRead::Unusable(reason) => {
+            return json!({"status":"unusable-snapshot","error":reason,"atoms":st.atoms.len()});
+        }
+        SnapshotRead::LegacyRaw(bytes) => match bincode::deserialize::<StateSnapshot>(&bytes) {
+            Ok(s) => s,
+            Err(e) => {
+                return json!({"status":"legacy-unparseable","error":format!("{e}"),"atoms":st.atoms.len()});
+            }
+        },
+        SnapshotRead::Current(s) => s,
     };
-    let digest = hash_bytes(&bytes);
-    let expected = std::fs::read_to_string(&hp)
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-    if expected != digest {
-        return json!({"status":"hash-mismatch","expected":expected,"actual":digest});
-    }
-    if let Ok(snap) = bincode::deserialize::<StateSnapshot>(&bytes) {
+    {
         st.atoms.clear();
         for a in snap.atoms {
             st.atoms.insert(a.id, a);
@@ -2386,8 +2789,6 @@ fn recover(st: &mut State) -> Value {
         }
         st.epoch = snap.epoch.max(st.epoch);
         json!({"status":"ok","atoms":st.atoms.len(),"epoch":st.epoch,"hunger_rows":st.hunger.len(),"kv_entries":st.kv.len()})
-    } else {
-        json!({"status":"parse-error"})
     }
 }
 
@@ -2591,6 +2992,12 @@ fn tools_list() -> Value {
 fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
     match name {
         "map.create" => {
+            if state.store.enabled() {
+                return json!({"result": {
+                    "status": "error",
+                    "error": "SurrealDB authority forbids file-backed map.create",
+                }});
+            }
             let sub = args
                 .get("subpath")
                 .and_then(|x| x.as_str())
@@ -2838,27 +3245,25 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 topic: atom_topic,
                 toks_hash: atom_toks_hash,
             };
-            // Map-owned durability: append to the map ledger before the
-            // atom enters memory. A failed append means no atom, so ledger
-            // and memory can never diverge.
-            if let Err(e) = ledger::append_atom(
-                &state.root,
-                id,
-                &atom.text,
-                atom.salience,
-                atom.rank,
-                &atom.provenance,
-                &atom.taint,
-                &atom.domain,
-                atom.pinned,
-            ) {
-                return json!({"result": {"status": "error", "error": e}});
+            // File persistence exists only in explicit Off mode. Surreal On
+            // never creates a ledger/snapshot/.hypermind side store.
+            if state.store.mode == surreal::SurrealMode::Off {
+                if let Err(e) = ledger::append_atom(
+                    &state.root,
+                    id,
+                    &atom.text,
+                    atom.salience,
+                    atom.rank,
+                    &atom.provenance,
+                    &atom.taint,
+                    &atom.domain,
+                    atom.pinned,
+                ) {
+                    return json!({"result": {"status": "error", "error": e}});
+                }
             }
-            state.atoms.insert(id, atom.clone());
-            // Dedup index: O(1) bucket append.
-            state.dedup_index.entry(atom.toks_hash).or_default().push(id);
-            // Step 1 (SurrealDB shadow dual-write): JSONL+memory stay
-            // canonical. Shadow errors are logged, never fatal.
+            // Surreal On is fail-closed: database persistence must succeed
+            // before the volatile indexes admit the atom.
             let surreal_note = if state.store.enabled() {
                 if state.db_id_floor.is_none() {
                     state.db_id_floor = Some(state.store.max_external_id());
@@ -2868,21 +3273,28 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                     format!("shadow-skipped-below-db-floor-{floor}")
                 } else {
                 let digest = hash_bytes(atom.text.as_bytes());
-                match state.store.upsert_atom(
+                match state.store.create_atom_with_address(
                     id, &atom.text, atom.salience, atom.rank,
                     &atom.provenance, &atom.taint, &atom.domain,
-                    atom.pinned, &digest,
+                    atom.pinned, &digest, &atom.coord, &atom.phase,
                 ) {
-                    Ok(_) => match state.store.upsert_address(id, &atom.coord, &atom.phase) {
-                        Ok(_) => "shadow-ok".to_string(),
-                        Err(e) => format!("shadow-address-error: {e}"),
+                    Ok(()) => if state.store.mode == surreal::SurrealMode::On {
+                        "surreal-authority-ok".to_string()
+                    } else {
+                        "shadow-ok".to_string()
                     },
+                    Err(e) if state.store.mode == surreal::SurrealMode::On => {
+                        return json!({"result":{"status":"error","error":e}});
+                    }
                     Err(e) => format!("shadow-atom-error: {e}"),
                 }
                 }
             } else {
                 "shadow-off".to_string()
             };
+            state.atoms.insert(id, atom.clone());
+            // Dedup index: O(1) bucket append.
+            state.dedup_index.entry(atom.toks_hash).or_default().push(id);
             // Incremental basin append (O(N^2) fix): same fold rule as the
             // full refold, domain-scoped, centroid-gated. Full refold stays
             // available via map.reweight / map.recover for explicit repair.
@@ -3766,6 +4178,12 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             json!({"result":out,"receipt":rcpt})
         }
         "map.kv_store" => {
+            if state.store.mode == surreal::SurrealMode::On {
+                return json!({"result": {
+                    "status": "error",
+                    "error": "legacy string KV is disabled; Surreal authority admits only typed transformer K/V tensor pages",
+                }});
+            }
             // Nested KV write: key-ordered tree, snapshotted, receipted.
             if args.get("key").and_then(|x| x.as_str()).is_none()
                 || args.get("value").and_then(|x| x.as_str()).is_none()
@@ -3820,6 +4238,12 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             json!({"result": out, "receipt": rcpt})
         }
         "map.kv_fetch" => {
+            if state.store.mode == surreal::SurrealMode::On {
+                return json!({"result": {
+                    "status": "error",
+                    "error": "legacy string KV is disabled; use the typed transformer K/V tensor boundary",
+                }});
+            }
             // Nested KV read with hit receipt. MISS taps hunger (H-1).
             if args.get("key").and_then(|x| x.as_str()).is_none() {
                 return json!({"result": {"status": "error", "error": "schema: key must be string"}});
@@ -3867,6 +4291,12 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             }
         }
         "map.kv_invalidate" => {
+            if state.store.mode == surreal::SurrealMode::On {
+                return json!({"result": {
+                    "status": "error",
+                    "error": "legacy string KV is disabled; tensor-page invalidation is required",
+                }});
+            }
             // Exact invalidation (Recall-vs-Recompute Law §4): mark + walk.
             if args.get("key").and_then(|x| x.as_str()).is_none() {
                 return json!({"result": {"status": "error", "error": "schema: key must be string"}});
@@ -4911,10 +5341,30 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
     }
 }
 
-fn run_stdio() {
+fn initial_state() -> Result<State, String> {
     let root = workspace_root();
-    std::fs::create_dir_all(&root).ok();
-    let state = Arc::new(Mutex::new(open_or_create(root.join(".hypermind"))));
+    let store = Store::from_env();
+    match store.mode {
+        surreal::SurrealMode::On => open_surreal(root, store),
+        surreal::SurrealMode::Shadow => Err(
+            "shadow startup rejected; choose HYPERMIND_SURREAL=on for the single SurrealDB authority or off for isolated tests".into(),
+        ),
+        surreal::SurrealMode::Off => {
+            std::fs::create_dir_all(&root).ok();
+            Ok(open_or_create(root.join(".hypermind")))
+        }
+    }
+}
+
+fn run_stdio() {
+    let initial = match initial_state() {
+        Ok(state) => state,
+        Err(error) => {
+            eprintln!("hypermind-mcp: startup failed: {error}");
+            return;
+        }
+    };
+    let state = Arc::new(Mutex::new(initial));
     let stdin = std::io::stdin();
     for line in BufReader::new(stdin).lines() {
         let line = match line {
@@ -5423,6 +5873,137 @@ mod tests {
         assert_eq!(root_before, st2.ledger_root, "restore preserves ledger root");
         assert!(st2.idf.is_some(), "idf adopted from snapshot");
         // Dedup index survived the roundtrip: re-ingesting a duplicate coalesces.
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[test]
+    fn vp_range_fold_matches_brute_force() {
+        // Equivalence: VP-range refold must produce the SAME member sets as
+        // an independent O(N^2) greedy reference on a spread corpus (many
+        // basins — the case the unit corpus never exercises).
+        let dir = std::env::temp_dir().join("hm_range_equiv");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        for i in 0..300 {
+            let f = (i as f64) * 0.37 + 0.5;
+            let r = 0.2 + (i as f64) * 0.01;
+            let (sx, sy, sz) = ((f * 12.9898).sin(), (f * 78.233).sin(), (f * 37.719).sin());
+            let norm = (sx*sx + sy*sy + sz*sz).sqrt().max(1e-9);
+            let coord = [(1.0 + r*r).sqrt(), r*sx/norm, r*sy/norm, r*sz/norm];
+            let text = format!("range equiv {} token-{}", i, i);
+            let atom = Atom { id: (i+1) as u64, coord, phase: [0.1, 0.2],
+                text: text.clone(), salience: 0.5, provenance: "syn".into(), taint: "none".into(),
+                rank: 0, domain: "general".into(), pinned: false,
+                symplectic: symplectic_from_triple(&coord, &[0.1, 0.2], 0.5),
+                topic: topic_embed(&text), toks_hash: toks_multiset_hash(&text) };
+            st.atoms.insert(atom.id, atom);
+        }
+        // Independent brute-force reference (plain greedy, no tree).
+        let mut ref_uncovered: Vec<u64> = (1..=300).collect();
+        let mut ref_sets: Vec<Vec<u64>> = Vec::new();
+        while !ref_uncovered.is_empty() {
+            let seed = ref_uncovered.remove(0);
+            let (sc, stt) = { let a = st.atoms.get(&seed).unwrap(); (a.coord, a.topic) };
+            let mut members = vec![seed];
+            let mut rest = vec![];
+            for id in ref_uncovered {
+                let a = st.atoms.get(&id).unwrap();
+                if hyperbolic_dist(&sc, &a.coord) <= 1.5 && cos_sim(&stt, &a.topic) >= 0.0 {
+                    members.push(id);
+                } else {
+                    rest.push(id);
+                }
+            }
+            ref_uncovered = rest;
+            members.sort();
+            ref_sets.push(members);
+        }
+        ref_sets.sort();
+        rebuild_basins(&mut st);
+        let mut got: Vec<Vec<u64>> = st.basins.values().map(|b| { let mut m = b.members.clone(); m.sort(); m }).collect();
+        got.sort();
+        assert_eq!(got, ref_sets, "VP-range fold == brute-force greedy");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn vp_range_degenerate_ties_stay_sound() {
+        // Regression 2026-11-01: the old "degenerate split guard" moved a
+        // d<=mu point into right, breaking pruning soundness (9/300 range
+        // misses, e.g. d=0.26 hidden behind mu=2.17). With the guard removed,
+        // tied distances must still return complete balls. 33 atoms at (near-)
+        // identical coords force degenerate splits at several levels.
+        let mut pts: Vec<Atom> = Vec::new();
+        for i in 0..33u64 {
+            let coord = [1.01, 0.1, 0.05, 0.02];
+            let text = format!("tie probe {}", i);
+            pts.push(Atom { id: i + 1, coord, phase: [0.0, 0.0],
+                text: text.clone(), salience: 0.5, provenance: "syn".into(), taint: "none".into(),
+                rank: 0, domain: "general".into(), pinned: false,
+                symplectic: SymplecticState::default(),
+                topic: topic_embed(&text), toks_hash: toks_multiset_hash(&text) });
+        }
+        let tree = build_vp_with(&pts, hyperbolic_dist);
+        let mut out: Vec<u64> = Vec::new();
+        search_vp_range(&tree, &pts[0].coord, 1.5, hyperbolic_dist, &mut out);
+        out.sort();
+        assert_eq!(out, (1..=33u64).collect::<Vec<_>>(), "tied ball is complete");
+    }
+
+    #[test]
+    fn snapshot_container_roundtrip_and_classification() {
+        // Container: magic + version + length; readers classify correctly.
+        let dir = std::env::temp_dir().join("hm_snap_container");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut st = open_or_create(dir.clone());
+        let _ = handle_tool(&mut st, "map.ingest", &json!({"text": "container probe ledger anchor"}));
+        let r = handle_tool(&mut st, "map.snapshot", &json!({}));
+        assert_eq!(r["result"]["status"], "ok");
+        let raw = std::fs::read(dir.join("map.snapshot.bin")).unwrap();
+        assert_eq!(&raw[..8], b"HM3SNAP\0");
+        assert_eq!(u32::from_le_bytes([raw[8], raw[9], raw[10], raw[11]]), 1);
+        let len = u64::from_le_bytes([raw[12], raw[13], raw[14], raw[15], raw[16], raw[17], raw[18], raw[19]]) as usize;
+        assert_eq!(raw.len(), 20 + len);
+        // Corrupt sidecar -> Unusable (tamper evidence fires first).
+        std::fs::write(dir.join("map.snapshot.bin"), b"NOTASNAPSHOT-FOREIGN-FILE-CONTENTS-HERE").unwrap();
+        std::fs::write(dir.join("map.snapshot.sha256"), "ignore").unwrap();
+        match read_snapshot_file(&dir) {
+            SnapshotRead::Unusable(reason) => assert!(reason.contains("mismatch"), "reason: {reason}"),
+            _ => panic!("bad sidecar must be Unusable"),
+        }
+        // Foreign magic with VALID sidecar -> LegacyRaw (best-effort path).
+        let foreign = b"NOTASNAPSHOT-FOREIGN-FILE-CONTENTS-HERE";
+        std::fs::write(dir.join("map.snapshot.bin"), foreign).unwrap();
+        std::fs::write(dir.join("map.snapshot.sha256"), hash_bytes(foreign)).unwrap();
+        match read_snapshot_file(&dir) {
+            SnapshotRead::LegacyRaw(_) => {}
+            other => panic!("foreign file must classify LegacyRaw, got {:?}", match other {
+                SnapshotRead::Missing => "missing", SnapshotRead::Unusable(_) => "unusable",
+                SnapshotRead::Current(_) => "current", SnapshotRead::LegacyRaw(_) => "legacy",
+            }),
+        }
+        // Truncated current file -> Unusable with reason (loud).
+        let mut bad = Vec::from(b"HM3SNAP\0".as_slice());
+        bad.extend_from_slice(&1u32.to_le_bytes());
+        bad.extend_from_slice(&99999u64.to_le_bytes());
+        bad.extend_from_slice(b"short");
+        std::fs::write(dir.join("map.snapshot.bin"), &bad).unwrap();
+        std::fs::write(dir.join("map.snapshot.sha256"), hash_bytes(&bad)).unwrap();
+        match read_snapshot_file(&dir) {
+            SnapshotRead::Unusable(reason) => assert!(reason.contains("truncated"), "reason: {reason}"),
+            _ => panic!("truncated file must be Unusable"),
+        }
+        // Unknown version -> Unusable (never misparse).
+        let mut badv = Vec::from(b"HM3SNAP\0".as_slice());
+        badv.extend_from_slice(&99u32.to_le_bytes());
+        badv.extend_from_slice(&0u64.to_le_bytes());
+        std::fs::write(dir.join("map.snapshot.bin"), &badv).unwrap();
+        std::fs::write(dir.join("map.snapshot.sha256"), hash_bytes(&badv)).unwrap();
+        match read_snapshot_file(&dir) {
+            SnapshotRead::Unusable(reason) => assert!(reason.contains("unknown snapshot version"), "reason: {reason}"),
+            _ => panic!("future version must be Unusable"),
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -6942,13 +7523,16 @@ fn run_http(state: std::sync::Arc<std::sync::Mutex<State>>, port: u16) {
 }
 
 fn main() {
-    let root = workspace_root();
-    std::fs::create_dir_all(&root).ok();
-    let state = std::sync::Arc::new(std::sync::Mutex::new(open_or_create(
-        root.join(".hypermind"),
-    )));
     if let Ok(port) = std::env::var("HYPERMIND_HTTP_PORT") {
         if let Ok(p) = port.parse::<u16>() {
+            let initial = match initial_state() {
+                Ok(state) => state,
+                Err(error) => {
+                    eprintln!("hypermind-mcp: startup failed: {error}");
+                    return;
+                }
+            };
+            let state = std::sync::Arc::new(std::sync::Mutex::new(initial));
             run_http(state, p);
             return;
         }

@@ -51,3 +51,28 @@ Build outputs are never staged: target/, node_modules/, dist/, *.log.
 
 Before reporting anything done, run `git status` in this repo and
 show it. No git status proof, no "done."
+
+# Standing port key — locked 2026-11-02, do not reassign without Stewart
+
+8000  SurrealDB ONLY — the persistent mind. Surreal clients only
+      (GLOBALMIND_SURREAL_URL, HYPERMIND_SURREAL_URL). NO model server,
+      NO other client, NO new default may ever point at 8000.
+8001  Rapid-MLX (Qwen3.6 MoE rapid profile). Killed 2026-10-31, port
+      assignment stands; do not reuse it for another server.
+8002  oMLX — Qwen3.6-MoE-Combined, Qwen3.8, Nemotron. Live 2026-11-02.
+8003  Next model server (e.g. QwQ if restarted — QwQ was on 8001 and
+      was killed 2026-11-02; it must NOT restart on 8001).
+30000 SGLang — Muse Glimmer.
+6331  Qdrant — 127.0.0.1:6331, Stewart's address. Not answering at
+      last check 2026-11-02 08:17 CST; treat as reserved, verify
+      before use — do not start another service on 6331.
+
+8080  HyperDX — localhost:8080, telemetry. Verified live
+      2026-11-02 08:17 CST (pid 1918).
+
+Rules: before starting any server, check `lsof -nP -iTCP:<port> -sTCP:LISTEN`.
+If the port is taken by the wrong owner, STOP and ask Stewart — never
+kill the owner to free a port, and never kill SurrealDB (8000) for any
+reason. A port change must be made in every live default at once
+(harness bins, fleet scripts, launch agents, client profiles), not in
+one file alone, and this key must be updated in the same change.

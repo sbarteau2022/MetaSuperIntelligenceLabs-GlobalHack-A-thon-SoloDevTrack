@@ -1,0 +1,30 @@
+Lane 1 — Native trace envelope — end-of-lane report
+Date: 2026-11-02
+Hardware: Apple M5 Pro, arm64, macOS 27.0.1
+Files (lane-owned only): src/trace/mod.rs, src/trace/codec.rs (+ lib.rs registration)
+
+WHAT LANDED
+Fresh binary schema + codec (GMTR v1): magic, version, header length,
+fixed 219-byte header binding model/config/tokenizer digests, kind, dtype,
+shape (<=8 dims), layer, head, token position, observer-nonperturbation
+receipt digest, payload length, payload digest; native payload bytes.
+decode() is strict single-frame; decode_frame() walks concatenated streams.
+content_digest() is teacher-neutral (kind/dtype/shape/layer/head/token/
+payload); model/config/tokenizer digests are provenance only.
+
+COMMANDS AND RESULTS
+cargo test --lib trace::  -> 5 passed, 0 failed
+  roundtrip_preserves_all_fields, tampered_payload_or_digest_fails_closed,
+  bad_magic_version_and_truncation_fail_closed,
+  content_digest_is_teacher_neutral, dense_shape_mismatch_fails_closed
+cargo clippy --lib --bins -- -D warnings -> PASS (after fixes)
+
+COUNTS
+emitted envelopes: n/a (codec); tests: 5 passed / 0 rejected-by-design
+failures exercised: tampered payload, tampered payload digest, bad magic,
+bad version, truncation, dense shape mismatch — all fail closed.
+
+UNTOUCHED GATES
+No real forward-pass trace has been captured yet; envelopes in tests are
+constructed from literal payloads. Real trace capture belongs to the
+extractor's upstream model runner and remains open.

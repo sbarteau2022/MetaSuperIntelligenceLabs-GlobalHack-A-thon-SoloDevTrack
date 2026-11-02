@@ -1,0 +1,11 @@
+{
+  "name": "highend-gate",
+  "description": "Validate Awwwards-tier premium config: no banned fonts/easings, GPU-safe animation props only, blur restricted to fixed overlays.",
+  "parameters": {
+    "font": { "type": "string", "description": "must not be inter/roboto/arial/helvetica" },
+    "motion_ease": { "type": "string", "description": "must not be linear/ease-in-out (custom cubic-bezier)" },
+    "anim_prop": { "type": "string", "description": "'transform' or 'opacity' only" },
+    "blur_target": { "type": "string", "description": "'fixed-only'" }
+  },
+  "required": ["font", "motion_ease", "anim_prop", "blur_target"]
+}

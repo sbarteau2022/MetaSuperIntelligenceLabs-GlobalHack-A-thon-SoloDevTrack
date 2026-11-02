@@ -2,7 +2,7 @@
 // Hardware PPC probe: fixed-PPC gate instrument (HARDWARE-GATE-RUNBOOK.md).
 //
 // Runs ProposeProbeCompose::run() with a REAL model probe function against the
-// live oMLX server (OpenAI-compatible /v1/chat/completions on 127.0.0.1:8000)
+// live oMLX server (OpenAI-compatible /v1/chat/completions on 127.0.0.1:8002)
 // and writes a plain-text receipt (no JSON, per the Mac no-JSON receipt rule).
 //
 // std-only HTTP: this crate carries NO serde_json/reqwest (doctrine), so the
@@ -25,7 +25,7 @@
 // - This binary never ships synthetic numbers as measurements. If the model
 //   server is unreachable it exits non-zero WITHOUT writing a pass receipt.
 //
-// Env: OMLX_URL (default http://127.0.0.1:8000/v1/chat/completions),
+// Env: OMLX_URL (default http://127.0.0.1:8002/v1/chat/completions),
 //      OMLX_MODEL (default Qwen3.6-MoE-Combined), OMLX_API_KEY (default dummy).
 use rgah::energy::EnergyBudget;
 use rgah::rsi::{Bundle, ProposeProbeCompose};
@@ -327,7 +327,7 @@ fn bundle_system_prompt(b: &Bundle) -> String {
 
 fn main() -> std::process::ExitCode {
     let url = std::env::var("OMLX_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:8000/v1/chat/completions".into());
+        .unwrap_or_else(|_| "http://127.0.0.1:8002/v1/chat/completions".into());
     let model = std::env::var("OMLX_MODEL").unwrap_or_else(|_| "Qwen3.6-MoE-Combined".into());
     let key = std::env::var("OMLX_API_KEY").unwrap_or_else(|_| "dummy".into());
     let k: usize = std::env::var("PPC_K")

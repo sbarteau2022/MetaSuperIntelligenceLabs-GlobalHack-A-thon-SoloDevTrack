@@ -1,0 +1,25 @@
+contract = globalmind-tpe-reference-v1
+encoder = toroidal-phase-positional-encoder
+position_space = T2
+radial_motion = dynamic_spiral_out
+radius_per_revolution = strictly_expanding
+constant_radius_corkscrew = forbidden
+ideal_boundary_behavior = asymptotic_approach_without_crossing
+poincare_radius = tanh(hyperbolic_radius/2)
+radius_candidate_coordinate = hyperbolic_geodesic_distance
+boundary_crossing_or_float_saturation = reject_not_clamp
+lorentz_sheet_invariant = required
+source_spec_sha256 = 82b722d5ecea2045e85f356106b61599acb38cc251d07743ffe13a6341b559fd
+source_spec = MasterDesignDocument/C06-Frontier-Push/TorodialPhasePositionalEncoder-Spec.md
+rope_compatible = false
+rust_runtime_ready = false
+admission = reference_binding_only
+radius_selection = unresolved_bakeoff
+radius_ruling = MasterDesignDocument/C12-Server-Inference-Engine/TPPE-RADIUS-RULING.md
+
+# This contract binds ingress receipts to TPE and prevents RoPE fallback.
+# TPPE/TPE means dynamic phase plus expanding radius per revolution. A
+# constant-radius helix or corkscrew does not satisfy this contract.
+# It does not certify the proposed TPE recurrence or enable trajectory replay.
+# A later immutable contract must name the qualified Rust implementation,
+# constants, numerical tolerances, and hardware receipts before runtime use.

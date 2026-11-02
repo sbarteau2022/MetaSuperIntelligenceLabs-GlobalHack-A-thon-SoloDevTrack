@@ -1,0 +1,58 @@
+TPPE / position-encoder matched real-forward smoke v2
+Date: 2026-11-02 America/Chicago
+Status: COMPONENT SMOKE; DECISION OPEN
+
+Why v1 was invalidated
+- full-forward was assigned zero error and zero time by construction;
+- state bytes were printed but excluded from Pareto dominance;
+- quality was next byte-derived drive magnitude, not model output quality;
+- the alleged RoPE arm was a two-scalar phase recurrence, not model RoPE.
+
+Corrected boundary
+- frozen Qwen3.6 roster, same real token tape and weights for every arm;
+- native RoPE, angle-only toroidal, linear-log TPPE, and log TPPE installed at
+  the same real Layer-3 Q/K positional boundary;
+- actual next-token NLL over the 248,320-token vocabulary;
+- actual forward wall time, encoder state bytes, logit digest, and logit delta
+  from the native-RoPE control;
+- no invented zero-cost or zero-error full-forward row.
+
+Command
+cargo run --release --bin globalmind-tppe-qualify -- \
+  manifests/qwen36-opus-candidate.manifest inputs/real-token-tape.bin 1
+
+Identity
+input_digest=cf80d582fa1528b356586d71ca221c69af1a935e9e1159f8409e83b3992d4c08
+token_tape_digest=9d91404d69157c70906822f45200251c5028f1b45498815dc829e5f462a41af1
+tokens=3 predictions=2 repeats=1
+
+Raw measured rows
+native_rope:
+  mean_next_token_nll=16.281320702 top1=0/2 wall_us=829613.041
+  state_bytes=0 mean_logit_delta=0 max_logit_delta=0
+  logits_digest=270802e34a15853b0971f0e5f6b0d6d78de162a8fba86b5b0463383aa2cecea8
+angle_only_toroidal:
+  mean_next_token_nll=16.281293674 top1=0/2 wall_us=841381.833
+  state_bytes=16 mean_logit_delta=0.000225172 max_logit_delta=0.004336357
+  logits_digest=486337ccc137bb5faa142714a3ac1f2ee8b707bc23550adeba3ee3e09bcf3608
+tppe_linear_log_v1:
+  mean_next_token_nll=16.281336114 top1=0/2 wall_us=850306.416
+  state_bytes=64 mean_logit_delta=0.000267324 max_logit_delta=0.004764438
+  logits_digest=b331b0702e9b5c99886bac4520c933b0e852b8cdac55bf70b925484a3b39b21b
+tppe_log_v1:
+  mean_next_token_nll=16.281337291 top1=0/2 wall_us=877111.500
+  state_bytes=64 mean_logit_delta=0.000264014 max_logit_delta=0.004734755
+  logits_digest=70c569828239e9a8c2b16371dd05b4579f883460b4ba24ee9e3a48c382f4be32
+
+Verdict
+OPEN_REQUIRES_HELD_OUT_TASK_TAPE. Two predictions and one timing repeat cannot
+select or bench an encoder. The numbers prove the corrected harness executes
+each arm at the same real Q/K boundary and measures genuine model outputs.
+No encoder promoted. No encoder benched.
+
+Required next run
+- preregistered held-out token/task tapes with contamination checks;
+- at least three counterbalanced timing repeats;
+- next-token NLL/perplexity and task/judge quality with uncertainty intervals;
+- latency, peak memory, and wall energy when available;
+- bench only on a statistically supported quality/resource frontier.

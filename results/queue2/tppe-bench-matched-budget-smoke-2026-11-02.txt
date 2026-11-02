@@ -1,0 +1,17 @@
+Queue 1.2 matched radial-budget real-weight smoke
+Date: 2026-11-02 America/Chicago
+Command: cargo run --release --bin globalmind-tppe-qualify -- manifests/qwen36-opus-candidate.manifest inputs/real-token-tape.bin 3
+Runner identity: matched_real_qk_forward_v4_one_turn_budget; source change: log_v1 span matched to linear_log_v1 at one derived revolution per TPPE-RADIUS-RULING.md.
+radial_budget_w_ref=1 linear_log_start=0.05000000000000000 linear_log_span=0.12000000000000000 log_start=0.05000000000000000 log_span=0.13859319171733644
+Frozen manifest digest: cf80d582fa1528b356586d71ca221c69af1a935e9e1159f8409e83b3992d4c08
+Token tape digest: 9d91404d69157c70906822f45200251c5028f1b45498815dc8295e462a41af1
+Scope: three tokens, two next-token predictions, three counterbalanced repeats, real frozen weights in the custom Layer-3 path. Not a full model forward.
+
+arm                         NLL              mean wall us      paired delta vs RoPE   CI95 half-width
+native_rope                 16.281320702     844571.125         0.000000000           0.000000000
+angle_only_toroidal         16.248170461     845535.208        -0.033150241           0.064974473
+tppe_linear_log_v1          16.247754798     843088.208        -0.033565904           0.065789172
+tppe_log_v1                 16.247747218     855781.986        -0.033573484           0.065804030
+
+Runner verdict: OPEN_REQUIRES_HELD_OUT_TASK_TAPE; promoted=none; benched=none; radial_winner=none.
+The log_v1 row supersedes the prior unmatched-span v3 smoke row for wiring only. This small tape cannot support an encoder or radial-law decision. Later source changes made long-tape output component-only as well; this command ran before that output-label correction, but the short-tape verdict was already fail-closed.

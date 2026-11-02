@@ -1,0 +1,11 @@
+{
+  "name": "incident-gate",
+  "description": "Validate incident handling: impact stated, bleeding stopped reversibly with timestamps, recovery measured, blameless follow-up with owned dated action items.",
+  "parameters": {
+    "impact_set": { "type": "boolean", "description": "true: what is broken, for whom, since when" },
+    "bleeding_stopped": { "type": "boolean", "description": "true: reversible mitigation applied, actions timestamped" },
+    "recovery_measured": { "type": "boolean", "description": "true: recovery confirmed by measurement" },
+    "actions_owned": { "type": "boolean", "description": "true: follow-up items each have owner + date + catching test/alert" }
+  },
+  "required": ["impact_set", "bleeding_stopped", "recovery_measured", "actions_owned"]
+}

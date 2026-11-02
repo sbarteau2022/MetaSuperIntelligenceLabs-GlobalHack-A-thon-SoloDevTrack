@@ -1,0 +1,8 @@
+# Verification script registry (Commandment X)
+check_citations.sh          # Commandment III
+check_experiment_manifest.sh # Commandment VI
+check_report_oracle.sh      # Commandment VIII
+check_port_lock.sh          # Port lock (ROADMAP/SYSTEM_WORKFLOW_LOCK)
+check_holomorphic_math_lock.sh # Holomorphic math lock
+check_doc_metadata.sh       # N3 documentation standards
+gate.sh                    # master gate

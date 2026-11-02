@@ -1,0 +1,12 @@
+{
+  "name": "promax-query-gate",
+  "description": "Validate a ui-ux-pro-max query contract: search vs design-system mode, known domain, max-results 1-20, dials 1-10.",
+  "parameters": {
+    "mode": { "type": "string", "description": "'search' or 'design-system'" },
+    "domain": { "type": "string", "description": "'style'|'color'|'chart'|'landing'|'product'|'ux'|'typography'|'stack'" },
+    "stack": { "type": "string", "description": "stack key, or empty" },
+    "max_results": { "type": "number", "description": "1-20" },
+    "dial": { "type": "number", "description": "optional design dial 1-10" }
+  },
+  "required": ["mode", "domain", "max_results"]
+}

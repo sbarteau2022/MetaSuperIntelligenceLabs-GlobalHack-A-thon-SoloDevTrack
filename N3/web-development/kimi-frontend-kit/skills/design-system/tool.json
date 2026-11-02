@@ -1,0 +1,12 @@
+{
+  "name": "design-system-gate",
+  "description": "Validate design-token workflow inputs: token config present, css/json output target, BM25 slide domain valid, hardcoded-value scan mode.",
+  "parameters": {
+    "has_config": { "type": "boolean", "description": "true: token JSON config present" },
+    "out_dir_set": { "type": "boolean", "description": "true: output dir/file resolved" },
+    "fix_only": { "type": "boolean", "description": "true: suggest-only mode (no auto-fix)" },
+    "ext": { "type": "string", "description": "'css' or 'json'" },
+    "search_domain": { "type": "string", "description": "'strategy' | 'layout' | 'copy' | 'chart'" }
+  },
+  "required": ["has_config", "out_dir_set", "ext"]
+}

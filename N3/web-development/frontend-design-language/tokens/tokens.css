@@ -1,0 +1,299 @@
+/* =============================================================================
+ * Design Tokens — canonical source
+ * Project: web-development
+ * Date: 2026-10-30
+ * Status: PROPOSED
+ *
+ * Tier 1 LITERAL    → raw values. Referenced only by Tier 2.
+ * Tier 2 SEMANTIC   → intent. The public contract. Themes override this tier.
+ * Tier 3 UI         → shared UI surface roles.
+ * Tier 4 COMPONENT  → per-component tokens, declared in the component's file.
+ *
+ * Component code consumes Tier 2/3/4 only. Never a Tier 1 literal.
+ * See RULES.md §3 (rules 25–35) and BEST-PRACTICES.md "Design Tokens".
+ * ========================================================================== */
+
+@layer reset, base, theme, components, utilities;
+
+/* -----------------------------------------------------------------------------
+ * TIER 1 — LITERAL
+ * Raw palette / scale values. No component may reference these directly.
+ * -------------------------------------------------------------------------- */
+@layer tokens {
+  :root {
+    /* Color literals — blue */
+    --literal-blue-50: #eff6ff;
+    --literal-blue-100: #dbeafe;
+    --literal-blue-200: #bfdbfe;
+    --literal-blue-300: #93c5fd;
+    --literal-blue-400: #60a5fa;
+    --literal-blue-500: #3b82f6;
+    --literal-blue-600: #2563eb;
+    --literal-blue-700: #1d4ed8;
+    --literal-blue-800: #1e40af;
+    --literal-blue-900: #1e3a8a;
+
+    /* Color literals — neutral */
+    --literal-neutral-0: #ffffff;
+    --literal-neutral-50: #f8fafc;
+    --literal-neutral-100: #f1f5f9;
+    --literal-neutral-200: #e2e8f0;
+    --literal-neutral-300: #cbd5e1;
+    --literal-neutral-400: #94a3b8;
+    --literal-neutral-500: #64748b;
+    --literal-neutral-600: #475569;
+    --literal-neutral-700: #334155;
+    --literal-neutral-800: #1e293b;
+    --literal-neutral-900: #0f172a;
+    --literal-neutral-950: #020617;
+
+    /* Color literals — status */
+    --literal-green-500: #22c55e;
+    --literal-green-700: #15803d;
+    --literal-amber-500: #f59e0b;
+    --literal-amber-700: #b45309;
+    --literal-red-500: #ef4444;
+    --literal-red-700: #b91c1c;
+
+    /* Spacing scale — 4px base */
+    --literal-space-0: 0;
+    --literal-space-1: 0.25rem;
+    --literal-space-2: 0.5rem;
+    --literal-space-3: 0.75rem;
+    --literal-space-4: 1rem;
+    --literal-space-5: 1.25rem;
+    --literal-space-6: 1.5rem;
+    --literal-space-8: 2rem;
+    --literal-space-10: 2.5rem;
+    --literal-space-12: 3rem;
+    --literal-space-16: 4rem;
+    --literal-space-20: 5rem;
+
+    /* Radius */
+    --literal-radius-none: 0;
+    --literal-radius-sm: 0.25rem;
+    --literal-radius-md: 0.5rem;
+    --literal-radius-lg: 0.75rem;
+    --literal-radius-xl: 1rem;
+    --literal-radius-full: 9999px;
+
+    /* Typography */
+    --literal-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+      "Helvetica Neue", Arial, sans-serif;
+    --literal-font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+      "Liberation Mono", monospace;
+
+    --literal-text-xs: 0.75rem;
+    --literal-text-sm: 0.875rem;
+    --literal-text-base: 1rem;
+    --literal-text-lg: 1.125rem;
+    --literal-text-xl: 1.25rem;
+    --literal-text-2xl: 1.5rem;
+    --literal-text-3xl: 1.875rem;
+    --literal-text-4xl: 2.25rem;
+    --literal-text-5xl: 3rem;
+
+    --literal-weight-regular: 400;
+    --literal-weight-medium: 500;
+    --literal-weight-semibold: 600;
+    --literal-weight-bold: 700;
+
+    --literal-leading-tight: 1.2;
+    --literal-leading-snug: 1.35;
+    --literal-leading-normal: 1.5;
+    --literal-leading-relaxed: 1.7;
+
+    /* Motion */
+    --literal-duration-instant: 0ms;
+    --literal-duration-fast: 120ms;
+    --literal-duration-base: 200ms;
+    --literal-duration-slow: 320ms;
+    --literal-duration-slower: 480ms;
+
+    --literal-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+    --literal-ease-entrance: cubic-bezier(0, 0, 0, 2);
+    --literal-ease-exit: cubic-bezier(0.3, 0, 1, 1);
+
+    /* Elevation */
+    --literal-shadow-sm: 0 1px 2px rgb(15 23 42 / 0.06), 0 1px 3px rgb(15 23 42 / 0.1);
+    --literal-shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.1), 0 2px 4px -2px rgb(15 23 42 / 0.1);
+    --literal-shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 0.1), 0 4px 6px -4px rgb(15 23 42 / 0.1);
+
+    /* Layering */
+    --literal-z-base: 0;
+    --literal-z-raised: 10;
+    --literal-z-sticky: 100;
+    --literal-z-overlay: 1000;
+    --literal-z-modal: 1100;
+    --literal-z-toast: 1200;
+  }
+
+  /* -----------------------------------------------------------------------------
+   * TIER 2 — SEMANTIC
+   * Intent-level tokens. Themes override this tier. Components consume these.
+   * -------------------------------------------------------------------------- */
+  :root {
+    color-scheme: light;
+
+    --color-bg-canvas: var(--literal-neutral-50);
+    --color-bg-surface: var(--literal-neutral-0);
+    --color-bg-raised: var(--literal-neutral-0);
+    --color-bg-sunken: var(--literal-neutral-100);
+    --color-bg-overlay: rgb(15 23 42 / 0.5);
+
+    --color-text-primary: var(--literal-neutral-900);
+    --color-text-secondary: var(--literal-neutral-600);
+    --color-text-muted: var(--literal-neutral-500);
+    --color-text-on-accent: var(--literal-neutral-0);
+    --color-text-link: var(--literal-blue-700);
+
+    --color-border-subtle: var(--literal-neutral-200);
+    --color-border-default: var(--literal-neutral-300);
+    --color-border-strong: var(--literal-neutral-400);
+
+    --color-accent: var(--literal-blue-600);
+    --color-accent-hover: var(--literal-blue-700);
+    --color-accent-active: var(--literal-blue-800);
+    --color-accent-subtle: var(--literal-blue-50);
+    --color-accent-text: var(--literal-blue-700);
+
+    --color-success: var(--literal-green-700);
+    --color-success-bg: #f0fdf4;
+    --color-warning: var(--literal-amber-700);
+    --color-warning-bg: #fffbeb;
+    --color-danger: var(--literal-red-700);
+    --color-danger-bg: #fef2f2;
+
+    --color-focus-ring: var(--literal-blue-600);
+    --color-focus-ring-offset: var(--literal-neutral-0);
+
+    --font-body: var(--literal-font-sans);
+    --font-heading: var(--literal-font-sans);
+    --font-code: var(--literal-font-mono);
+
+    --space-inline-xs: var(--literal-space-1);
+    --space-inline-sm: var(--literal-space-2);
+    --space-inline-md: var(--literal-space-4);
+    --space-inline-lg: var(--literal-space-6);
+    --space-block-sm: var(--literal-space-2);
+    --space-block-md: var(--literal-space-4);
+    --space-block-lg: var(--literal-space-8);
+    --space-block-xl: var(--literal-space-12);
+
+    --radius-control: var(--literal-radius-md);
+    --radius-surface: var(--literal-radius-lg);
+    --radius-pill: var(--literal-radius-full);
+
+    --duration-fast: var(--literal-duration-fast);
+    --duration-base: var(--literal-duration-base);
+    --duration-slow: var(--literal-duration-slow);
+    --ease-standard: var(--literal-ease-standard);
+    --ease-entrance: var(--literal-ease-entrance);
+    --ease-exit: var(--literal-ease-exit);
+
+    --shadow-raised: var(--literal-shadow-sm);
+    --shadow-overlay: var(--literal-shadow-md);
+    --shadow-modal: var(--literal-shadow-lg);
+  }
+
+  /* -----------------------------------------------------------------------------
+   * TIER 2 — SEMANTIC / DARK THEME
+   * A theme is a swap of the semantic layer. Component tokens are untouched.
+   * -------------------------------------------------------------------------- */
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --color-bg-canvas: var(--literal-neutral-950);
+    --color-bg-surface: var(--literal-neutral-900);
+    --color-bg-raised: var(--literal-neutral-800);
+    --color-bg-sunken: var(--literal-neutral-950);
+    --color-bg-overlay: rgb(2 6 23 / 0.7);
+
+    --color-text-primary: var(--literal-neutral-50);
+    --color-text-secondary: var(--literal-neutral-300);
+    --color-text-muted: var(--literal-neutral-400);
+    --color-text-on-accent: var(--literal-neutral-950);
+    --color-text-link: var(--literal-blue-300);
+
+    --color-border-subtle: var(--literal-neutral-800);
+    --color-border-default: var(--literal-neutral-700);
+    --color-border-strong: var(--literal-neutral-600);
+
+    --color-accent: var(--literal-blue-500);
+    --color-accent-hover: var(--literal-blue-400);
+    --color-accent-active: var(--literal-blue-300);
+    --color-accent-subtle: var(--literal-blue-900);
+    --color-accent-text: var(--literal-blue-300);
+
+    --color-success: #4ade80;
+    --color-success-bg: #052e16;
+    --color-warning: #fbbf24;
+    --color-warning-bg: #451a03;
+    --color-danger: #f87171;
+    --color-danger-bg: #450a0a;
+
+    --color-focus-ring: var(--literal-blue-400);
+    --color-focus-ring-offset: var(--literal-neutral-950);
+
+    --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-overlay: 0 4px 6px -1px rgb(0 0 0 / 0.5);
+    --shadow-modal: 0 10px 15px -3px rgb(0 0 0 / 0.6);
+  }
+
+  /* -----------------------------------------------------------------------------
+   * TIER 3 — UI
+   * Shared UI surface roles.
+   * -------------------------------------------------------------------------- */
+  :root {
+    --ui-border-width: 1px;
+    --ui-border-radius: var(--radius-control);
+    --ui-focus-ring-width: 2px;
+    --ui-focus-ring-offset: 2px;
+    --ui-touch-target-min: 24px;
+    --ui-touch-target-preferred: 44px;
+    --ui-content-measure: 70ch;
+  }
+
+  /* -----------------------------------------------------------------------------
+   * DENSITY MODE
+   * Container style queries are Baseline since 2026-05-19 (Chrome 111,
+   * Safari 18, Firefox 151) — newly available, not yet Baseline-wide.
+   * For a CORE density switch, the data-attribute fallback below is required;
+   * the style query is layered on as progressive enhancement at equal
+   * specificity. See EDGE-CASES.md §5 and BEST-PRACTICES.md "Design Tokens".
+   * -------------------------------------------------------------------------- */
+  :root {
+    --density: comfortable;
+    --density-control-height: 2.5rem;
+    --density-row-gap: var(--literal-space-3);
+  }
+
+  :where([data-density="compact"]) {
+    --density: compact;
+    --density-control-height: 2rem;
+    --density-row-gap: var(--literal-space-1);
+  }
+
+  :where([data-density="comfortable"]) {
+    --density: comfortable;
+    --density-control-height: 2.5rem;
+    --density-row-gap: var(--literal-space-3);
+  }
+
+  :where([data-density="spacious"]) {
+    --density: spacious;
+    --density-control-height: 3rem;
+    --density-row-gap: var(--literal-space-5);
+  }
+
+  /* Feature detection sentinel: the style query sets this to "yes" when supported. */
+  :root {
+    --style-queries-supported: check;
+  }
+
+  @container style(--style-queries-supported: check) {
+    body {
+      --style-queries-supported: yes;
+    }
+  }
+}

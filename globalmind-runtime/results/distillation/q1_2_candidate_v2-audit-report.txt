@@ -1,0 +1,14 @@
+distillation audit report
+run_id=run_a7a0e22f00e9a89fb104ea4e8dde4c481c734890088e133d484248bea5360a94
+input_digest=a7a0e22f00e9a89fb104ea4e8dde4c481c734890088e133d484248bea5360a94
+trajectory_digest=c78a1b195102cfeb14be0838bc6b0040bd0ed572834ba36e699f3019222c09c8
+replay_receipt=6616a915dc74271ac9b76d394a454d3ae5a57825430960431d8bbccba14f1db7
+packets expected=11 persisted=11 admitted_expected=10 admitted_persisted=10
+atoms expected=4 persisted=4
+trajectory state=crystallized header_ok=true steps_expected=4 loops_expected=1
+loops expected=1 persisted=1
+edge_crystallizations persisted=4 expected=4
+charts expected=1 persisted=1
+run_events persisted=4
+output_digest=d780cdc15bdac3f5498646ea5e25b8bc3e87b560cc786f5c798e96e231c6a198
+balance=PASS

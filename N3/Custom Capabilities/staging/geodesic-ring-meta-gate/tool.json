@@ -1,0 +1,11 @@
+{
+  "name": "geodesic-readiness-gate",
+  "description": "Validate the geodesic ring + meta-gate readiness contract: Q32.31 integer-only arithmetic, bounded power-of-two ring capacity, zero hot-path heap allocation, rustc --test green, opcode in 202563-202565.",
+  "parameters": {
+    "q_fixed": { "type": "boolean", "description": "true: integer-only Q32.31 fixed-point arithmetic" },
+    "bounded_cap": { "type": "boolean", "description": "true: bounded power-of-two ring, no hot-path allocation" },
+    "tests_pass": { "type": "boolean", "description": "true: rustc --edition=2021 --test green" },
+    "opcode": { "type": "number", "description": "pinned MlirOpId, valid 202563-202565" }
+  },
+  "required": ["q_fixed", "bounded_cap", "tests_pass"]
+}

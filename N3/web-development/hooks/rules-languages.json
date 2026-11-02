@@ -1,0 +1,166 @@
+{
+  "version": "1.0.0",
+  "notes": "Language-stack extension to rules-table.json. Same schema (id/scope/exclude/pattern/severity/message/fix). Loaded MERGED with rules-table.json by _engine.py \u2014 one union, no drift. Date: 2026-10-30. Status: PROPOSED.",
+  "rules": [
+    {
+      "id": "py-exec-eval",
+      "scope": [
+        "**/*.py"
+      ],
+      "pattern": "\\b(exec|eval)\\s*\\(",
+      "severity": "deny",
+      "message": "exec()/eval() in Python is a code-injection surface.",
+      "fix": "Replace with ast.literal_eval, a dispatch dict, or a real parser."
+    },
+    {
+      "id": "py-sql-concat",
+      "scope": [
+        "**/*.py"
+      ],
+      "pattern": "(?i)(execute|executemany)\\s*\\(\\s*f['\"]",
+      "severity": "deny",
+      "message": "f-string SQL passed to execute() is an injection hole.",
+      "fix": "Use parameterized queries (%s / ? / named placeholders)."
+    },
+    {
+      "id": "py-bare-except",
+      "scope": [
+        "**/*.py"
+      ],
+      "pattern": "^\\s*except\\s*:",
+      "severity": "warn",
+      "message": "Bare except: swallows KeyboardInterrupt and hides the real error.",
+      "fix": "Catch Exception (or narrower) and log before handling."
+    },
+    {
+      "id": "py-print-prod",
+      "scope": [
+        "**/*.py"
+      ],
+      "pattern": "^\\s*print\\s*\\(",
+      "severity": "warn",
+      "message": "print() left in code outside hooks/ (hook scripts print JSON to stdout by contract).",
+      "fix": "Remove or route through the logging middleware.",
+      "exclude": [
+        "**/hooks/**"
+      ]
+    },
+    {
+      "id": "ts-no-any",
+      "scope": [
+        "**/*.ts",
+        "**/*.tsx"
+      ],
+      "pattern": ":\\s*any\\b",
+      "severity": "warn",
+      "message": "Explicit any defeats the type gate.",
+      "fix": "Use unknown and narrow, or a precise type; a cast needs a why-safe comment."
+    },
+    {
+      "id": "ts-floating-promise",
+      "scope": [
+        "**/*.ts",
+        "**/*.tsx"
+      ],
+      "pattern": "^\\s*(?!//)(?!\\* )(await\\s+)?(async\\s+)?[a-zA-Z_$][\\w$.]*\\.then\\([^;]*\\)\\s*;\\s*$",
+      "severity": "warn",
+      "message": "Un-awaited .then() chain (floating promise).",
+      "fix": "await the chain or return it; enable @typescript-eslint/no-floating-promises."
+    },
+    {
+      "id": "rs-unwrap",
+      "scope": [
+        "**/*.rs"
+      ],
+      "pattern": "\\.unwrap\\(\\)",
+      "severity": "deny",
+      "message": "unwrap() in non-test Rust panics on the unhappy path.",
+      "fix": "Return Result with ? or map the error; expect(\"why\") only for proven invariants."
+    },
+    {
+      "id": "rs-expect",
+      "scope": [
+        "**/*.rs"
+      ],
+      "pattern": "\\.expect\\(",
+      "severity": "warn",
+      "message": "expect() needs a proven invariant behind it.",
+      "fix": "State the invariant in the message or restructure to Result."
+    },
+    {
+      "id": "rs-panic-expected",
+      "scope": [
+        "**/*.rs"
+      ],
+      "pattern": "\\bpanic!\\s*\\(",
+      "severity": "warn",
+      "message": "panic! for an expected failure crashes the process.",
+      "fix": "Return Result; reserve panic! for unrecoverable bugs."
+    },
+    {
+      "id": "sh-unquoted-var",
+      "scope": [
+        "**/*.sh"
+      ],
+      "pattern": "echo\\s+\\$[A-Za-z_]",
+      "severity": "warn",
+      "message": "Unquoted variable expansion splits on spaces and globs.",
+      "fix": "Quote: echo \"$VAR\". Prefer shellcheck -S error in CI."
+    },
+    {
+      "id": "yaml-secret",
+      "scope": [
+        "**/*.yml",
+        "**/*.yaml"
+      ],
+      "pattern": "(?i)(token|secret|password)\\s*:\\s*\\S+",
+      "severity": "deny",
+      "message": "Secret value committed in YAML.",
+      "fix": "Reference the secret manager or env var; keep placeholders only."
+    },
+    {
+      "id": "c-malloc-check",
+      "scope": [
+        "**/*.c",
+        "**/*.h"
+      ],
+      "pattern": "=\\s*malloc\\s*\\(",
+      "severity": "warn",
+      "message": "malloc without a visible NULL check.",
+      "fix": "Check for NULL immediately, or use a wrapper that aborts cleanly."
+    },
+    {
+      "id": "cpp-raw-new",
+      "scope": [
+        "**/*.cpp",
+        "**/*.hpp",
+        "**/*.cc",
+        "**/*.hh"
+      ],
+      "pattern": "=\\s*new\\b",
+      "severity": "warn",
+      "message": "Raw new/new[] needs a matching delete; prefer ownership types.",
+      "fix": "Use std::unique_ptr / std::vector / std::string."
+    },
+    {
+      "id": "go-fmt-print",
+      "scope": [
+        "**/*.go"
+      ],
+      "pattern": "fmt\\.Print",
+      "severity": "warn",
+      "message": "fmt.Print* in non-test Go is stdout noise, not logging.",
+      "fix": "Remove or route through the structured logger."
+    },
+    {
+      "id": "java-sysout",
+      "scope": [
+        "**/*.java"
+      ],
+      "pattern": "System\\.(out|err)\\.print",
+      "severity": "warn",
+      "message": "System.out/err printing is not a logging path.",
+      "fix": "Remove or route through the logging framework."
+    }
+  ]
+}
