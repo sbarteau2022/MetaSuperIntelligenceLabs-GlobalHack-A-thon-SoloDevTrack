@@ -1,5 +1,6 @@
 # Forward recall and active-inference gates
 
+- [ ] Measure cache-hit and memory effects of the versioned radix key under a frozen workload; only identity correctness was tested.
 - [ ] Connect `ForwardRecall` to a real model executor and verify the consumed K/V page against a baseline forward on the same token tape. Current bridge test proves only the read/join boundary.
 - [ ] Verify full-model activation and logit parity on frozen artifacts; Layer-3 component evidence cannot certify the whole model.
 - [ ] Build Rust-native Qwen VL query embedding parity against the stored 1024D ingest recipe, then test held-out brain-library retrieval.
