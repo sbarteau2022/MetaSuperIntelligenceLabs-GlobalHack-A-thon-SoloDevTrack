@@ -931,6 +931,7 @@ async fn telemetry_event(
 #[derive(Deserialize)]
 struct RagQueryRequest {
     query: Option<String>,
+    rank0: Option<Vec<f32>>,
     silo: Option<String>,
     limit: Option<usize>,
 }
@@ -947,16 +948,27 @@ async fn rag_query(
         .into_response();
     };
     let limit = req.limit.unwrap_or(8).clamp(1, 50);
-    match memory
-        .query_research_points(limit, req.silo.as_deref())
-        .await
-    {
+    let hits = if let Some(rank0) = req.rank0.as_deref() {
+        memory
+            .query_research_rank0(rank0, limit, req.silo.as_deref())
+            .await
+    } else if req.query.is_some() {
+        return err_json(StatusCode::UNPROCESSABLE_ENTITY,
+            WhyReceipt::internal("/api/rag/query", "text query requires the pinned Qwen encoder; provide a normalized 1024D rank0 vector"))
+            .into_response();
+    } else {
+        memory
+            .query_research_points(limit, req.silo.as_deref())
+            .await
+    };
+    match hits {
         Ok(hits) => Json(serde_json::json!({
             "collection": crate::harness::qdrant_memory::RESEARCH_COLLECTION,
-            "query_mode": "scroll+payload-filter (vector embedder not wired; no fake semantics)",
+            "query_mode": if req.rank0.is_some() { "qwen-rank0+rotated-rank1-rrf" } else { "scroll+payload-filter" },
             "query": req.query,
             "hits": hits.iter().map(|h| serde_json::json!({
                 "id": h.id,
+                "score": h.score,
                 "text": h.text,
                 "source_path": h.source_path,
                 "document_id": h.document_id,

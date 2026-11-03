@@ -49,7 +49,7 @@ identity for the current Rust Q/K execution. Before a fresh trace or positional
 bakeoff, require a separate `tppe-layer3-candidate-v2` contract whose bytes
 bind the current `tppe.rs` and Layer-3 trace producer source digests, position
 drive constants, derived-turn rule, radial law and numeric defaults, and the
-single-Layer-3 scope. The manifest's TPE digest must equal the SHA-256 of
+single-Layer-3 scope. The manifest's TPPE digest must equal the SHA-256 of
 those contract bytes. A source or numeric change invalidates the candidate
 identity until its contract and manifest are regenerated. The candidate
 contract is not a full-model or quality certification.

@@ -6,7 +6,7 @@
 //!    A broken chain refuses startup with a why-receipt — the backend
 //!    does not run ungoverned and log a warning.
 //! 3. Pin the weight fingerprint; restore the ImmuneSystem from the chain.
-//! 4. Connect Qdrant and ensure the append-only `session_memory_v1`
+//! 4. Connect Qdrant and ensure the append-only `session_memory_hash384_v2`
 //!    memory collection; construct the HyperDX OTLP telemetry exporter.
 //! 5. Bind 127.0.0.1:4810 (after an lsof check) and serve.
 
@@ -107,6 +107,13 @@ async fn run() -> Result<(), String> {
     match ares_backend::harness::qdrant_memory::QdrantMemory::from_env() {
         Ok(memory) => match memory.ensure_collection().await {
             Ok(created) => {
+                match memory.verify_research_collection().await {
+                    Ok(count) => println!("Qdrant research collection ready (points={count})"),
+                    Err(e) => {
+                        eprintln!("WARN Qdrant research library unavailable ({e}); memory and RAG degraded");
+                        return Err(e);
+                    }
+                }
                 println!(
                     "Qdrant memory collection {} ready (created_new={})",
                     memory.collection(),

@@ -1,7 +1,7 @@
 # Hyperbolic Microkernel Plugin — Formalized Dyptech Capstone (Kernel Logic)
 
 **Date.** 2026-10-27. **Author.** Muse (contributor lane), on steward's directive.
-**Status.** PROPOSED specification. **Parent.** `VaultMapDreamstateFormalization.md` (geometry/dream/attention) + `TorodialPhasePositionalEncoder-Spec.md` (TPE) + frozen TwisterPhPE MATH FREEZE.
+**Status.** PROPOSED specification. **Parent.** `VaultMapDreamstateFormalization.md` (geometry/dream/attention) + `TorodialPhasePositionalEncoder-Spec.md` (TPPE) + frozen TwisterPhPE MATH FREEZE.
 **Scope.** The kernel substrate as a **custom plugin**: model-agnostic, formally specified, deterministically validated — Rust oracle + Metal kernel + verify harness per microkernel. This is the "Formalized dyptech" the steward advances every agent's work with.
 **Standards.** Documentation-standards (labels); research-evidence (measured > reported); C03.3 (no vault file modified).
 
@@ -54,7 +54,7 @@ pub enum KernelLevel { FusedTemporal, FannedSpatial }
 | ID | Level | Computes | Oracle source (VERIFIED read) | Metal home (PROPOSED unless noted) |
 |---|---|---|---|---|
 | `tpe.evolve` | FusedTemporal | Kuramoto 2:1 step + unwrapped arc + `r(w)` + `η` + amplitude + helical tangent | `torus.rs::evolve_vector` | NEW MSL (`kuramoto_tile.metal::kuramoto_step` covers the all-pairs step; extend to unwrapped accounting) |
-| `tpe.coherence` | FannedSpatial | `cos(θ_q−θ_a)·κ_r·κ_a` triple score (§4.4 TPE spec) | `map_phase_coherence` + radial variant (existing fns) | NEW MSL (pairwise, embarrassingly parallel) |
+| `tpe.coherence` | FannedSpatial | `cos(θ_q−θ_a)·κ_r·κ_a` triple score (§4.4 TPPE spec) | `map_phase_coherence` + radial variant (existing fns) | NEW MSL (pairwise, embarrassingly parallel) |
 | `fterm.geo` | FannedSpatial | `ΔS_geo(q,u,v)` geodesic surprise | `hyp_distance` / `lorentz_inner_product_wide` | NEW MSL (arcosh + cosh-dist) |
 | `fterm.wigner` | FannedSpatial | `ΔH_Wigner` normalized holonomy divergence | `holonomy.rs::transport_frame_hop` frame math | CPU-first (SO(3) small-matrix; Metal iff profiled hot) |
 | `fterm.epistemic` | FannedSpatial | `ΔE_epistemic` teacher inaccuracy (`1/(1+H)`) | `distill_engine` certainty path | CPU (scalar per edge; launch overhead dominates) |

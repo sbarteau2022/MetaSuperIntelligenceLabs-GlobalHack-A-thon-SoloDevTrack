@@ -141,10 +141,10 @@ impl Store {
 
     /// Fail closed if an upgrade points this binary at a different memory
     /// contract. Historical migration rows are append-only; the original 0004
-    /// row is retained and its TPE correction has a separate pinned version.
+    /// row is retained and its TPPE correction has a separate pinned version.
     pub fn verify_contract(&self) -> Result<(), String> {
         for (version, expected) in [
-            ("0004_tpe_contract_correction", "31c467e26dd81d9fddf61e10b605e6726a25b7c0cb573c399d73d79fec7f1246"),
+            ("0004_tppe_contract_correction", "31c467e26dd81d9fddf61e10b605e6726a25b7c0cb573c399d73d79fec7f1246"),
             ("0005_universal_atom_lineage", "a2c4a85303874233048b73d18e36538f38c05e36b2503c37499b6489a92729c0"),
             ("0006_immutable_atom_address", "f91fb405f54b5bac454808e571c116819b6329061b6ce44817447559f1449a04"),
         ] {

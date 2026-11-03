@@ -9,19 +9,19 @@ export function Screen06SignUp() {
 
         <form style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div style={{ textAlign: 'left' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500', marginBottom: '8px', color: 'var(--fg-secondary)' }}>Full Name</label>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--fg-secondary)' }}>Full Name</label>
             <input type="text" placeholder="John Doe" style={{ width: '100%', padding: '12px 16px', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', color: 'var(--fg-primary)', fontSize: '14px' }} />
           </div>
           <div style={{ textAlign: 'left' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500', marginBottom: '8px', color: 'var(--fg-secondary)' }}>Email</label>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--fg-secondary)' }}>Email</label>
             <input type="email" placeholder="you@example.com" style={{ width: '100%', padding: '12px 16px', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', color: 'var(--fg-primary)', fontSize: '14px' }} />
           </div>
           <div style={{ textAlign: 'left' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500', marginBottom: '8px', color: 'var(--fg-secondary)' }}>Password</label>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--fg-secondary)' }}>Password</label>
             <input type="password" placeholder="••••••••" style={{ width: '100%', padding: '12px 16px', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', color: 'var(--fg-primary)', fontSize: '14px' }} />
           </div>
           <div style={{ textAlign: 'left' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500', marginBottom: '8px', color: 'var(--fg-secondary)' }}>Confirm Password</label>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--fg-secondary)' }}>Confirm Password</label>
             <input type="password" placeholder="••••••••" style={{ width: '100%', padding: '12px 16px', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', color: 'var(--fg-primary)', fontSize: '14px' }} />
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--fg-secondary)', cursor: 'pointer' }}>

@@ -35,7 +35,7 @@ SurrealDB as a quarantined, read-only evidence source until qualification.
 - Toroidal Phase Positional Encoder is the positional contract for the new
   attention path. Its recurrence, version, dimensions, and output parity must
   be specified and tested before use. No RoPE compatibility is presumed.
-- TPPE/TPE is a dynamic spiral-out, not a constant-radius corkscrew. Radius
+- TPPE/TPPE is a dynamic spiral-out, not a constant-radius corkscrew. Radius
   expands per revolution while the trajectory approaches the hyperbolic ideal
   boundary asymptotically without crossing it. In the hyperboloid chart this
   means preserving the admitted Lorentz-sheet invariant; in a Poincare-ball
@@ -67,8 +67,8 @@ Monster sources may be inspected as failure evidence only; no code is copied.
 1. `ModelIdentity`: cryptographic content fingerprint, tokenizer/config hash,
    quantization, layer/head layout, and signed runtime version.
 2. `ForwardStep`: typed token IDs and tensor buffers; explicit layer/head,
-   causal interval, shape, dtype, layout, TPE state, and numerical error budget.
-3. `TensorPage`: immutable K and V bytes plus exact model/session/prefix/TPE/
+   causal interval, shape, dtype, layout, TPPE state, and numerical error budget.
+3. `TensorPage`: immutable K and V bytes plus exact model/session/prefix/TPPE/
    address fingerprints. A mismatch is a miss; no cross-model tensor sharing.
 4. `DistilledAtom`: teacher-independent address and content digest, judge
    receipt, and append-only audit lineage. Teacher identity cannot enter
@@ -84,7 +84,7 @@ Monster sources may be inspected as failure evidence only; no code is copied.
 | --- | --- | --- |
 | G0 identity | Rehash live model bytes and reconcile every roster receipt | No distillation for that model |
 | G1 forward | Real-weight reference parity on fixed token tapes, full logits and generation, per supported model | No serving promotion |
-| G2 TPE | Frozen recurrence oracle, phase/radius bounds, causal position tests, real-weight RoPE baseline ablation | No TPE claim |
+| G2 TPPE | Frozen recurrence oracle, phase/radius bounds, causal position tests, real-weight RoPE baseline ablation | No TPPE claim |
 | G3 tensor KV | Layer/head isolation, prefix/session separation, restart recovery, K/V digest equality, decode parity | Cache disabled |
 | G4 universal atoms | Same trace under two teacher fingerprints yields identical address and one semantic atom; teacher swap leaves recall/rank unchanged | No shared mind admission |
 | G5 trajectories | Source-to-atom mapping, typed edge replay, judge receipts, no model-specific recall dependency | Reject trajectory |
@@ -111,7 +111,7 @@ preferred.
 ## Build order
 
 Freeze model/attention contracts; implement a small real-weight forward
-reference; prove TPE and tensor K/V parity; implement teacher-neutral
+reference; prove TPPE and tensor K/V parity; implement teacher-neutral
 distillation and trajectory replay; ingest into the isolated DB; run G0–G7;
 then decide whether to replace the quarantined SurrealDB records or retain
 them as historical evidence. No deletion is implied by this draft.
@@ -181,11 +181,11 @@ audit provenance, never in the shared retrieval key.
 **Nested tensor cache.** Model K/V pages live under GlobalMind addresses and
 use the same hyperbolic metric and T2 phase indexing as atoms. They remain
 exact binary tensors indexed by model digest, layer, head, token interval,
-shape, dtype, TPE version, address contract and content digest. A page mismatch
+shape, dtype, TPPE version, address contract and content digest. A page mismatch
 is a cache miss. Shared geometric placement does not imply cross-model tensor
 reuse. Poincare-ball coordinates are a candidate chart for H3, subject to
 distance equivalence with the chosen reference metric and boundary-stability
-tests. TPE supplies toroidal phase positions; it is not RoPE.
+tests. TPPE supplies toroidal phase positions; it is not RoPE.
 
 **Distillation order.** Rehash frozen model artifacts; extract rank-0 atoms,
 rank-1 transitions, rank-2 loops and rank-8 local Jacobian candidates with

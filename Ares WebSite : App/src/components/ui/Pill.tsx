@@ -1,12 +1,11 @@
-import { forwardRef } from 'react'
-import type { HTMLAttributes } from 'react'
+import type { HTMLAttributes, Ref } from 'react'
 
 export interface PillProps extends HTMLAttributes<HTMLSpanElement> {
+  ref?: Ref<HTMLSpanElement>
   variant?: 'verified' | 'blocked' | 'pending'
 }
 
-export const Pill = forwardRef<HTMLSpanElement, PillProps>(
-  ({ variant = 'verified', className = '', children, ...props }, ref) => {
+export const Pill = ({variant = 'verified', className = '', children, ref, ...props }: PillProps) => {
     const variants = {
       verified: 'bg-green-500/15 text-green-400 border-green-500/30',
       blocked: 'bg-red-500/15 text-red-400 border-red-500/30',
@@ -26,6 +25,5 @@ export const Pill = forwardRef<HTMLSpanElement, PillProps>(
       </span>
     )
   }
-)
 
 Pill.displayName = 'Pill'

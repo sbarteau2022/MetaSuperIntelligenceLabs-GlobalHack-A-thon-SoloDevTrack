@@ -549,17 +549,17 @@ export const PlatformHomePage: React.FC = () => {
       <section className="relative pt-16 pb-20 border-b border-white/8 overflow-hidden">
         <div className="max-w-[1280px] mx-auto px-6 grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-12 items-center">
           <div className="space-y-6">
-            <h1 className="font-display text-5xl sm:text-7xl font-bold tracking-[-0.04em] leading-[0.96] text-[#f5f7fa]">
+            <h1 className="font-display text-5xl sm:text-7xl font-bold tracking-[-0.04em] leading-[0.96] text-white">
               Principled
               <br />
               intelligence
               <br />
               with receipts.
             </h1>
-            <p className="text-xl text-[#c9cfd7] font-medium max-w-xl leading-snug">
+            <p className="text-xl text-[#e4e4e7] font-medium max-w-xl leading-snug">
               An independent engineering lab for builders with bigger ambitions.
             </p>
-            <p className="text-base text-[#9ba5b4] max-w-lg leading-relaxed">
+            <p className="text-base text-[#71717a] max-w-lg leading-relaxed">
               We build tools, runbooks, and research systems that keep the evidence connected to
               the work.
             </p>
@@ -569,14 +569,14 @@ export const PlatformHomePage: React.FC = () => {
                   setCloudTab('code');
                   setActivePage('cloud-app');
                 }}
-                className="px-6 py-3 rounded-lg bg-[#389cff] hover:bg-[#2589f5] text-white font-medium text-sm inline-flex items-center gap-2 transition shadow-[0_0_25px_-4px_rgba(56,156,255,0.65)] cursor-pointer"
+                className="px-6 py-3 rounded-lg bg-[#f59e0b] hover:bg-[#d97706] text-white font-medium text-sm inline-flex items-center gap-2 transition shadow-[0_0_25px_-4px_rgba(245,158,11,0.65)] cursor-pointer"
               >
                 <span>Launch Cloud Workspace (IDE &amp; Swarm)</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setActivePage('research-hub')}
-                className="px-6 py-3 rounded-lg bg-transparent hover:bg-white/5 border border-white/15 text-[#f5f7fa] font-medium text-sm transition cursor-pointer"
+                className="px-6 py-3 rounded-lg bg-transparent hover:bg-white/5 border border-white/15 text-white font-medium text-sm transition cursor-pointer"
               >
                 Open Research Hub
               </button>
@@ -594,12 +594,12 @@ export const PlatformHomePage: React.FC = () => {
       <section className="py-12 border-b border-white/8">
         <div className="max-w-[1280px] mx-auto px-6 grid grid-cols-1 md:grid-cols-3 gap-8 divide-y md:divide-y-0 md:divide-x divide-white/8">
           <div className="flex items-start gap-4 pt-4 md:pt-0">
-            <div className="w-11 h-11 rounded-xl bg-[#0c0f14] border border-white/12 flex items-center justify-center shrink-0 text-[#c9cfd7]">
+            <div className="w-11 h-11 rounded-xl bg-[#34343a] border border-white/12 flex items-center justify-center shrink-0 text-[#e4e4e7]">
               <Layers className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-base font-semibold text-white">Build with context</h3>
-              <p className="text-xs text-[#9ba5b4] mt-1.5 leading-relaxed">
+              <p className="text-xs text-[#71717a] mt-1.5 leading-relaxed">
                 Bring your goals, code, and research together so the system understands the bigger
                 picture.
               </p>
@@ -607,24 +607,24 @@ export const PlatformHomePage: React.FC = () => {
           </div>
 
           <div className="flex items-start gap-4 pt-4 md:pt-0 md:pl-8">
-            <div className="w-11 h-11 rounded-xl bg-[#0c0f14] border border-white/12 flex items-center justify-center shrink-0 text-[#c9cfd7]">
+            <div className="w-11 h-11 rounded-xl bg-[#34343a] border border-white/12 flex items-center justify-center shrink-0 text-[#e4e4e7]">
               <GitBranch className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-base font-semibold text-white">Test the idea</h3>
-              <p className="text-xs text-[#9ba5b4] mt-1.5 leading-relaxed">
+              <p className="text-xs text-[#71717a] mt-1.5 leading-relaxed">
                 Turn uncertainty into structured experiments with repeatable workflows.
               </p>
             </div>
           </div>
 
           <div className="flex items-start gap-4 pt-4 md:pt-0 md:pl-8">
-            <div className="w-11 h-11 rounded-xl bg-[#0c0f14] border border-white/12 flex items-center justify-center shrink-0 text-[#c9cfd7]">
+            <div className="w-11 h-11 rounded-xl bg-[#34343a] border border-white/12 flex items-center justify-center shrink-0 text-[#e4e4e7]">
               <FileText className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-base font-semibold text-white">Keep the evidence</h3>
-              <p className="text-xs text-[#9ba5b4] mt-1.5 leading-relaxed">
+              <p className="text-xs text-[#71717a] mt-1.5 leading-relaxed">
                 Every decision, result, and artifact is connected and traceable by design.
               </p>
             </div>
@@ -635,7 +635,7 @@ export const PlatformHomePage: React.FC = () => {
       <section className="py-24 border-b border-white/8">
         <div className="max-w-[1280px] mx-auto px-6 grid grid-cols-1 lg:grid-cols-[0.9fr_1.1fr] gap-14 items-center">
           <div className="space-y-5">
-            <div className="font-mono text-xs uppercase tracking-[0.2em] text-[#389cff]">
+            <div className="font-mono text-xs uppercase tracking-[0.2em] text-[#f59e0b]">
               ARES
             </div>
             <h2 className="font-display text-4xl sm:text-6xl font-bold tracking-[-0.035em] leading-[0.98] text-white">
@@ -643,7 +643,7 @@ export const PlatformHomePage: React.FC = () => {
               <br />
               Extraordinary reach.
             </h2>
-            <p className="text-base text-[#9ba5b4] leading-relaxed max-w-md">
+            <p className="text-base text-[#71717a] leading-relaxed max-w-md">
               ARES Spec Ops Research Lab brings project context, repeatable workflows, and human
               judgment into one workspace.
             </p>
@@ -653,7 +653,7 @@ export const PlatformHomePage: React.FC = () => {
                   setCloudTab('research');
                   setActivePage('cloud-app');
                 }}
-                className="px-5 py-2.5 rounded-lg bg-[#389cff] hover:bg-[#2589f5] text-white font-medium text-sm inline-flex items-center gap-2 transition cursor-pointer"
+                className="px-5 py-2.5 rounded-lg bg-[#f59e0b] hover:bg-[#d97706] text-white font-medium text-sm inline-flex items-center gap-2 transition cursor-pointer"
               >
                 <span>Inside the research lab</span>
                 <ArrowRight className="w-4 h-4" />

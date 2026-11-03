@@ -1,15 +1,14 @@
-import { forwardRef } from 'react'
-import type { HTMLAttributes } from 'react'
+import type { HTMLAttributes, Ref } from 'react'
 
 export interface TelemetryRowProps extends HTMLAttributes<HTMLDivElement> {
+  ref?: Ref<HTMLDivElement>
   label: string
   value: string | number
   barPercent?: number
   unit?: string
 }
 
-export const TelemetryRow = forwardRef<HTMLDivElement, TelemetryRowProps>(
-  ({ label, value, barPercent, unit = '', className = '', ...props }, ref) => {
+export const TelemetryRow = ({label, value, barPercent, unit = '', className = '', ref, ...props }: TelemetryRowProps) => {
     return (
       <div
         ref={ref}
@@ -42,6 +41,5 @@ export const TelemetryRow = forwardRef<HTMLDivElement, TelemetryRowProps>(
       </div>
     )
   }
-)
 
 TelemetryRow.displayName = 'TelemetryRow'

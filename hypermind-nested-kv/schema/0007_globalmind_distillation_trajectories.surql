@@ -120,7 +120,7 @@ DEFINE INDEX IF NOT EXISTS local_jacobian_chart_unique ON local_jacobian_chart
 -- Extend the immutable trajectory header. Legacy rows remain quarantined
 -- because these fields are absent; only fully bound rows are recall-admissible.
 DEFINE FIELD IF NOT EXISTS run ON distilled_trajectory TYPE option<record<distillation_run>> READONLY;
-DEFINE FIELD IF NOT EXISTS tpe_version ON distilled_trajectory TYPE option<string> READONLY;
+DEFINE FIELD IF NOT EXISTS tppe_version ON distilled_trajectory TYPE option<string> READONLY;
 DEFINE FIELD IF NOT EXISTS address_contract_digest ON distilled_trajectory TYPE option<string> READONLY;
 DEFINE FIELD IF NOT EXISTS step_count ON distilled_trajectory TYPE option<int>
   ASSERT $value > 0 READONLY;
@@ -219,7 +219,7 @@ DEFINE INDEX IF NOT EXISTS surprise_observation_route ON surprise_observation
 -- into semantic recall. These remain optional for quarantined historical rows.
 DEFINE FIELD IF NOT EXISTS prefix_digest ON transformer_kv_session TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS tensor_contract_digest ON transformer_kv_session TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS tpe_configuration_digest ON transformer_kv_session TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS tppe_configuration_digest ON transformer_kv_session TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS well ON transformer_kv_page TYPE option<record<cognitive_well>>;
 DEFINE FIELD IF NOT EXISTS trajectory ON transformer_kv_page TYPE option<record<distilled_trajectory>>;
 DEFINE FIELD IF NOT EXISTS phase_state_digest ON transformer_kv_page TYPE option<string>;

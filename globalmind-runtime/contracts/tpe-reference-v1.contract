@@ -17,9 +17,9 @@ admission = reference_binding_only
 radius_selection = unresolved_bakeoff
 radius_ruling = MasterDesignDocument/C12-Server-Inference-Engine/TPPE-RADIUS-RULING.md
 
-# This contract binds ingress receipts to TPE and prevents RoPE fallback.
-# TPPE/TPE means dynamic phase plus expanding radius per revolution. A
+# This contract binds ingress receipts to TPPE and prevents RoPE fallback.
+# TPPE/TPPE means dynamic phase plus expanding radius per revolution. A
 # constant-radius helix or corkscrew does not satisfy this contract.
-# It does not certify the proposed TPE recurrence or enable trajectory replay.
+# It does not certify the proposed TPPE recurrence or enable trajectory replay.
 # A later immutable contract must name the qualified Rust implementation,
 # constants, numerical tolerances, and hardware receipts before runtime use.

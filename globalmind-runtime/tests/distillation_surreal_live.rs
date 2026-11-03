@@ -270,7 +270,7 @@ fn distillation_pipeline_survives_restart_and_reconciles_exactly() {
     std::fs::write(&artifact, b"distill-real-artifact-bytes").unwrap();
     let artifact_digest = Digest::sha256(b"distill-real-artifact-bytes");
     let manifest_text = format!(
-        "workspace = distillws\nmethod = fresh-globalmind-distillation-v1\nconfiguration_digest = {}\ntpe_version = tppe-reference-v1\ntpe_configuration_digest = {}\nmodel.0.provider = local\nmodel.0.name = DistillModel\nmodel.0.revision = rev-1\nmodel.0.modality = text\nmodel.0.eligibility_receipt_digest = {}\nmodel.0.judge_receipt_digest = {}\nmodel.0.artifact.0.role = weights\nmodel.0.artifact.0.path = {}\nmodel.0.artifact.0.sha256 = {}\n",
+        "workspace = distillws\nmethod = fresh-globalmind-distillation-v1\nconfiguration_digest = {}\ntppe_version = tppe-reference-v1\ntppe_configuration_digest = {}\nmodel.0.provider = local\nmodel.0.name = DistillModel\nmodel.0.revision = rev-1\nmodel.0.modality = text\nmodel.0.eligibility_receipt_digest = {}\nmodel.0.judge_receipt_digest = {}\nmodel.0.artifact.0.role = weights\nmodel.0.artifact.0.path = {}\nmodel.0.artifact.0.sha256 = {}\n",
         "1".repeat(64),
         "2".repeat(64),
         "3".repeat(64),
@@ -291,10 +291,10 @@ fn distillation_pipeline_survives_restart_and_reconciles_exactly() {
         admission: model.admission_id.clone(),
         model_roster_digest: model.roster_digest.clone(),
         configuration_digest: verified.configuration_digest.clone(),
-        tpe_version: verified.tpe_version.clone(),
-        tpe_configuration_digest: verified.tpe_configuration_digest.clone(),
+        tppe_version: verified.tppe_version.clone(),
+        tppe_configuration_digest: verified.tppe_configuration_digest.clone(),
         radial_law: RadialLaw::LogV1,
-        tpe_numeric: default_tppe_numeric(RadialLaw::LogV1),
+        tppe_numeric: default_tppe_numeric(RadialLaw::LogV1),
         address_contract_digest: default_address_contract_digest(),
         runtime_digest: ReplayContext::runtime_digest_for(),
     };
@@ -366,8 +366,8 @@ fn distillation_pipeline_survives_restart_and_reconciles_exactly() {
             phase,
             input_digest: verified.input_digest.clone(),
             output_digest: output,
-            tpe_version: verified.tpe_version.clone(),
-            tpe_configuration_digest: verified.tpe_configuration_digest.clone(),
+            tppe_version: verified.tppe_version.clone(),
+            tppe_configuration_digest: verified.tppe_configuration_digest.clone(),
             receipt_digest: digest_fields(
                 b"globalmind-distill-test-event-receipt-v1",
                 &[&ordinal.to_string(), verified.input_digest.as_str()],
@@ -557,7 +557,7 @@ fn distillation_pipeline_survives_restart_and_reconciles_exactly() {
     let report = format!(
         "distillation integration report\n\
          run_id={}\ninput_digest={}\nmodel=DistillModel rev-1 (temp stub artifact, real rehash)\n\
-         radial_law=log_v1 tpe_schedule=replay-v1\n\
+         radial_law=log_v1 tppe_schedule=replay-v1\n\
          candidates=5 passed=5 rejected=0\nrank0={} rank1={} rank2={} rank8={}\n\
          packets_written=5 atoms_written=2 steps_written=2 loops_written=1 charts_written=0\n\
          trajectory_digest={}\nreplay_receipt={}\noutput_digest={}\n\

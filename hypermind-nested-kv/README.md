@@ -29,7 +29,7 @@ alone is not a forward-pass certification.
 
 Universal cross-model recall applies to distilled **atoms and trajectories**:
 teacher fingerprints are append-only audit lineage, never a recall/rank key.
-Raw transformer K/V pages remain exact-model and exact-TPE cache entries.
+Raw transformer K/V pages remain exact-model and exact-TPPE cache entries.
 Migrations `0005` and `0006` add immutable admission/trajectory lineage and
 protect atom content, H3/T2 addresses, and migration digests from update.
 Startup checks the pinned migration digests and critical live field definitions.
@@ -126,7 +126,7 @@ DNHG sources are excluded from the competition evidence chain.
 
 - **Proof 1 — Euclidean model:** `map.read_euclid` returns flat R^dim rows
   (Poincare 3 + IDF-dir 3 + phase 2 + salience 1); self-cosine 1.0 live.
-  No hyperbolic math, no TPE knowledge required by the caller.
+  No hyperbolic math, no TPPE knowledge required by the caller.
 - **Historical file-mode proof — legacy string KV:** `map.kv_store`/
   `map.kv_fetch` snapshot round-trip. This is isolated to
   `HYPERMIND_SURREAL=off` and is not the transformer tensor-cache authority.

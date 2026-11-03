@@ -34,7 +34,7 @@ Nothing staged, committed, or pushed.
   rank-8 charts by tangent-bytes match to a real weight envelope,
   dense-dtype mapping (quantized fail closed), and mandatory
   marginal-gain/numerical receipts; emits a ReplayPassed trajectory.
-  Any identity drift (model, radial law, TPE config, address
+  Any identity drift (model, radial law, TPPE config, address
   contract, runtime, digest) is a miss via verify_bindings, never a
   conversion. upgrade_for_crystallization promotes to Crystallized.
 - src/replay/artifact.rs: immutable GMRW v1 walk artifact (inputs +

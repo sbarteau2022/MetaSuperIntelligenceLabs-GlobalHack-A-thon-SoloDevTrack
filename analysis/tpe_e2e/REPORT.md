@@ -1,17 +1,17 @@
-# TPE-vs-RoPE End-to-End Run Report (2026-11-01)
+# TPPE-vs-RoPE End-to-End Run Report (2026-11-01)
 
 ## Corpus (VERIFIED)
 REAL Qwen3-Embedding-8B DWQ `embed_tokens` lookups, 4 seqs N=15..19, dim 4096,
 head slice = first 64 dims, RMSNorm (eps 1e-6 per model config) pre-arm.
-Fixture: `analysis/tpe_e2e/frozen_hidden.json` (sha256 sidecar, verified OK at
+Fixture: `analysis/tppe_e2e/frozen_hidden.json` (sha256 sidecar, verified OK at
 bench startup: `2e98caa8...42bad2ca`).
 
 ## Prereg (condensed — full text in session)
-Arms: EXACT (causal softmax) / TPE (TpeState carrier + rank-5 scan) / ROPE
-(rotate-half, theta=1e6). Judges: J1 max rel TPE/EX <1.0; J2 mean TPE/RO >1e-6;
+Arms: EXACT (causal softmax) / TPPE (TpeState carrier + rank-5 scan) / ROPE
+(rotate-half, theta=1e6). Judges: J1 max rel TPPE/EX <1.0; J2 mean TPPE/RO >1e-6;
 J3 report RO/EX; J4 prefix-causality <1e-9.
 
-## Result (VERIFIED — `cargo run --offline --bin tpe_e2e`, exit 1)
+## Result (VERIFIED — `cargo run --offline --bin tppe_e2e`, exit 1)
 | seq | N  | J1 max  | J2 mean | J3 mean  | J4 max | verdict |
 |-----|----|---------|---------|----------|--------|---------|
 | 0   | 15 | 0.754   | 0.499   | 0.00249  | 0.0    | PASS    |

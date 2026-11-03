@@ -79,9 +79,9 @@ impl GlobalMindStore {
                     "state",
                     "replay_receipt_digest",
                     "address_contract_digest",
-                    "tpe_configuration_digest",
-                    "tpe_radial_law_digest",
-                    "tpe_boundary_receipt_digest",
+                    "tppe_configuration_digest",
+                    "tppe_radial_law_digest",
+                    "tppe_boundary_receipt_digest",
                 ][..],
             ),
             (
@@ -115,7 +115,7 @@ impl GlobalMindStore {
                     "model_digest",
                     "prefix_digest",
                     "tensor_contract_digest",
-                    "tpe_configuration_digest",
+                    "tppe_configuration_digest",
                 ][..],
             ),
             (
@@ -139,8 +139,8 @@ impl GlobalMindStore {
                     "ordinal",
                     "phase",
                     "input_digest",
-                    "tpe_version",
-                    "tpe_configuration_digest",
+                    "tppe_version",
+                    "tppe_configuration_digest",
                     "receipt_digest",
                 ][..],
             ),
@@ -160,12 +160,12 @@ impl GlobalMindStore {
                     "packet",
                     "admission",
                     "edge_crystallization",
-                    "tpe_radius_before",
-                    "tpe_radius_after",
-                    "tpe_revolutions_before",
-                    "tpe_revolutions_after",
-                    "tpe_boundary_margin_before",
-                    "tpe_boundary_margin_after",
+                    "tppe_radius_before",
+                    "tppe_radius_after",
+                    "tppe_revolutions_before",
+                    "tppe_revolutions_after",
+                    "tppe_boundary_margin_before",
+                    "tppe_boundary_margin_after",
                 ][..],
             ),
             (
@@ -255,16 +255,16 @@ impl GlobalMindStore {
             ));
         }
         query.push_str(&format!(
-            "CREATE {run} CONTENT {{ workspace: {workspace}, sources: [{sources}], method: {method}, configuration_digest: {configuration_digest}, input_digest: {input_digest}, tpe_version: {tpe_version}, tpe_configuration_digest: {tpe_configuration_digest}, output_digest: NONE, receipt_digest: {receipt_digest}, status: 'opened', started_at: time::now(), completed_at: NONE }} RETURN NONE; \
-             CREATE {event} CONTENT {{ workspace: {workspace}, run: {run}, ordinal: 0, phase: 'opened', input_digest: {input_digest}, tpe_version: {tpe_version}, tpe_configuration_digest: {tpe_configuration_digest}, output_digest: NONE, receipt_digest: {receipt_digest}, recorded_at: time::now() }} RETURN NONE; \
+            "CREATE {run} CONTENT {{ workspace: {workspace}, sources: [{sources}], method: {method}, configuration_digest: {configuration_digest}, input_digest: {input_digest}, tppe_version: {tppe_version}, tppe_configuration_digest: {tppe_configuration_digest}, output_digest: NONE, receipt_digest: {receipt_digest}, status: 'opened', started_at: time::now(), completed_at: NONE }} RETURN NONE; \
+             CREATE {event} CONTENT {{ workspace: {workspace}, run: {run}, ordinal: 0, phase: 'opened', input_digest: {input_digest}, tppe_version: {tppe_version}, tppe_configuration_digest: {tppe_configuration_digest}, output_digest: NONE, receipt_digest: {receipt_digest}, recorded_at: time::now() }} RETURN NONE; \
              COMMIT TRANSACTION;",
             run = record("distillation_run", &ingress.run_id),
             sources = source_records.join(", "),
             method = sq(&ingress.method),
             configuration_digest = sq(ingress.configuration_digest.as_str()),
             input_digest = sq(ingress.input_digest.as_str()),
-            tpe_version = sq(&ingress.tpe_version),
-            tpe_configuration_digest = sq(ingress.tpe_configuration_digest.as_str()),
+            tppe_version = sq(&ingress.tppe_version),
+            tppe_configuration_digest = sq(ingress.tppe_configuration_digest.as_str()),
             receipt_digest = sq(ingress.run_receipt_digest.as_str()),
             event = record("distillation_run_event", &ingress.opened_event_id),
         ));
@@ -290,16 +290,16 @@ impl GlobalMindStore {
             .join(", ");
         let query = format!(
             "BEGIN TRANSACTION; \
-             CREATE {run} CONTENT {{ workspace: {workspace}, sources: [{sources}], method: {method}, configuration_digest: {configuration_digest}, input_digest: {input_digest}, tpe_version: {tpe_version}, tpe_configuration_digest: {tpe_configuration_digest}, output_digest: NONE, receipt_digest: {receipt_digest}, status: 'opened', started_at: time::now(), completed_at: NONE }} RETURN NONE; \
-             CREATE {event} CONTENT {{ workspace: {workspace}, run: {run}, ordinal: 0, phase: 'opened', input_digest: {input_digest}, tpe_version: {tpe_version}, tpe_configuration_digest: {tpe_configuration_digest}, output_digest: NONE, receipt_digest: {receipt_digest}, recorded_at: time::now() }} RETURN NONE; \
+             CREATE {run} CONTENT {{ workspace: {workspace}, sources: [{sources}], method: {method}, configuration_digest: {configuration_digest}, input_digest: {input_digest}, tppe_version: {tppe_version}, tppe_configuration_digest: {tppe_configuration_digest}, output_digest: NONE, receipt_digest: {receipt_digest}, status: 'opened', started_at: time::now(), completed_at: NONE }} RETURN NONE; \
+             CREATE {event} CONTENT {{ workspace: {workspace}, run: {run}, ordinal: 0, phase: 'opened', input_digest: {input_digest}, tppe_version: {tppe_version}, tppe_configuration_digest: {tppe_configuration_digest}, output_digest: NONE, receipt_digest: {receipt_digest}, recorded_at: time::now() }} RETURN NONE; \
              COMMIT TRANSACTION;",
             run = record("distillation_run", &ingress.run_id),
             sources = source_records,
             method = sq(&ingress.method),
             configuration_digest = sq(ingress.configuration_digest.as_str()),
             input_digest = sq(ingress.input_digest.as_str()),
-            tpe_version = sq(&ingress.tpe_version),
-            tpe_configuration_digest = sq(ingress.tpe_configuration_digest.as_str()),
+            tppe_version = sq(&ingress.tppe_version),
+            tppe_configuration_digest = sq(ingress.tppe_configuration_digest.as_str()),
             receipt_digest = sq(ingress.run_receipt_digest.as_str()),
             event = record("distillation_run_event", &ingress.opened_event_id),
         );
@@ -416,7 +416,7 @@ impl GlobalMindStore {
 
     pub fn admit_trajectory(&self, trajectory: &Trajectory) -> Result<(), String> {
         trajectory.validate()?;
-        require_nonempty("tpe_version", &trajectory.tpe_version)?;
+        require_nonempty("tppe_version", &trajectory.tppe_version)?;
         self.require_run_phase(&trajectory.run, DistillationPhase::Replaying)?;
         self.require_atoms_exist(&trajectory.atoms)?;
         for step in &trajectory.steps {
@@ -461,17 +461,17 @@ impl GlobalMindStore {
             .ok_or_else(|| "crystallized trajectory receipt is missing".to_string())?;
         let mut query = format!(
             "
-             CREATE {id} CONTENT {{ workspace: {workspace}, atoms: [{atoms}], trajectory_digest: {trajectory_digest}, judge_receipt_digest: {judge_receipt}, minted_at: time::now(), run: {run}, tpe_version: {tpe_version}, tpe_configuration_digest: {tpe_configuration_digest}, tpe_radial_law_digest: {tpe_radial_law_digest}, tpe_boundary_receipt_digest: {tpe_boundary_receipt_digest}, address_contract_digest: {address_contract}, step_count: {step_count}, replay_receipt_digest: {replay_receipt}, crystallization_receipt_digest: {crystal}, state: {state} }} RETURN NONE; ",
+             CREATE {id} CONTENT {{ workspace: {workspace}, atoms: [{atoms}], trajectory_digest: {trajectory_digest}, judge_receipt_digest: {judge_receipt}, minted_at: time::now(), run: {run}, tppe_version: {tppe_version}, tppe_configuration_digest: {tppe_configuration_digest}, tppe_radial_law_digest: {tppe_radial_law_digest}, tppe_boundary_receipt_digest: {tppe_boundary_receipt_digest}, address_contract_digest: {address_contract}, step_count: {step_count}, replay_receipt_digest: {replay_receipt}, crystallization_receipt_digest: {crystal}, state: {state} }} RETURN NONE; ",
             id = record("distilled_trajectory", &trajectory.id),
             workspace = record("workspace", &trajectory.workspace),
             atoms = atom_records,
             trajectory_digest = sq(trajectory.trajectory_digest.as_str()),
             judge_receipt = sq(trajectory.judge_receipt_digest.as_str()),
             run = record("distillation_run", &trajectory.run),
-            tpe_version = sq(&trajectory.tpe_version),
-            tpe_configuration_digest = sq(trajectory.tpe_configuration_digest.as_str()),
-            tpe_radial_law_digest = sq(trajectory.tpe_radial_law_digest.as_str()),
-            tpe_boundary_receipt_digest = sq(trajectory.tpe_boundary_receipt_digest.as_str(),),
+            tppe_version = sq(&trajectory.tppe_version),
+            tppe_configuration_digest = sq(trajectory.tppe_configuration_digest.as_str()),
+            tppe_radial_law_digest = sq(trajectory.tppe_radial_law_digest.as_str()),
+            tppe_boundary_receipt_digest = sq(trajectory.tppe_boundary_receipt_digest.as_str(),),
             address_contract = sq(trajectory.address_contract_digest.as_str()),
             step_count = trajectory.steps.len(),
             replay_receipt = sq(trajectory.replay_receipt_digest.as_str()),
@@ -510,7 +510,7 @@ impl GlobalMindStore {
                 crystallization_receipt = sq(step.crystallization_receipt_digest.as_str()),
             ));
             query.push_str(&format!(
-                "CREATE {id} CONTENT {{ workspace: {workspace}, trajectory: {trajectory}, ordinal: {ordinal}, from_atom: {from_atom}, to_atom: {to_atom}, edge: {edge}, packet: {packet}, admission: {admission}, edge_crystallization: {edge_crystallization}, transition_kind: {kind}, t2_phase_before: [{before0:?}, {before1:?}], t2_phase_after: [{after0:?}, {after1:?}], tpe_radius_before: {radius_before:?}, tpe_radius_after: {radius_after:?}, tpe_revolutions_before: {revolutions_before}, tpe_revolutions_after: {revolutions_after}, tpe_boundary_margin_before: {margin_before:?}, tpe_boundary_margin_after: {margin_after:?}, action_digest: {action}, observation_digest: {observation}, transition_digest: {transition}, replay_receipt_digest: {replay}, created_at: time::now() }} RETURN NONE; ",
+                "CREATE {id} CONTENT {{ workspace: {workspace}, trajectory: {trajectory}, ordinal: {ordinal}, from_atom: {from_atom}, to_atom: {to_atom}, edge: {edge}, packet: {packet}, admission: {admission}, edge_crystallization: {edge_crystallization}, transition_kind: {kind}, t2_phase_before: [{before0:?}, {before1:?}], t2_phase_after: [{after0:?}, {after1:?}], tppe_radius_before: {radius_before:?}, tppe_radius_after: {radius_after:?}, tppe_revolutions_before: {revolutions_before}, tppe_revolutions_after: {revolutions_after}, tppe_boundary_margin_before: {margin_before:?}, tppe_boundary_margin_after: {margin_after:?}, action_digest: {action}, observation_digest: {observation}, transition_digest: {transition}, replay_receipt_digest: {replay}, created_at: time::now() }} RETURN NONE; ",
                 id = record("trajectory_step", &step.id),
                 workspace = record("workspace", &trajectory.workspace),
                 trajectory = record("distilled_trajectory", &trajectory.id),
@@ -529,12 +529,12 @@ impl GlobalMindStore {
                 before1 = step.t2_phase_before[1],
                 after0 = step.t2_phase_after[0],
                 after1 = step.t2_phase_after[1],
-                radius_before = step.tpe_radius_before,
-                radius_after = step.tpe_radius_after,
-                revolutions_before = step.tpe_revolutions_before,
-                revolutions_after = step.tpe_revolutions_after,
-                margin_before = step.tpe_boundary_margin_before,
-                margin_after = step.tpe_boundary_margin_after,
+                radius_before = step.tppe_radius_before,
+                radius_after = step.tppe_radius_after,
+                revolutions_before = step.tppe_revolutions_before,
+                revolutions_after = step.tppe_revolutions_after,
+                margin_before = step.tppe_boundary_margin_before,
+                margin_after = step.tppe_boundary_margin_after,
                 action = sq(step.action_digest.as_str()),
                 observation = sq(step.observation_digest.as_str()),
                 transition = sq(step.transition_digest.as_str()),
@@ -623,14 +623,14 @@ impl GlobalMindStore {
         if event.phase == DistillationPhase::Opened || event.ordinal == 0 {
             return Err("opened is created only by the ingress transaction".into());
         }
-        if event.tpe_version.trim().is_empty() {
+        if event.tppe_version.trim().is_empty() {
             return Err("distillation event TPPE version must be non-empty".into());
         }
         if event.phase == DistillationPhase::Completed && event.output_digest.is_none() {
             return Err("completed distillation event requires an output digest".into());
         }
         let rows = self.one(&format!(
-            "SELECT workspace, ordinal, phase, input_digest, tpe_version, tpe_configuration_digest FROM distillation_run_event WHERE run = {} ORDER BY ordinal DESC LIMIT 1;",
+            "SELECT workspace, ordinal, phase, input_digest, tppe_version, tppe_configuration_digest FROM distillation_run_event WHERE run = {} ORDER BY ordinal DESC LIMIT 1;",
             record("distillation_run", &event.run)
         ))?;
         let prior = rows
@@ -660,11 +660,12 @@ impl GlobalMindStore {
             != Some(record_ref("workspace", &event.workspace).as_str())
             || prior.get("input_digest").and_then(Value::as_str)
                 != Some(event.input_digest.as_str())
-            || prior.get("tpe_version").and_then(Value::as_str) != Some(event.tpe_version.as_str())
+            || prior.get("tppe_version").and_then(Value::as_str)
+                != Some(event.tppe_version.as_str())
             || prior
-                .get("tpe_configuration_digest")
+                .get("tppe_configuration_digest")
                 .and_then(Value::as_str)
-                != Some(event.tpe_configuration_digest.as_str())
+                != Some(event.tppe_configuration_digest.as_str())
         {
             return Err("distillation event identity drift".into());
         }
@@ -681,7 +682,7 @@ impl GlobalMindStore {
             .as_ref()
             .map_or_else(|| "NONE".into(), |digest| sq(digest.as_str()));
         format!(
-            "CREATE {id} CONTENT {{ workspace: {workspace}, run: {run}, ordinal: {ordinal}, phase: {phase}, input_digest: {input_digest}, output_digest: {output_digest}, tpe_version: {tpe_version}, tpe_configuration_digest: {tpe_configuration_digest}, receipt_digest: {receipt_digest}, recorded_at: time::now() }} RETURN NONE; ",
+            "CREATE {id} CONTENT {{ workspace: {workspace}, run: {run}, ordinal: {ordinal}, phase: {phase}, input_digest: {input_digest}, output_digest: {output_digest}, tppe_version: {tppe_version}, tppe_configuration_digest: {tppe_configuration_digest}, receipt_digest: {receipt_digest}, recorded_at: time::now() }} RETURN NONE; ",
             id = record("distillation_run_event", &event.id),
             workspace = record("workspace", &event.workspace),
             run = record("distillation_run", &event.run),
@@ -689,8 +690,8 @@ impl GlobalMindStore {
             phase = sq(event.phase.as_str()),
             input_digest = sq(event.input_digest.as_str()),
             output_digest = output_digest,
-            tpe_version = sq(&event.tpe_version),
-            tpe_configuration_digest = sq(event.tpe_configuration_digest.as_str()),
+            tppe_version = sq(&event.tppe_version),
+            tppe_configuration_digest = sq(event.tppe_configuration_digest.as_str()),
             receipt_digest = sq(event.receipt_digest.as_str()),
         )
     }
@@ -710,12 +711,12 @@ impl GlobalMindStore {
         charts: &[LocalJacobianChart],
     ) -> Result<(), String> {
         trajectory.validate()?;
-        require_nonempty("tpe_version", &trajectory.tpe_version)?;
+        require_nonempty("tppe_version", &trajectory.tppe_version)?;
         for event in events {
             if event.phase == DistillationPhase::Opened || event.ordinal == 0 {
                 return Err("crystallization events must extend the opened event".into());
             }
-            if event.tpe_version.trim().is_empty() {
+            if event.tppe_version.trim().is_empty() {
                 return Err("crystallization event TPPE version must be non-empty".into());
             }
         }
@@ -955,7 +956,7 @@ impl GlobalMindStore {
         session.validate()?;
         let query = format!(
             "BEGIN TRANSACTION; \
-             CREATE {id} CONTENT {{ workspace: {workspace}, model_id: {model_id}, model_revision: {model_revision}, model_digest: {model_digest}, request_digest: {request_digest}, prefix_digest: {prefix_digest}, dtype: {dtype}, layer_count: {layer_count}, kv_head_count: {kv_head_count}, head_dim: {head_dim}, geometry_space: {geometry_space}, toroidal_phase_encoder_version: {tpe_version}, tpe_configuration_digest: {tpe_configuration}, address_contract_digest: {address_contract}, tensor_contract_digest: {tensor_contract}, active: true, created_at: time::now(), closed_at: NONE }} RETURN NONE; \
+             CREATE {id} CONTENT {{ workspace: {workspace}, model_id: {model_id}, model_revision: {model_revision}, model_digest: {model_digest}, request_digest: {request_digest}, prefix_digest: {prefix_digest}, dtype: {dtype}, layer_count: {layer_count}, kv_head_count: {kv_head_count}, head_dim: {head_dim}, geometry_space: {geometry_space}, toroidal_phase_encoder_version: {tppe_version}, tppe_configuration_digest: {tppe_configuration}, address_contract_digest: {address_contract}, tensor_contract_digest: {tensor_contract}, active: true, created_at: time::now(), closed_at: NONE }} RETURN NONE; \
              COMMIT TRANSACTION;",
             id = record("transformer_kv_session", &session.id),
             workspace = record("workspace", &session.workspace),
@@ -969,8 +970,8 @@ impl GlobalMindStore {
             kv_head_count = session.kv_head_count,
             head_dim = session.head_dim,
             geometry_space = record("geometry_space", &session.geometry_space),
-            tpe_version = sq(&session.tpe_version),
-            tpe_configuration = sq(session.tpe_configuration_digest.as_str()),
+            tppe_version = sq(&session.tppe_version),
+            tppe_configuration = sq(session.tppe_configuration_digest.as_str()),
             address_contract = sq(session.address_contract_digest.as_str()),
             tensor_contract = sq(session.tensor_contract_digest.as_str()),
         );

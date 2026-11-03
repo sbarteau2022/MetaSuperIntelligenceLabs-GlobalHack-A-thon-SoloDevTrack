@@ -14,6 +14,7 @@ pub mod evaluator;
 pub mod evolution;
 pub mod fep;
 pub mod gate;
+pub mod globalmind_bridge;
 pub mod hear;
 pub mod json;
 pub mod judge;
@@ -67,6 +68,7 @@ pub use evolution::{
 };
 pub use fep::{FreeEnergyTerms, SessionBound, precision_update};
 pub use gate::{InformationNeed, ResearchRecord, dynamic_iteration_directive, research_gate};
+pub use globalmind_bridge::GlobalMindBridge;
 pub use hear::{CoordinationDecision, EngineRuntimeState, HearCoordinator, WorkflowIntent};
 pub use json::{
     Json, JsonError, parse as parse_json, parse_line as parse_json_line, write as write_json,

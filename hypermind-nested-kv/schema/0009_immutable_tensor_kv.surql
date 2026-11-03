@@ -19,7 +19,7 @@ DEFINE FIELD OVERWRITE toroidal_phase_encoder_version ON transformer_kv_session 
 DEFINE FIELD OVERWRITE address_contract_digest ON transformer_kv_session TYPE string READONLY;
 DEFINE FIELD OVERWRITE prefix_digest ON transformer_kv_session TYPE option<string> READONLY;
 DEFINE FIELD OVERWRITE tensor_contract_digest ON transformer_kv_session TYPE option<string> READONLY;
-DEFINE FIELD OVERWRITE tpe_configuration_digest ON transformer_kv_session TYPE option<string> READONLY;
+DEFINE FIELD OVERWRITE tppe_configuration_digest ON transformer_kv_session TYPE option<string> READONLY;
 DEFINE FIELD OVERWRITE created_at ON transformer_kv_session TYPE datetime DEFAULT time::now() READONLY;
 
 DEFINE FIELD OVERWRITE workspace ON transformer_kv_page TYPE record<workspace> READONLY;

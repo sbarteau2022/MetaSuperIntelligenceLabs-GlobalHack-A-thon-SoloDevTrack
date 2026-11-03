@@ -1,12 +1,11 @@
-import { forwardRef } from 'react'
-import type { HTMLAttributes } from 'react'
+import type { HTMLAttributes, Ref } from 'react'
 
 export interface GlassCardProps extends HTMLAttributes<HTMLDivElement> {
+  ref?: Ref<HTMLDivElement>
   padded?: boolean
 }
 
-export const GlassCard = forwardRef<HTMLDivElement, GlassCardProps>(
-  ({ padded = true, className = '', children, ...props }, ref) => {
+export const GlassCard = ({padded = true, className = '', children, ref, ...props }: GlassCardProps) => {
     return (
       <div
         ref={ref}
@@ -21,6 +20,5 @@ export const GlassCard = forwardRef<HTMLDivElement, GlassCardProps>(
       </div>
     )
   }
-)
 
 GlassCard.displayName = 'GlassCard'

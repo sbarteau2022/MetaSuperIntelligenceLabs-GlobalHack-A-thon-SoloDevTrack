@@ -27,8 +27,8 @@ DEFINE FIELD OVERWRITE sources ON distillation_run TYPE array<record<model_sourc
 DEFINE FIELD OVERWRITE method ON distillation_run TYPE string READONLY;
 DEFINE FIELD OVERWRITE configuration_digest ON distillation_run TYPE string READONLY;
 DEFINE FIELD OVERWRITE input_digest ON distillation_run TYPE string READONLY;
-DEFINE FIELD IF NOT EXISTS tpe_version ON distillation_run TYPE string READONLY;
-DEFINE FIELD IF NOT EXISTS tpe_configuration_digest ON distillation_run TYPE string READONLY;
+DEFINE FIELD IF NOT EXISTS tppe_version ON distillation_run TYPE string READONLY;
+DEFINE FIELD IF NOT EXISTS tppe_configuration_digest ON distillation_run TYPE string READONLY;
 DEFINE FIELD OVERWRITE output_digest ON distillation_run TYPE option<string> READONLY;
 DEFINE FIELD OVERWRITE receipt_digest ON distillation_run TYPE string READONLY;
 DEFINE FIELD OVERWRITE status ON distillation_run TYPE string
@@ -44,8 +44,8 @@ DEFINE FIELD IF NOT EXISTS ordinal ON distillation_run_event TYPE int ASSERT $va
 DEFINE FIELD IF NOT EXISTS phase ON distillation_run_event TYPE string
   ASSERT $value IN ['opened', 'extracting', 'judging', 'replaying', 'completed', 'failed', 'rejected'] READONLY;
 DEFINE FIELD IF NOT EXISTS input_digest ON distillation_run_event TYPE string READONLY;
-DEFINE FIELD IF NOT EXISTS tpe_version ON distillation_run_event TYPE string READONLY;
-DEFINE FIELD IF NOT EXISTS tpe_configuration_digest ON distillation_run_event TYPE string READONLY;
+DEFINE FIELD IF NOT EXISTS tppe_version ON distillation_run_event TYPE string READONLY;
+DEFINE FIELD IF NOT EXISTS tppe_configuration_digest ON distillation_run_event TYPE string READONLY;
 DEFINE FIELD IF NOT EXISTS output_digest ON distillation_run_event TYPE option<string> READONLY;
 DEFINE FIELD IF NOT EXISTS receipt_digest ON distillation_run_event TYPE string READONLY;
 DEFINE FIELD IF NOT EXISTS recorded_at ON distillation_run_event TYPE datetime DEFAULT time::now() READONLY;
@@ -56,6 +56,6 @@ DEFINE INDEX IF NOT EXISTS distillation_run_event_receipt_unique ON distillation
 
 -- A replayable trajectory is TPPE-bound. The receipts prove expanding-radius
 -- spiral behavior and boundary safety; the database does not infer them.
-DEFINE FIELD IF NOT EXISTS tpe_configuration_digest ON distilled_trajectory TYPE option<string> READONLY;
-DEFINE FIELD IF NOT EXISTS tpe_radial_law_digest ON distilled_trajectory TYPE option<string> READONLY;
-DEFINE FIELD IF NOT EXISTS tpe_boundary_receipt_digest ON distilled_trajectory TYPE option<string> READONLY;
+DEFINE FIELD IF NOT EXISTS tppe_configuration_digest ON distilled_trajectory TYPE option<string> READONLY;
+DEFINE FIELD IF NOT EXISTS tppe_radial_law_digest ON distilled_trajectory TYPE option<string> READONLY;
+DEFINE FIELD IF NOT EXISTS tppe_boundary_receipt_digest ON distilled_trajectory TYPE option<string> READONLY;

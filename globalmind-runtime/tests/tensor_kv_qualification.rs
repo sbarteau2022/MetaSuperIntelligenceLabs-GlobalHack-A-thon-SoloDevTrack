@@ -1,6 +1,6 @@
 use globalmind_runtime::{
-    Digest, GlobalMindStore, Manifest, RadialLaw, RecordId, StoreConfig, TensorDtype, TensorLayout,
-    TensorPage, TensorPayload, TensorSession, TppeConfig, TppeState,
+    Digest, ExactKvIdentity, GlobalMindStore, Manifest, RadialLaw, RecordId, StoreConfig,
+    TensorDtype, TensorLayout, TensorPage, TensorPayload, TensorSession, TppeConfig, TppeState,
 };
 use serde_json::Value;
 use std::fs::{self, File};
@@ -1154,8 +1154,8 @@ struct ExactKvIdentityQuery {
     request_digest: Digest,
     prefix_digest: Digest,
     tensor_contract_digest: Digest,
-    tpe_version: String,
-    tpe_configuration_digest: Digest,
+    tppe_version: String,
+    tppe_configuration_digest: Digest,
     address_contract_digest: Digest,
     geometry_space: RecordId,
     layer: u32,
@@ -1167,6 +1167,45 @@ struct ExactKvIdentityQuery {
     layout: TensorLayout,
     address: RecordId,
     phase_state_digest: Digest,
+}
+
+fn runtime_exact_identity(
+    q: &ExactKvIdentityQuery,
+    session: &RecordId,
+    page: &RecordId,
+    key_digest: &Digest,
+    value_digest: &Digest,
+) -> ExactKvIdentity {
+    ExactKvIdentity {
+        workspace: q.workspace.clone(),
+        session: session.clone(),
+        page: page.clone(),
+        model_id: q.model_id.clone(),
+        model_revision: q.model_revision.clone(),
+        model_digest: q.model_digest.clone(),
+        request_digest: q.request_digest.clone(),
+        prefix_digest: q.prefix_digest.clone(),
+        tppe_version: q.tppe_version.clone(),
+        tppe_configuration_digest: q.tppe_configuration_digest.clone(),
+        address_contract_digest: q.address_contract_digest.clone(),
+        tensor_contract_digest: q.tensor_contract_digest.clone(),
+        geometry_space: q.geometry_space.clone(),
+        dtype: q.dtype,
+        layer_count: NUM_LAYERS,
+        kv_head_count: KV_HEADS as u32,
+        head_dim: HEAD_DIM as u32,
+        layer: q.layer,
+        kv_head: q.kv_head,
+        token_start: q.token_start,
+        token_end: q.token_end,
+        tensor_shape: q.tensor_shape,
+        layout: q.layout,
+        address: q.address.clone(),
+        phase_state_digest: q.phase_state_digest.clone(),
+        revision: 1,
+        key_digest: key_digest.clone(),
+        value_digest: value_digest.clone(),
+    }
 }
 
 fn dtype_str(dtype: TensorDtype) -> &'static str {
@@ -1200,8 +1239,8 @@ fn lookup_tensor_page_strict(
          AND request_digest = {request_digest} \
          AND prefix_digest = {prefix_digest} \
          AND tensor_contract_digest = {tensor_contract_digest} \
-         AND toroidal_phase_encoder_version = {tpe_version} \
-         AND tpe_configuration_digest = {tpe_configuration_digest} \
+         AND toroidal_phase_encoder_version = {tppe_version} \
+         AND tppe_configuration_digest = {tppe_configuration_digest} \
          AND address_contract_digest = {address_contract_digest} \
          AND geometry_space = geometry_space:`{geometry_space}` \
          AND dtype = {dtype} LIMIT 1;",
@@ -1212,9 +1251,9 @@ fn lookup_tensor_page_strict(
         request_digest = serde_json::to_string(q.request_digest.as_str()).unwrap(),
         prefix_digest = serde_json::to_string(q.prefix_digest.as_str()).unwrap(),
         tensor_contract_digest = serde_json::to_string(q.tensor_contract_digest.as_str()).unwrap(),
-        tpe_version = serde_json::to_string(&q.tpe_version).unwrap(),
-        tpe_configuration_digest =
-            serde_json::to_string(q.tpe_configuration_digest.as_str()).unwrap(),
+        tppe_version = serde_json::to_string(&q.tppe_version).unwrap(),
+        tppe_configuration_digest =
+            serde_json::to_string(q.tppe_configuration_digest.as_str()).unwrap(),
         address_contract_digest =
             serde_json::to_string(q.address_contract_digest.as_str()).unwrap(),
         geometry_space = q.geometry_space.as_str(),
@@ -1321,13 +1360,13 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
         .ok_or_else(|| "manifest has no models".to_string())?;
     let model_digest = model_entry.roster_digest.clone();
 
-    let tpe_contract_bytes = fs::read(
+    let tppe_contract_bytes = fs::read(
         manifest_dir
             .join("contracts")
             .join("tppe-layer3-candidate-v2.contract"),
     )
-    .map_err(|e| format!("read tpe contract: {e}"))?;
-    let tpe_contract_file_digest = Digest::sha256(&tpe_contract_bytes);
+    .map_err(|e| format!("read tppe contract: {e}"))?;
+    let tppe_contract_file_digest = Digest::sha256(&tppe_contract_bytes);
 
     let tppe_config = TppeConfig {
         law: RadialLaw::LinearLogV1,
@@ -1339,7 +1378,7 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
         coupling_slow: 0.04,
     }
     .validate()?;
-    let tpe_configuration_digest = verified_manifest.tpe_configuration_digest.clone();
+    let tppe_configuration_digest = verified_manifest.tppe_configuration_digest.clone();
 
     let schema_0006_bytes = fs::read(
         repo_root
@@ -1406,7 +1445,7 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
     let surreal_rss_before_restart = process_rss_bytes(surreal_pid_before_restart);
 
     // =========================================================================
-    // GATE 1: Create exact TensorSession with model, prefix, tensor, TPE, and
+    // GATE 1: Create exact TensorSession with model, prefix, tensor, TPPE, and
     //         address contract digests.
     // =========================================================================
     let workspace_id = RecordId::parse("globalmind")?;
@@ -1426,8 +1465,8 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
         kv_head_count: KV_HEADS as u32,
         head_dim: HEAD_DIM as u32,
         geometry_space: geometry_space_id.clone(),
-        tpe_version: TPE_VERSION.into(),
-        tpe_configuration_digest: tpe_configuration_digest.clone(),
+        tppe_version: TPE_VERSION.into(),
+        tppe_configuration_digest: tppe_configuration_digest.clone(),
         address_contract_digest: address_contract_digest.clone(),
         tensor_contract_digest: tensor_contract_digest.clone(),
     };
@@ -1625,8 +1664,8 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
         request_digest: request_digest.clone(),
         prefix_digest: prefix_digest.clone(),
         tensor_contract_digest: tensor_contract_digest.clone(),
-        tpe_version: TPE_VERSION.into(),
-        tpe_configuration_digest: tpe_configuration_digest.clone(),
+        tppe_version: TPE_VERSION.into(),
+        tppe_configuration_digest: tppe_configuration_digest.clone(),
         address_contract_digest: address_contract_digest.clone(),
         geometry_space: geometry_space_id.clone(),
         layer: TARGET_FULL_ATTN_LAYER,
@@ -1642,6 +1681,18 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
 
     // Baseline exact identity query must HIT
     let baseline_hit = lookup_tensor_page_strict(&surreal, &store_after_restart, &base_query)?;
+    let base_runtime_query = runtime_exact_identity(
+        &base_query,
+        &session_id,
+        &page_ids[0],
+        &expected_key_digests[0],
+        &expected_val_digests[0],
+    );
+    let runtime_hit = store_after_restart.fetch_tensor_payload_exact(&base_runtime_query)?;
+    assert_eq!(
+        runtime_hit, baseline_hit,
+        "runtime exact lookup must match qualification witness"
+    );
     assert_eq!(
         Digest::sha256(&baseline_hit.key),
         expected_key_digests[0],
@@ -1671,11 +1722,11 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
         ("tensor_contract_digest", |q| {
             q.tensor_contract_digest = flip_first_hex_nibble(&q.tensor_contract_digest)
         }),
-        ("tpe_version", |q| {
-            q.tpe_version = "tppe-reference-v999".into()
+        ("tppe_version", |q| {
+            q.tppe_version = "tppe-reference-v999".into()
         }),
-        ("tpe_configuration_digest", |q| {
-            q.tpe_configuration_digest = flip_first_hex_nibble(&q.tpe_configuration_digest)
+        ("tppe_configuration_digest", |q| {
+            q.tppe_configuration_digest = flip_first_hex_nibble(&q.tppe_configuration_digest)
         }),
         ("address_contract_digest", |q| {
             q.address_contract_digest = flip_first_hex_nibble(&q.address_contract_digest)
@@ -1703,6 +1754,21 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
     for (field_name, mutate_fn) in mutations {
         let mut mutated = base_query.clone();
         mutate_fn(&mut mutated);
+        let runtime_mutated = runtime_exact_identity(
+            &mutated,
+            &session_id,
+            &page_ids[0],
+            &expected_key_digests[0],
+            &expected_val_digests[0],
+        );
+        if store_after_restart
+            .fetch_tensor_payload_exact(&runtime_mutated)
+            .is_ok()
+        {
+            return Err(format!(
+                "runtime exact lookup accepted mutated identity field `{field_name}`"
+            ));
+        }
         match lookup_tensor_page_strict(&surreal, &store_after_restart, &mutated) {
             Ok(_) => {
                 return Err(format!(
@@ -1842,13 +1908,13 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
     .unwrap();
     writeln!(
         &mut report,
-        "tpe_contract_file_sha256: {tpe_contract_file_digest}"
+        "tppe_contract_file_sha256: {tppe_contract_file_digest}"
     )
     .unwrap();
-    writeln!(&mut report, "tpe_version: {TPE_VERSION}").unwrap();
+    writeln!(&mut report, "tppe_version: {TPE_VERSION}").unwrap();
     writeln!(
         &mut report,
-        "tpe_configuration_digest: {tpe_configuration_digest}"
+        "tppe_configuration_digest: {tppe_configuration_digest}"
     )
     .unwrap();
     writeln!(

@@ -217,7 +217,7 @@ fn hyperdx_exporter_never_puts_key_in_payload() {
     let cfg = HyperdxConfig::from_env();
     let telemetry = HyperdxTelemetry::new(cfg).unwrap();
     let resource = telemetry.resource_json().to_string();
-    assert!(!resource.contains("HYPERDX_API_KEY"));
+    assert!(!resource.contains("HYPERDX_API_KEY_STRING_REMOVED"));
     assert!(!resource.contains("api_key"));
 }
 

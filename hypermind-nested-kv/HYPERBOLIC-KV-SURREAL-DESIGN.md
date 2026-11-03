@@ -54,7 +54,7 @@ a new receipted ingest is required.
    retrieval, or rank decisions. A twin-fingerprint behavioral receipt is
    required before claiming universal cross-model atom availability.
 3. Tensor reuse must compare exact model digest, tensor shape/layout/dtype,
-   TPE version, address contract, and K/V digests; a mismatch must be a miss.
+   TPPE version, address contract, and K/V digests; a mismatch must be a miss.
 4. Version startup must reject an unknown or drifted schema/contract digest;
    immutable historical provenance and trajectory revisions must survive
    migration and restart without overwrite.
@@ -84,7 +84,7 @@ lineage; it does not establish that an individual atom came from a teacher.
 **VERIFIED protocol boundary.** `DistillationProtocol/PROTOCOL.md` §8 requires
 teacher identity to remain out of atom coordinates, novelty, rank, and recall.
 Its separate no-cross-identity-KV rule means tensor page compatibility is an
-exact model/TPE contract, while atom/trajectory access is model independent.
+exact model/TPPE contract, while atom/trajectory access is model independent.
 The current HyperMind query tool accepts text/rank, not a teacher id; the
 required twin-fingerprint real-run receipt is still absent. Judge 2 is open.
 
@@ -187,7 +187,7 @@ it does not turn a model claim into evidence without a receipt.
 - `transformer_kv_next` records causal page continuation.
 - Tensor pages are a separate retrieval population: they are never embedded,
   distilled, or returned by semantic atom recall.
-- Cross-model reuse fails closed unless model, tensor, address-contract, and TPE
+- Cross-model reuse fails closed unless model, tensor, address-contract, and TPPE
   fingerprints match exactly.
 
 The authoritative nested KV is a transformer attention cache: binary K and V
@@ -226,7 +226,7 @@ to the inference runtime.
 | --- | --- | --- | --- |
 | `HYPERBOLIC-KV-SURREAL-DESIGN.md` | 1-241 | new | Architecture and rollout contract. |
 | `schema/0003_nested_hyperbolic_kv.surql` | 1-156 | new | Geometry and distillation provenance. |
-| `schema/0004_transformer_kv_tensor_pages.surql` | 1-80 | new | Binary layer/head tensor cache and TPE identity. |
+| `schema/0004_transformer_kv_tensor_pages.surql` | 1-80 | new | Binary layer/head tensor cache and TPPE identity. |
 | `src/main.rs` | startup and Surreal gates | modified | Single authority, hydration, and string-KV rejection. |
 | `src/surreal.rs` | authentication and hydration | modified | Root authentication and atom loading. |
 | `README.md` | authority sections | modified | Operator-facing tensor and harness boundary. |
@@ -258,7 +258,7 @@ namespace, database, authentication, and shadow/on mode.
 
 | Test File | Test Type | Coverage |
 | --- | --- | --- |
-| `schema/0004_transformer_kv_tensor_pages.surql` | live migration | Binary tensor/session/trajectory schema and TPE identity. |
+| `schema/0004_transformer_kv_tensor_pages.surql` | live migration | Binary tensor/session/trajectory schema and TPPE identity. |
 | Live MCP startup | integration | Hydrates 2,079 atoms with no `.hypermind` side store. |
 | Legacy KV call | adversarial | String-KV write is rejected in Surreal mode. |
 | Shadow startup | adversarial | Split-authority mode is rejected without creating `.hypermind`. |
@@ -290,7 +290,7 @@ transport remains unproven.
 | --- | --- |
 | Rollout strategy | Surreal-only authority; add native tensor transport behind fail-closed admission. |
 | Rollback plan | Revert migration/code from source backup; do not revive a parallel file authority. |
-| Monitoring | Compare tensor digests, model/TPE/address fingerprints, hits, and trajectory receipts. |
+| Monitoring | Compare tensor digests, model/TPPE/address fingerprints, hits, and trajectory receipts. |
 | Post-deploy validation | Real harness plugin run against persistent SurrealKV after restart. |
 
 # Next Stage of Implementation
@@ -298,7 +298,7 @@ transport remains unproven.
 | Next Step | Description | Depends On This? |
 | --- | --- | --- |
 | Native tensor API | Transfer K/V bytes outside JSON/MCP into the runtime hot path. | Yes |
-| Exact-match gate | Require model, layer/head shape, TPE, address, and tensor digests. | Yes |
+| Exact-match gate | Require model, layer/head shape, TPPE, address, and tensor digests. | Yes |
 | Restart/latency gate | Prove durable reuse, output parity, and forward-pass speedup. | Yes |
 | Harness certification | Bind exact HyperMind receipt digests into harness evidence. | Yes |
 | `r_12` definition | Specify executable action, representative, invariants, and tests. | No |

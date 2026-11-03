@@ -40,8 +40,8 @@ pub struct Manifest {
     pub workspace_slug: String,
     pub method: String,
     pub configuration_digest: Digest,
-    pub tpe_version: String,
-    pub tpe_configuration_digest: Digest,
+    pub tppe_version: String,
+    pub tppe_configuration_digest: Digest,
     pub models: Vec<ModelEntry>,
 }
 
@@ -72,8 +72,8 @@ pub struct VerifiedManifest {
     pub workspace: RecordId,
     pub method: String,
     pub configuration_digest: Digest,
-    pub tpe_version: String,
-    pub tpe_configuration_digest: Digest,
+    pub tppe_version: String,
+    pub tppe_configuration_digest: Digest,
     pub models: Vec<VerifiedModel>,
     pub input_digest: Digest,
     pub run_id: RecordId,
@@ -112,9 +112,9 @@ impl Manifest {
             return Err("manifest method must be non-empty".into());
         }
         let configuration_digest = Digest::parse(required(&pairs, "configuration_digest")?)?;
-        let tpe_version = required(&pairs, "tpe_version")?;
-        let tpe_configuration_digest =
-            Digest::parse(required(&pairs, "tpe_configuration_digest")?)?;
+        let tppe_version = required(&pairs, "tppe_version")?;
+        let tppe_configuration_digest =
+            Digest::parse(required(&pairs, "tppe_configuration_digest")?)?;
         let models = parse_models(&pairs)?;
         if models.is_empty() {
             return Err("manifest must list at least one model".into());
@@ -124,8 +124,8 @@ impl Manifest {
             workspace_slug,
             method,
             configuration_digest,
-            tpe_version,
-            tpe_configuration_digest,
+            tppe_version,
+            tppe_configuration_digest,
             models,
         })
     }
@@ -206,8 +206,8 @@ impl Manifest {
         let mut fields = vec![
             self.configuration_digest.as_str(),
             self.method.as_str(),
-            self.tpe_version.as_str(),
-            self.tpe_configuration_digest.as_str(),
+            self.tppe_version.as_str(),
+            self.tppe_configuration_digest.as_str(),
         ];
         fields.extend(verified.iter().map(|model| model.roster_digest.as_str()));
         let input_digest = digest_fields(b"globalmind-run-input-v1", &fields);
@@ -217,8 +217,8 @@ impl Manifest {
                 self.workspace.as_str(),
                 self.method.as_str(),
                 self.configuration_digest.as_str(),
-                self.tpe_version.as_str(),
-                self.tpe_configuration_digest.as_str(),
+                self.tppe_version.as_str(),
+                self.tppe_configuration_digest.as_str(),
                 input_digest.as_str(),
             ],
         );
@@ -226,8 +226,8 @@ impl Manifest {
             workspace: self.workspace.clone(),
             method: self.method.clone(),
             configuration_digest: self.configuration_digest.clone(),
-            tpe_version: self.tpe_version.clone(),
-            tpe_configuration_digest: self.tpe_configuration_digest.clone(),
+            tppe_version: self.tppe_version.clone(),
+            tppe_configuration_digest: self.tppe_configuration_digest.clone(),
             models: verified,
             input_digest: input_digest.clone(),
             run_id: RecordId::parse(format!("run_{}", input_digest.as_str()))?,
@@ -314,8 +314,8 @@ fn validate_manifest_keys(pairs: &BTreeMap<String, String>) -> Result<(), String
             "workspace"
                 | "method"
                 | "configuration_digest"
-                | "tpe_version"
-                | "tpe_configuration_digest"
+                | "tppe_version"
+                | "tppe_configuration_digest"
         ) {
             continue;
         }

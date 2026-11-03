@@ -45,7 +45,7 @@
 
 ## C05 / C12 / C25 / C30 + PreRegistrations (supporting stage)
 
-**GeometryClaimBoundary.md (C05) — CERTIFIED, stays.** The twistor-cohomology prohibition + finite-feature normative space + roadmap-vs-core boundary is the correct claim hygiene, consistent with the MATH FREEZE §10 non-normative clause and my TPE §3. No math asserted, none to fault; as a boundary document it is exactly right.
+**GeometryClaimBoundary.md (C05) — CERTIFIED, stays.** The twistor-cohomology prohibition + finite-feature normative space + roadmap-vs-core boundary is the correct claim hygiene, consistent with the MATH FREEZE §10 non-normative clause and my TPPE §3. No math asserted, none to fault; as a boundary document it is exactly right.
 
 **CachingMethodologyAndProofs.md + NestedHyperbolicCacheInTheMind.md (C12) — CERTIFIED WITH 1 CORRECTION, stays.** Theorems 1–7 are conditional proofs with stated assumptions (§4) and falsifiers (§5) — honest proof sketches, correctly labeled inferred/proposed. Correction: Theorem 5's "Recovery reconstructs … via gradient flow" must carry the F-C06-01/CORR-C06-01 qualifier (exact geometric reconstruction NOT guaranteed; capsule carries exactness). One sentence, register entry.
 
@@ -59,7 +59,7 @@
 
 ## Special-Ops fitness verdict (per file)
 
-STAY (no conditions): AdvAudit, ReasoningDistillationMapCarving (+cert), VaultMapDreamstateFormalization, TPE spec, Microkernel spec, Rerank key, Capacity doc, Capability doc, Density doc, TrajectoryToCapability pair, ValidationSnapshot, GeometryClaimBoundary, C30 trio, PreRegistrations README, Design.md/Claims_Register.md modifications.
+STAY (no conditions): AdvAudit, ReasoningDistillationMapCarving (+cert), VaultMapDreamstateFormalization, TPPE spec, Microkernel spec, Rerank key, Capacity doc, Capability doc, Density doc, TrajectoryToCapability pair, ValidationSnapshot, GeometryClaimBoundary, C30 trio, PreRegistrations README, Design.md/Claims_Register.md modifications.
 STAY AFTER FIX (blocking corrections registered above, all prereg/entry-level, none architectural): MethodAndMathSideBySide (M-1/M-2), ErrAndImprovements + MathProofs (P6 withdrawal + AA-02 calibration), CachingMethodology (F-C06-01 qualifier), DissolutionTransaction (XOR→SHA256), A39-v1 (v1.1 + attribution linker), A40 renumber (plugin binding → A44).
 CUT: nothing. Every staged file earns its place; the weakest item (ValidationSnapshot at creation) has now been independently corroborated.
 

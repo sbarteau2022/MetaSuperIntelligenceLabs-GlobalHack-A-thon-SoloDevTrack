@@ -52,8 +52,8 @@ fn verify_candidate_source_contract() -> Result<(), String> {
 
 fn verify_candidate_identity(verified: &VerifiedManifest) -> Result<(), String> {
     verify_candidate_source_contract()?;
-    if verified.tpe_version != TPPE_LAYER3_CANDIDATE_VERSION
-        || verified.tpe_configuration_digest
+    if verified.tppe_version != TPPE_LAYER3_CANDIDATE_VERSION
+        || verified.tppe_configuration_digest
             != Digest::sha256(TPPE_LAYER3_CANDIDATE_CONTRACT.as_bytes())
     {
         return Err("manifest TPPE identity does not match Layer-3 candidate runtime".into());
@@ -91,8 +91,8 @@ pub struct TraceProvenance {
     pub workspace: RecordId,
     pub method: String,
     pub configuration_digest: Digest,
-    pub tpe_version: String,
-    pub tpe_configuration_digest: Digest,
+    pub tppe_version: String,
+    pub tppe_configuration_digest: Digest,
     pub provider: String,
     pub model_name: String,
     pub revision: String,
@@ -389,8 +389,8 @@ pub fn produce_real_qwen36_trace(
         b"globalmind-runtime-substrate-v1",
         &[
             crate::PROJECTOR_VERSION,
-            verified.tpe_version.as_str(),
-            verified.tpe_configuration_digest.as_str(),
+            verified.tppe_version.as_str(),
+            verified.tppe_configuration_digest.as_str(),
             std::env::consts::OS,
             std::env::consts::ARCH,
         ],
@@ -508,8 +508,8 @@ pub fn produce_real_qwen36_trace(
         workspace: verified.workspace.clone(),
         method: verified.method.clone(),
         configuration_digest: verified.configuration_digest.clone(),
-        tpe_version: verified.tpe_version.clone(),
-        tpe_configuration_digest: verified.tpe_configuration_digest.clone(),
+        tppe_version: verified.tppe_version.clone(),
+        tppe_configuration_digest: verified.tppe_configuration_digest.clone(),
         provider: model.provider.clone(),
         model_name: model.name.clone(),
         revision: model.revision.clone(),
@@ -763,8 +763,8 @@ pub fn encode_provenance_payload(prov: &TraceProvenance) -> Vec<u8> {
     write_str(&mut out, prov.workspace.as_str());
     write_str(&mut out, &prov.method);
     out.extend_from_slice(&digest_to_bytes(&prov.configuration_digest));
-    write_str(&mut out, &prov.tpe_version);
-    out.extend_from_slice(&digest_to_bytes(&prov.tpe_configuration_digest));
+    write_str(&mut out, &prov.tppe_version);
+    out.extend_from_slice(&digest_to_bytes(&prov.tppe_configuration_digest));
     write_str(&mut out, &prov.provider);
     write_str(&mut out, &prov.model_name);
     write_str(&mut out, &prov.revision);
@@ -807,8 +807,8 @@ pub fn decode_provenance_payload(bytes: &[u8]) -> Result<TraceProvenance, String
     let workspace = RecordId::parse(cur.take_str()?)?;
     let method = cur.take_str()?;
     let configuration_digest = cur.take_digest()?;
-    let tpe_version = cur.take_str()?;
-    let tpe_configuration_digest = cur.take_digest()?;
+    let tppe_version = cur.take_str()?;
+    let tppe_configuration_digest = cur.take_digest()?;
     let provider = cur.take_str()?;
     let model_name = cur.take_str()?;
     let revision = cur.take_str()?;
@@ -850,8 +850,8 @@ pub fn decode_provenance_payload(bytes: &[u8]) -> Result<TraceProvenance, String
         workspace,
         method,
         configuration_digest,
-        tpe_version,
-        tpe_configuration_digest,
+        tppe_version,
+        tppe_configuration_digest,
         provider,
         model_name,
         revision,

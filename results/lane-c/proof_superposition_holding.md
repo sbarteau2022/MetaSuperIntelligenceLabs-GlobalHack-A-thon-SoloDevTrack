@@ -156,7 +156,7 @@ if let Some(winner) = survivors.first()
    - `atoms.len() == steps.len() + 1`
    - contiguous ordinals
    - `t2_phase` continuity
-   - `tpe_radius` monotonic
+   - `tppe_radius` monotonic
    - `boundary_margin > 0`
    - edge uniqueness
    - **and** `state = Crystallized` with valid `crystallization_receipt` (line 468).

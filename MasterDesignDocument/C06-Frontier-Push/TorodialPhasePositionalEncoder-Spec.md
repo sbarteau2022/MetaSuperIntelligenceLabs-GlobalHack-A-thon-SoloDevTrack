@@ -1,4 +1,4 @@
-# TorodialPhasePositionalEncoder (TPE) — RoPE's Hyperbolic Replacement
+# TorodialPhasePositionalEncoder (TPPE) — RoPE's Hyperbolic Replacement
 
 **Date.** 2026-10-27. **Author.** Muse (contributor lane), on steward's directive.
 **Status.** PROPOSED specification. **Parent.** Vault formalization (`VaultMapDreamstateFormalization.md` §7 staged this interface) + frozen math (`TorPhPoEnc/TwisterPhPE_Whitepaper_v4_1_MATH_FREEZE.md`, canonical; corpus copies verified byte-identical + 8-line extraction header).
@@ -46,9 +46,9 @@ The serving `torus.rs` implements the frozen recurrence EXACTLY:
 
 **Replaces** (PROPOSED, falsifiable): the *function* RoPE serves — position-dependent relative structure in attention — with a different *mechanism* (persistent dynamical phase + raised-cosine coherence + recurrent aggregation) satisfying: (i) relative displacement grows with separation (carrier term under C-Lock, exact path otherwise); (ii) decay with distance available (raised-cosine halves per half-period; no learned decay needed); (iii) linear-time causal evaluation with bounded state (§6: `O(nd)`, `3d_v` + O(1)).
 
-**Does NOT claim** (adopted from freeze §1/§8/§12 + dhng scope boundary): algebraic equivalence to RoPE; transformer parity without bakeoff; Penrose derivation; cotangent/symplectic necessity; constant-total-storage; IR-geometry results transfer (dhng_lattice is a separate paper — cited only for shared H³×T² address language, never as evidence for TPE behavior).
+**Does NOT claim** (adopted from freeze §1/§8/§12 + dhng scope boundary): algebraic equivalence to RoPE; transformer parity without bakeoff; Penrose derivation; cotangent/symplectic necessity; constant-total-storage; IR-geometry results transfer (dhng_lattice is a separate paper — cited only for shared H³×T² address language, never as evidence for TPPE behavior).
 
-**Falsifier.** [PROPOSED] Angle-only ablation (freeze core as-is) vs triple-channel TPE (§4) on the fixed corpus: if no task/latency/energy delta at equal budget, the extra channels ship OFF (C13.1) and the replacement claim reduces to "linear-time RoPE-class alternative," still falsifiable by bakeoff.
+**Falsifier.** [PROPOSED] Angle-only ablation (freeze core as-is) vs triple-channel TPPE (§4) on the fixed corpus: if no task/latency/energy delta at equal budget, the extra channels ship OFF (C13.1) and the replacement claim reduces to "linear-time RoPE-class alternative," still falsifiable by bakeoff.
 
 ---
 
@@ -61,7 +61,7 @@ The freeze core is rotation-only (phases advance; radius is implicit). The servi
 Claim: `r` is strictly increasing (spiral-out) and sublinear-asymptotic (no blowup). Proof: `dr/dw = span·(0.35 + 0.65/(1+w)) > 0 ∀w ≥ 0` ✓; `r(w)/w → 0.35·span` linear-dominated early (escape), `ln` term dominates marginally late (bounded growth, never exponential) ✓. A corkscrew (`r = const`) is ruled out by the vault's own expansion test (radius strictly increases every turn — VERIFIED test read). The constants (0.35/0.65) are PREREGISTERED implementation constants (amendment rule per C09.9), not derived optima.
 
 **4.2 Rapidity law (adopts vault `rapidity_for_state`, bounds it).**
-`η = 0.22 + 0.38·w + 0.28·amp + 0.20·ln(1+rms)`. Claim: monotone in `(w, amp)` jointly (both coefficients positive) ✓; rms term bounded by log (energy spikes cannot detonate η) ✓. Interaction with my F-1 (fold kink at |η| = 11.5): the TPE spec REQUIRES the kink documented in the run manifest whenever η crosses 11.5 during a trajectory (deterministic given the law — no surprise), plus the F-1 fix (test/smooth-or-gate) before any bakeoff cites η-driven distances.
+`η = 0.22 + 0.38·w + 0.28·amp + 0.20·ln(1+rms)`. Claim: monotone in `(w, amp)` jointly (both coefficients positive) ✓; rms term bounded by log (energy spikes cannot detonate η) ✓. Interaction with my F-1 (fold kink at |η| = 11.5): the TPPE spec REQUIRES the kink documented in the run manifest whenever η crosses 11.5 during a trajectory (deterministic given the law — no surprise), plus the F-1 fix (test/smooth-or-gate) before any bakeoff cites η-driven distances.
 
 **4.3 Amplitude channel (adopts vault `PhaseState.amplitude`, states its semantics).**
 `amp ← amp + arc_step + drive_mod`, monotone non-decreasing. Semantics (PROPOSED, locked by this spec): amplitude is *accumulated drive energy*, NOT confidence and NOT salience — it feeds radius (`+0.05·amp` shell term) and η (`0.28·amp`), never attention weights directly. Any future use of amplitude as a score multiplier requires a new prereg (it would break the freeze's unnormalized-core honesty).
@@ -78,7 +78,7 @@ Reductions (proof of backward compatibility): `τ_r, τ_a → ∞` recovers free
 
 ## 5. Implementation gate (adopts freeze §11, adds spiral-specific tests)
 
-Freeze gates 1–10 stand unchanged (phase identity, lock-error, lock regimes, telescoping, 2π-invariance, feature-map identity, quadratic-vs-recurrent equivalence, unlocked trajectories, long-horizon numerics, linear scaling). ADDED for TPE (PROPOSED, must pass before bakeoff):
+Freeze gates 1–10 stand unchanged (phase identity, lock-error, lock regimes, telescoping, 2π-invariance, feature-map identity, quadratic-vs-recurrent equivalence, unlocked trajectories, long-horizon numerics, linear scaling). ADDED for TPPE (PROPOSED, must pass before bakeoff):
 
 11. **Spiral monotonicity**: `r(w)` strictly increasing over 10³ rotations; `dr/dw` matches analytic form to Q32_31 precision.
 12. **No-corkscrew**: radius variance across a trajectory exceeds fixed-point noise floor by ≥ 10³× (constant-radius implementation FAILS).
@@ -90,11 +90,11 @@ Freeze gates 1–10 stand unchanged (phase identity, lock-error, lock regimes, t
 
 ## 6. Register entries (append — owning agent; none applied here)
 
-1. Preregister TPE bakeoff (angle-only vs triple, §3 falsifier + §5 gates 11–15) with filed hash (C11.3).
+1. Preregister TPPE bakeoff (angle-only vs triple, §3 falsifier + §5 gates 11–15) with filed hash (C11.3).
 2. Preregister `(τ_r, τ_a)` + (0.35/0.65, rapidity coefficients) as implementation constants with amendment rule (C09.9).
 3. File F-1 kink fix/test; file F-3 `retained_5d` relabel (carried from formalization §8).
-4. Extend MethodAndMath side-by-side with the PhaseSource-duality row's TPE successor (M-4 → triple-channel row) once §4.4 runs.
-5. dhng_lattice stays OUT of the TPE evidence chain (scope boundary reaffirmed — shared address language only).
+4. Extend MethodAndMath side-by-side with the PhaseSource-duality row's TPPE successor (M-4 → triple-channel row) once §4.4 runs.
+5. dhng_lattice stays OUT of the TPPE evidence chain (scope boundary reaffirmed — shared address language only).
 
 ## What was NOT checked
 

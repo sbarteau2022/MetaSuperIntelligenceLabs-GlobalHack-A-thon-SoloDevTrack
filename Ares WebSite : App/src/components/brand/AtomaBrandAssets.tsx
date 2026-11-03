@@ -3,7 +3,7 @@ import React from 'react';
 /**
  * Signature Atoma Geodesic Truss + Interlocking Gyroscopic Rings Logo Mark
  * Inspired directly by QGh3P.jpg: machined octahedral/triangular truss core
- * encircled by three interlocking brushed-titanium gyroscopic rings with a cyan-blue rim arc.
+ * encircled by three interlocking brushed-titanium gyroscopic rings with a amber rim arc.
  */
 export const AtomaLogoMark: React.FC<{ className?: string; glow?: boolean }> = ({
   className = 'w-8 h-8',
@@ -19,13 +19,13 @@ export const AtomaLogoMark: React.FC<{ className?: string; glow?: boolean }> = (
     <defs>
       <linearGradient id="atoma-gyro-silver" x1="6" y1="4" x2="42" y2="44" gradientUnits="userSpaceOnUse">
         <stop offset="0%" stopColor="#ffffff" />
-        <stop offset="48%" stopColor="#cbd5e1" />
-        <stop offset="100%" stopColor="#475569" />
+        <stop offset="48%" stopColor="#a1a1aa" />
+        <stop offset="100%" stopColor="#52525b" />
       </linearGradient>
-      <linearGradient id="atoma-gyro-cyan" x1="20" y1="4" x2="44" y2="26" gradientUnits="userSpaceOnUse">
-        <stop offset="0%" stopColor="#7dd3fc" />
-        <stop offset="50%" stopColor="#38bdf8" />
-        <stop offset="100%" stopColor="#64748b" />
+      <linearGradient id="atoma-gyro-amber" x1="20" y1="4" x2="44" y2="26" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stopColor="#fbbf24" />
+        <stop offset="50%" stopColor="#f59e0b" />
+        <stop offset="100%" stopColor="#71717a" />
       </linearGradient>
     </defs>
 
@@ -36,7 +36,7 @@ export const AtomaLogoMark: React.FC<{ className?: string; glow?: boolean }> = (
       rx="20"
       ry="9.5"
       transform="rotate(-34 24 24)"
-      stroke="url(#atoma-gyro-cyan)"
+      stroke="url(#atoma-gyro-amber)"
       strokeWidth="2.4"
     />
     <ellipse
@@ -53,7 +53,7 @@ export const AtomaLogoMark: React.FC<{ className?: string; glow?: boolean }> = (
       cy="26"
       rx="18.5"
       ry="7.5"
-      stroke="#64748b"
+      stroke="#71717a"
       strokeWidth="1.8"
       strokeOpacity="0.85"
     />
@@ -61,7 +61,7 @@ export const AtomaLogoMark: React.FC<{ className?: string; glow?: boolean }> = (
     {/* Central Geodesic Triangular Truss Core ('A' Apex) */}
     <polygon
       points="24,8 12,31 36,31"
-      fill="#0b111c"
+      fill="#26262b"
       stroke="url(#atoma-gyro-silver)"
       strokeWidth="2.2"
       strokeLinejoin="round"
@@ -69,20 +69,20 @@ export const AtomaLogoMark: React.FC<{ className?: string; glow?: boolean }> = (
     {/* Inverted inner triangle forming the octahedral truss */}
     <polygon
       points="17.5,20 30.5,20 24,33"
-      fill="#111a2b"
-      stroke="#cbd5e1"
+      fill="#34343a"
+      stroke="#e4e4e7"
       strokeWidth="1.6"
       strokeLinejoin="round"
     />
 
-    {/* Glowing Cyan-Blue Rim Highlight & Core */}
+    {/* Glowing Amber Rim Highlight & Core */}
     {glow && (
       <circle
         cx="24"
         cy="23.5"
         r="2.6"
-        fill="#38bdf8"
-        style={{ filter: 'drop-shadow(0 0 6px rgba(56, 189, 248, 0.95))' }}
+        fill="#f59e0b"
+        style={{ filter: 'drop-shadow(0 0 6px rgba(245, 158, 11, 0.95))' }}
       />
     )}
   </svg>
@@ -90,7 +90,7 @@ export const AtomaLogoMark: React.FC<{ className?: string; glow?: boolean }> = (
 
 export const AtomaAgentBadge: React.FC<{ className?: string }> = ({ className = 'w-6 h-6' }) => (
   <span
-    className={`inline-flex items-center justify-center rounded-full bg-[#0d1624] border border-[#389cff]/40 shadow-[0_0_12px_rgba(56,156,255,0.35)] ${className}`}
+    className={`inline-flex items-center justify-center rounded-full bg-[#2e2e33] border border-[#f59e0b]/40 shadow-[0_0_12px_rgba(245,158,11,0.35)] ${className}`}
   >
     <AtomaLogoMark className="w-4 h-4" glow={false} />
   </span>
@@ -106,10 +106,10 @@ export const AtomaBrandLockup: React.FC<{
   >
     <AtomaLogoMark className="w-9 h-9 transition-transform duration-300 group-hover:rotate-12 group-hover:scale-105" />
     <div className="flex flex-col leading-none">
-      <span className="font-display font-bold text-[15px] tracking-[0.22em] text-[#f5f7fa]">
+      <span className="font-display font-bold text-[15px] tracking-[0.22em] text-white">
         ATOMA
       </span>
-      <span className="font-mono text-[9px] tracking-[0.28em] text-[#9ba5b4] mt-1">
+      <span className="font-mono text-[9px] tracking-[0.28em] text-[#71717a] mt-1">
         {subtitle}
       </span>
     </div>
@@ -168,13 +168,13 @@ export const BranchingWorkflowConceptSVG: React.FC<{
       <svg viewBox="0 0 580 400" className="w-full h-auto overflow-visible select-none">
         <defs>
           <linearGradient id="ares-flow-line" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#389cff" stopOpacity="0.95" />
+            <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.95" />
             <stop offset="50%" stopColor="#60a5fa" stopOpacity="0.8" />
-            <stop offset="100%" stopColor="#389cff" stopOpacity="0.95" />
+            <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.95" />
           </linearGradient>
           <radialGradient id="node-blue-glow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#389cff" stopOpacity="0.35" />
-            <stop offset="100%" stopColor="#389cff" stopOpacity="0" />
+            <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
           </radialGradient>
         </defs>
 
@@ -209,7 +209,7 @@ export const BranchingWorkflowConceptSVG: React.FC<{
                 height="56"
                 rx="14"
                 fill="#0c1017"
-                stroke={isSelected ? '#389cff' : 'rgba(201,207,215,0.28)'}
+                stroke={isSelected ? '#f59e0b' : 'rgba(201,207,215,0.28)'}
                 strokeWidth={isSelected ? '2' : '1.2'}
               />
               {idx === 0 && (
@@ -234,7 +234,7 @@ export const BranchingWorkflowConceptSVG: React.FC<{
                   width="18"
                   height="18"
                   rx="3"
-                  stroke="#389cff"
+                  stroke="#f59e0b"
                   strokeWidth="1.8"
                   fill="rgba(56,156,255,0.15)"
                 />
@@ -256,7 +256,7 @@ export const BranchingWorkflowConceptSVG: React.FC<{
                   width="16"
                   height="22"
                   rx="2"
-                  stroke="#389cff"
+                  stroke="#f59e0b"
                   strokeWidth="1.8"
                   fill="rgba(56,156,255,0.15)"
                 />

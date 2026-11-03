@@ -108,7 +108,7 @@ surprise as distinct quantities.
 
 - `MasterDesignDocument/C12-Server-Inference-Engine/FreshExecutionAndMindDesign.md`
   - Fresh runtime preregistration.
-  - One hub/twelve wells, Active Inference, TPE, tensor K/V, adaptive forward,
+  - One hub/twelve wells, Active Inference, TPPE, tensor K/V, adaptive forward,
     Superposition Holding, quarantine, and acceptance gates.
 - `hypermind-nested-kv/GLOBALMIND-SURREAL-INTEGRATION.md`
   - Persistent admission lifecycle, recall eligibility, failure rules,
@@ -229,7 +229,7 @@ Use one real model forward pass and its actual layer/head K/V tensors.
 
 Required gates:
 
-1. Create exact `TensorSession` with model, prefix, tensor, TPE, and address
+1. Create exact `TensorSession` with model, prefix, tensor, TPPE, and address
    contract digests.
 2. Write one actual `TensorPage` with correct shape/dtype/layout and SHA-256.
 3. Restart SurrealDB/runtime.
@@ -727,7 +727,7 @@ isolated SurrealDB. Never edit the current candidate manifest in place; create
 Walk admitted rank-1 transitions in order, verify endpoint and TPPE continuity,
 prove every rank-2 loop closes, reconstruct rank-0 atoms, validate rank-8
 charts, and rerun after process restart. Emit one immutable walk artifact and
-replay receipt. A different model, radial law, TPE configuration, address
+replay receipt. A different model, radial law, TPPE configuration, address
 contract, runtime, or digest is a miss—not a conversion.
 
 ### 6. `crystallize`

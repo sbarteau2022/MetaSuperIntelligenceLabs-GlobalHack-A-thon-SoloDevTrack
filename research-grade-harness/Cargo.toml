@@ -19,6 +19,7 @@ thiserror = "1.0"
 # receipts, plans, packets, session events are native Rust structs.
 # Serialization boundary (if ever needed) is bincode, never JSON.
 sha2 = "0.10"
+globalmind-runtime = { path = "../globalmind-runtime" }
 hex = "0.4"
 rand = "0.8"
 rusqlite = { version = "0.37", features = ["bundled"] }

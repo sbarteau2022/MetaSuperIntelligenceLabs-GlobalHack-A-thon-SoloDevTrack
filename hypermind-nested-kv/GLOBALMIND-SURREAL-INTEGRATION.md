@@ -42,7 +42,7 @@ That made the intended integration representable only in prose.
 
 Migration `0007` adds immutable records around the existing graph. It separates
 semantic memory from model-specific tensor cache pages while allowing both to
-share the same address, well, TPE, and trajectory identifiers. Existing rows
+share the same address, well, TPPE, and trajectory identifiers. Existing rows
 remain valid historical data but are not recall-admissible under this contract.
 
 # Research Question and Acceptance Criteria
@@ -62,7 +62,7 @@ must write transactionally and what the runtime may recall.
 3. Every admitted trajectory has ordered typed steps and a replay receipt.
 4. A rank-2 claim has an explicit loop record and closure receipt.
 5. Rank-8 charts store binary tangent data and marginal-gain evidence.
-6. Tensor pages bind to exact model/TPE/address contracts and remain outside
+6. Tensor pages bind to exact model/TPPE/address contracts and remain outside
    semantic atom recall.
 7. Legacy/quarantined records are not silently upgraded or overwritten.
 
@@ -150,7 +150,7 @@ drift, or quarantined database target yields zero writes. Later lifecycle
 changes append run events; they never update an earlier receipt. The opened
 event is ingress evidence only and cannot be reported as distillation.
 
-Every run and trajectory is bound to TPPE/TPE: dynamic toroidal phase with a
+Every run and trajectory is bound to TPPE/TPPE: dynamic toroidal phase with a
 radius that expands per revolution. Constant-radius corkscrew behavior is
 invalid. Replay must reject a different encoder version/configuration, radius
 regression, non-finite state, Lorentz-sheet invariant failure, or ideal-boundary
@@ -164,13 +164,13 @@ constant-radius fallback while the Rust encoder and hardware gates remain open.
 immutable address, at least one `atom_crystallization`, and a judge-passed
 packet. Trajectory recall additionally requires `state = crystallized`, a
 non-empty replay receipt, contiguous step ordinals, matching endpoints, and
-the current TPE/address contract. Audit lineage may be returned after ranking
+the current TPPE/address contract. Audit lineage may be returned after ranking
 but cannot participate in coordinate projection, rank, novelty, or recall.
 
 ## Tensor K/V integration
 
 **[PROPOSED]** The runtime creates `transformer_kv_session` only after exact
-model digest, tensor shape, prefix, TPE configuration, and address contract
+model digest, tensor shape, prefix, TPPE configuration, and address contract
 match. A page binds to one immutable address and may bind to its classified
 well and crystallized trajectory. Any mismatch is a miss. Page bytes are never
 embedded, distilled into atoms, or returned by semantic recall.

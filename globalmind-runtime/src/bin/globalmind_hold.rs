@@ -600,8 +600,8 @@ fn bridge_manifest(
             b"globalmind-bridge-configuration-v1",
             &[verified.configuration_digest.as_str()],
         ),
-        tpe_version: verified.tpe_version.clone(),
-        tpe_configuration_digest: verified.tpe_configuration_digest.clone(),
+        tppe_version: verified.tppe_version.clone(),
+        tppe_configuration_digest: verified.tppe_configuration_digest.clone(),
         models: vec![globalmind_runtime::ModelEntry {
             provider: model.provider.clone(),
             name: model.name.clone(),
@@ -739,8 +739,8 @@ fn append_event(
         phase,
         input_digest: verified.input_digest.clone(),
         output_digest,
-        tpe_version: verified.tpe_version.clone(),
-        tpe_configuration_digest: verified.tpe_configuration_digest.clone(),
+        tppe_version: verified.tppe_version.clone(),
+        tppe_configuration_digest: verified.tppe_configuration_digest.clone(),
         receipt_digest: receipt,
     })
 }

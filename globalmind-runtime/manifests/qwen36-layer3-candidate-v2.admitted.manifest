@@ -4,8 +4,8 @@
 workspace = globalmind
 method = fresh-globalmind-distillation-v1
 configuration_digest = abd24302c897da5d3c7eb3043821bd18ddf206e3046e89c15ffc33bd97bd5523
-tpe_version = tppe-layer3-candidate-v2
-tpe_configuration_digest = 8b50715ac84650d9d1333757da82d382537591d74b4a0c016fbf2d79768ae456
+tppe_version = tppe-layer3-candidate-v2
+tppe_configuration_digest = fc23e8dd6e9630080b57ad57d6d7d97852bc7df08e9c9d77538dd94f0f226dbc
 
 model.0.provider = stamsam
 model.0.name = Qwen3.6-35B-A3B-Claude-4.7-Opus-Reasoning-Distilled-MLX-oQ4-MTP

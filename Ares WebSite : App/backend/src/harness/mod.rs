@@ -19,8 +19,10 @@
 //! Qdrant (research RAG, session summaries, and searchable memories),
 //! secrets resolved at call time from 0600 `secrets.env`, never serialized.
 
+pub mod baseline;
 pub mod mission;
 pub mod qdrant_memory;
 pub mod runtime;
 pub mod telemetry;
-pub mod tpe;
+pub mod tppe;
+pub mod tppe_memory;

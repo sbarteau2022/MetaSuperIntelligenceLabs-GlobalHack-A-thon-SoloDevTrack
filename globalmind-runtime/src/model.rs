@@ -235,12 +235,12 @@ pub struct TrajectoryStep {
     pub revision: u32,
     pub t2_phase_before: [f64; 2],
     pub t2_phase_after: [f64; 2],
-    pub tpe_radius_before: f64,
-    pub tpe_radius_after: f64,
-    pub tpe_revolutions_before: u64,
-    pub tpe_revolutions_after: u64,
-    pub tpe_boundary_margin_before: f64,
-    pub tpe_boundary_margin_after: f64,
+    pub tppe_radius_before: f64,
+    pub tppe_radius_after: f64,
+    pub tppe_revolutions_before: u64,
+    pub tppe_revolutions_after: u64,
+    pub tppe_boundary_margin_before: f64,
+    pub tppe_boundary_margin_after: f64,
     pub action_digest: Digest,
     pub observation_digest: Digest,
     pub transition_digest: Digest,
@@ -276,10 +276,10 @@ pub struct Trajectory {
     pub atoms: Vec<RecordId>,
     pub trajectory_digest: Digest,
     pub judge_receipt_digest: Digest,
-    pub tpe_version: String,
-    pub tpe_configuration_digest: Digest,
-    pub tpe_radial_law_digest: Digest,
-    pub tpe_boundary_receipt_digest: Digest,
+    pub tppe_version: String,
+    pub tppe_configuration_digest: Digest,
+    pub tppe_radial_law_digest: Digest,
+    pub tppe_boundary_receipt_digest: Digest,
     pub address_contract_digest: Digest,
     pub replay_receipt_digest: Digest,
     pub crystallization_receipt_digest: Option<Digest>,
@@ -325,20 +325,20 @@ impl Trajectory {
             if index > 0 && self.steps[index - 1].t2_phase_after != step.t2_phase_before {
                 return Err("trajectory TPPE phase state is discontinuous".into());
             }
-            if !step.tpe_radius_before.is_finite()
-                || !step.tpe_radius_after.is_finite()
-                || step.tpe_radius_before < 0.0
-                || step.tpe_radius_after < step.tpe_radius_before
-                || step.tpe_revolutions_after < step.tpe_revolutions_before
-                || !step.tpe_boundary_margin_before.is_finite()
-                || !step.tpe_boundary_margin_after.is_finite()
-                || step.tpe_boundary_margin_before <= 0.0
-                || step.tpe_boundary_margin_after <= 0.0
+            if !step.tppe_radius_before.is_finite()
+                || !step.tppe_radius_after.is_finite()
+                || step.tppe_radius_before < 0.0
+                || step.tppe_radius_after < step.tppe_radius_before
+                || step.tppe_revolutions_after < step.tppe_revolutions_before
+                || !step.tppe_boundary_margin_before.is_finite()
+                || !step.tppe_boundary_margin_after.is_finite()
+                || step.tppe_boundary_margin_before <= 0.0
+                || step.tppe_boundary_margin_after <= 0.0
             {
                 return Err("trajectory TPPE radial/boundary state is invalid".into());
             }
-            if step.tpe_revolutions_after > step.tpe_revolutions_before
-                && step.tpe_radius_after <= step.tpe_radius_before
+            if step.tppe_revolutions_after > step.tppe_revolutions_before
+                && step.tppe_radius_after <= step.tppe_radius_before
             {
                 return Err("TPPE radius must expand when revolution count advances".into());
             }
@@ -526,8 +526,8 @@ pub struct DistillationRunEvent {
     pub phase: DistillationPhase,
     pub input_digest: Digest,
     pub output_digest: Option<Digest>,
-    pub tpe_version: String,
-    pub tpe_configuration_digest: Digest,
+    pub tppe_version: String,
+    pub tppe_configuration_digest: Digest,
     pub receipt_digest: Digest,
 }
 
@@ -876,8 +876,8 @@ pub struct TensorSession {
     pub kv_head_count: u32,
     pub head_dim: u32,
     pub geometry_space: RecordId,
-    pub tpe_version: String,
-    pub tpe_configuration_digest: Digest,
+    pub tppe_version: String,
+    pub tppe_configuration_digest: Digest,
     pub address_contract_digest: Digest,
     pub tensor_contract_digest: Digest,
 }
@@ -887,7 +887,7 @@ impl TensorSession {
         for (field, value) in [
             ("model_id", self.model_id.as_str()),
             ("model_revision", self.model_revision.as_str()),
-            ("tpe_version", self.tpe_version.as_str()),
+            ("tppe_version", self.tppe_version.as_str()),
         ] {
             require_finite_nonempty(field, value)?;
         }

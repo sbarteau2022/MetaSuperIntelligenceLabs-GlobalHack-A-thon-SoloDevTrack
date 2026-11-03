@@ -179,8 +179,8 @@ impl Runner<'_> {
                 phase,
                 input_digest: self.verified.input_digest.clone(),
                 output_digest,
-                tpe_version: self.verified.tpe_version.clone(),
-                tpe_configuration_digest: self.verified.tpe_configuration_digest.clone(),
+                tppe_version: self.verified.tppe_version.clone(),
+                tppe_configuration_digest: self.verified.tppe_configuration_digest.clone(),
                 receipt_digest: receipt,
             })?;
         self.next_ordinal += 1;
@@ -621,16 +621,16 @@ fn parse_trajectory(
                 parse_f64(&sget("t2_after_0")?, "step t2_after_0")?,
                 parse_f64(&sget("t2_after_1")?, "step t2_after_1")?,
             ],
-            tpe_radius_before: parse_f64(&sget("radius_before")?, "step radius_before")?,
-            tpe_radius_after: parse_f64(&sget("radius_after")?, "step radius_after")?,
-            tpe_revolutions_before: sget("revolutions_before")?
+            tppe_radius_before: parse_f64(&sget("radius_before")?, "step radius_before")?,
+            tppe_radius_after: parse_f64(&sget("radius_after")?, "step radius_after")?,
+            tppe_revolutions_before: sget("revolutions_before")?
                 .parse::<u64>()
                 .map_err(|_| "step revolutions_before must be a u64".to_string())?,
-            tpe_revolutions_after: sget("revolutions_after")?
+            tppe_revolutions_after: sget("revolutions_after")?
                 .parse::<u64>()
                 .map_err(|_| "step revolutions_after must be a u64".to_string())?,
-            tpe_boundary_margin_before: parse_f64(&sget("margin_before")?, "step margin_before")?,
-            tpe_boundary_margin_after: parse_f64(&sget("margin_after")?, "step margin_after")?,
+            tppe_boundary_margin_before: parse_f64(&sget("margin_before")?, "step margin_before")?,
+            tppe_boundary_margin_after: parse_f64(&sget("margin_after")?, "step margin_after")?,
             action_digest: Digest::parse(sget("action_digest")?)?,
             observation_digest: Digest::parse(sget("observation_digest")?)?,
             transition_digest: Digest::parse(sget("transition_digest")?)?,
@@ -707,10 +707,10 @@ fn parse_trajectory(
         atoms,
         trajectory_digest,
         judge_receipt_digest: Digest::parse(get("judge_receipt_digest")?)?,
-        tpe_version: verified.tpe_version.clone(),
-        tpe_configuration_digest: verified.tpe_configuration_digest.clone(),
-        tpe_radial_law_digest: Digest::parse(get("tpe_radial_law_digest")?)?,
-        tpe_boundary_receipt_digest: Digest::parse(get("tpe_boundary_receipt_digest")?)?,
+        tppe_version: verified.tppe_version.clone(),
+        tppe_configuration_digest: verified.tppe_configuration_digest.clone(),
+        tppe_radial_law_digest: Digest::parse(get("tppe_radial_law_digest")?)?,
+        tppe_boundary_receipt_digest: Digest::parse(get("tppe_boundary_receipt_digest")?)?,
         address_contract_digest: Digest::parse(get("address_contract_digest")?)?,
         replay_receipt_digest: Digest::parse(get("replay_receipt_digest")?)?,
         crystallization_receipt_digest: Some(Digest::parse(get(
@@ -833,8 +833,8 @@ fn validate_packet_keys(pairs: &BTreeMap<String, String>) -> Result<(), String> 
                 *field,
                 "trajectory_digest"
                     | "judge_receipt_digest"
-                    | "tpe_radial_law_digest"
-                    | "tpe_boundary_receipt_digest"
+                    | "tppe_radial_law_digest"
+                    | "tppe_boundary_receipt_digest"
                     | "address_contract_digest"
                     | "replay_receipt_digest"
                     | "crystallization_receipt_digest"
@@ -1299,9 +1299,9 @@ fn cmd_judge_stage(candidates_path: &str, verdicts_out: &str) -> Result<(), Stri
     let candidate_verified = load_and_verify(candidate_manifest_path)?;
     if candidate_verified.input_digest != decoded.provenance.input_digest
         || candidate_verified.run_id != decoded.provenance.run_id
-        || candidate_verified.tpe_version != decoded.provenance.tpe_version
-        || candidate_verified.tpe_configuration_digest
-            != decoded.provenance.tpe_configuration_digest
+        || candidate_verified.tppe_version != decoded.provenance.tppe_version
+        || candidate_verified.tppe_configuration_digest
+            != decoded.provenance.tppe_configuration_digest
         || candidate_verified.models.len() != 1
         || candidate_verified.models[0].roster_digest != decoded.provenance.roster_digest
     {
@@ -1610,10 +1610,10 @@ fn cmd_replay(
         admission: model.admission_id.clone(),
         model_roster_digest: model.roster_digest.clone(),
         configuration_digest: verified.configuration_digest.clone(),
-        tpe_version: verified.tpe_version.clone(),
-        tpe_configuration_digest: verified.tpe_configuration_digest.clone(),
+        tppe_version: verified.tppe_version.clone(),
+        tppe_configuration_digest: verified.tppe_configuration_digest.clone(),
         radial_law: law,
-        tpe_numeric: default_tppe_numeric(law),
+        tppe_numeric: default_tppe_numeric(law),
         address_contract_digest: default_address_contract_digest(),
         runtime_digest: ReplayContext::runtime_digest_for(),
     };
@@ -1735,10 +1735,10 @@ fn cmd_replay_stage(trace_path: &str, verdicts_path: &str, walk_out: &str) -> Re
         admission: admission_id,
         model_roster_digest: verdicts.provenance.roster_digest.clone(),
         configuration_digest: verdicts.provenance.configuration_digest.clone(),
-        tpe_version: verdicts.provenance.tpe_version.clone(),
-        tpe_configuration_digest: verdicts.provenance.tpe_configuration_digest.clone(),
+        tppe_version: verdicts.provenance.tppe_version.clone(),
+        tppe_configuration_digest: verdicts.provenance.tppe_configuration_digest.clone(),
         radial_law: law,
-        tpe_numeric: default_tppe_numeric(law),
+        tppe_numeric: default_tppe_numeric(law),
         address_contract_digest: default_address_contract_digest(),
         runtime_digest: ReplayContext::runtime_digest_for(),
     };
@@ -1957,7 +1957,7 @@ fn load_or_reconstruct_envelopes(
 }
 
 /// Verifies a decoded walk against a verified manifest: the walk's bound
-/// roster, TPE, run, admission, workspace, and configuration identities must
+/// roster, TPPE, run, admission, workspace, and configuration identities must
 /// match exactly, and re-running replay from the decoded inputs must
 /// reproduce every expected digest. Any mismatch is a miss.
 fn verify_walk_against_manifest(
@@ -1980,10 +1980,13 @@ fn verify_walk_against_manifest(
             context.configuration_digest == verified.configuration_digest,
             "configuration digest",
         ),
-        (context.tpe_version == verified.tpe_version, "TPE version"),
         (
-            context.tpe_configuration_digest == verified.tpe_configuration_digest,
-            "TPE configuration digest",
+            context.tppe_version == verified.tppe_version,
+            "TPPE version",
+        ),
+        (
+            context.tppe_configuration_digest == verified.tppe_configuration_digest,
+            "TPPE configuration digest",
         ),
     ] {
         if !matches {
@@ -2067,8 +2070,8 @@ fn ensure_event_raw(
     workspace: &RecordId,
     run: &RecordId,
     input_digest: &Digest,
-    tpe_version: &str,
-    tpe_configuration_digest: &Digest,
+    tppe_version: &str,
+    tppe_configuration_digest: &Digest,
     ordinal: u32,
     phase: DistillationPhase,
     phase_name: &str,
@@ -2110,8 +2113,8 @@ fn ensure_event_raw(
         phase,
         input_digest: input_digest.clone(),
         output_digest,
-        tpe_version: tpe_version.to_string(),
-        tpe_configuration_digest: tpe_configuration_digest.clone(),
+        tppe_version: tppe_version.to_string(),
+        tppe_configuration_digest: tppe_configuration_digest.clone(),
         receipt_digest,
     })
 }
@@ -2124,8 +2127,8 @@ fn build_event(
     workspace: &RecordId,
     run: &RecordId,
     input_digest: &Digest,
-    tpe_version: &str,
-    tpe_configuration_digest: &Digest,
+    tppe_version: &str,
+    tppe_configuration_digest: &Digest,
     ordinal: u32,
     phase: DistillationPhase,
     phase_name: &str,
@@ -2146,8 +2149,8 @@ fn build_event(
         phase,
         input_digest: input_digest.clone(),
         output_digest,
-        tpe_version: tpe_version.to_string(),
-        tpe_configuration_digest: tpe_configuration_digest.clone(),
+        tppe_version: tppe_version.to_string(),
+        tppe_configuration_digest: tppe_configuration_digest.clone(),
         receipt_digest,
     })
 }
@@ -2167,8 +2170,8 @@ fn ensure_event(
         &verified.workspace,
         &verified.run_id,
         &verified.input_digest,
-        &verified.tpe_version,
-        &verified.tpe_configuration_digest,
+        &verified.tppe_version,
+        &verified.tppe_configuration_digest,
         ordinal,
         phase,
         phase_name,
@@ -2233,8 +2236,8 @@ fn cmd_crystallize(manifest_path: &str, walk_path: &str) -> Result<(), String> {
                 &verified.workspace,
                 &verified.run_id,
                 &verified.input_digest,
-                &verified.tpe_version,
-                &verified.tpe_configuration_digest,
+                &verified.tppe_version,
+                &verified.tppe_configuration_digest,
                 1,
                 DistillationPhase::Extracting,
                 "extracting",
@@ -2244,8 +2247,8 @@ fn cmd_crystallize(manifest_path: &str, walk_path: &str) -> Result<(), String> {
                 &verified.workspace,
                 &verified.run_id,
                 &verified.input_digest,
-                &verified.tpe_version,
-                &verified.tpe_configuration_digest,
+                &verified.tppe_version,
+                &verified.tppe_configuration_digest,
                 2,
                 DistillationPhase::Judging,
                 "judging",
@@ -2255,8 +2258,8 @@ fn cmd_crystallize(manifest_path: &str, walk_path: &str) -> Result<(), String> {
                 &verified.workspace,
                 &verified.run_id,
                 &verified.input_digest,
-                &verified.tpe_version,
-                &verified.tpe_configuration_digest,
+                &verified.tppe_version,
+                &verified.tppe_configuration_digest,
                 3,
                 DistillationPhase::Replaying,
                 "replaying",
@@ -2382,8 +2385,8 @@ fn cmd_crystallize_stage(walk_path: &str) -> Result<(), String> {
                 &file.context.workspace,
                 &file.context.run,
                 &input_digest,
-                &file.context.tpe_version,
-                &file.context.tpe_configuration_digest,
+                &file.context.tppe_version,
+                &file.context.tppe_configuration_digest,
                 1,
                 DistillationPhase::Extracting,
                 "extracting",
@@ -2393,8 +2396,8 @@ fn cmd_crystallize_stage(walk_path: &str) -> Result<(), String> {
                 &file.context.workspace,
                 &file.context.run,
                 &input_digest,
-                &file.context.tpe_version,
-                &file.context.tpe_configuration_digest,
+                &file.context.tppe_version,
+                &file.context.tppe_configuration_digest,
                 2,
                 DistillationPhase::Judging,
                 "judging",
@@ -2404,8 +2407,8 @@ fn cmd_crystallize_stage(walk_path: &str) -> Result<(), String> {
                 &file.context.workspace,
                 &file.context.run,
                 &input_digest,
-                &file.context.tpe_version,
-                &file.context.tpe_configuration_digest,
+                &file.context.tppe_version,
+                &file.context.tppe_configuration_digest,
                 3,
                 DistillationPhase::Replaying,
                 "replaying",
@@ -2434,8 +2437,8 @@ fn cmd_crystallize_stage(walk_path: &str) -> Result<(), String> {
             &file.context.workspace,
             &file.context.run,
             &input_digest,
-            &file.context.tpe_version,
-            &file.context.tpe_configuration_digest,
+            &file.context.tppe_version,
+            &file.context.tppe_configuration_digest,
             4,
             DistillationPhase::Failed,
             "failed",

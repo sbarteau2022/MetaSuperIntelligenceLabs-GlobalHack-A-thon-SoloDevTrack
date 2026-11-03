@@ -133,7 +133,7 @@ fn baseline_class(input: &str) -> &'static str {
 fn a14_run01_determinism_50k() {
     let manifest = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../CapabilityTreeSitter/capability-tree-manifest.json"
+        "/../N3/CapabilityTreeSitter/capability-tree-manifest.json"
     ))
     .expect("vault manifest must be readable for RUN-01");
     let t0 = Instant::now();

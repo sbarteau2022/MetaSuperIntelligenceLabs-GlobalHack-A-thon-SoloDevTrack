@@ -77,8 +77,8 @@ DEFINE INDEX IF NOT EXISTS trajectory_origin_unique ON trajectory_origin\n  FIEL
 DEFINE FIELD OVERWRITE digest ON schema_migration TYPE string READONLY;
 DEFINE FIELD OVERWRITE applied_at ON schema_migration TYPE datetime DEFAULT time::now() READONLY;
 INFO FOR TABLE schema_migration;
-CREATE schema_migration:0004_tpe_contract_correction CONTENT { version: '0004_tpe_contract_correction', digest: '31c467e26dd81d9fddf61e10b605e6726a25b7c0cb573c399d73d79fec7f1246', applied_at: time::now() }; CREATE schema_migration:0005_universal_atom_lineage CONTENT { version: '0005_universal_atom_lineage', digest: 'a2c4a85303874233048b73d18e36538f38c05e36b2503c37499b6489a92729c0', applied_at: time::now() };
-SELECT version, digest FROM schema_migration WHERE version IN ["0004_tpe_contract_correction", "0005_universal_atom_lineage"] ORDER BY version;
+CREATE schema_migration:0004_tppe_contract_correction CONTENT { version: '0004_tppe_contract_correction', digest: '31c467e26dd81d9fddf61e10b605e6726a25b7c0cb573c399d73d79fec7f1246', applied_at: time::now() }; CREATE schema_migration:0005_universal_atom_lineage CONTENT { version: '0005_universal_atom_lineage', digest: 'a2c4a85303874233048b73d18e36538f38c05e36b2503c37499b6489a92729c0', applied_at: time::now() };
+SELECT version, digest FROM schema_migration WHERE version IN ["0004_tppe_contract_correction", "0005_universal_atom_lineage"] ORDER BY version;
 INFO FOR TABLE transformer_kv_session; INFO FOR TABLE transformer_kv_page; INFO FOR TABLE distilled_trajectory;
 BEGIN TRANSACTION; UPDATE schema_migration:0005_universal_atom_lineage SET digest = 'tamper'; CANCEL TRANSACTION; SELECT digest FROM schema_migration:0005_universal_atom_lineage;
 -- Version updates may append new address revisions, but may not alter a\n-- previously admitted atom's content or an existing H3 x T2 address record.\n-- current_address remains mutable only to point to a newly created revision.\n\nDEFINE FIELD OVERWRITE workspace ON atom TYPE record<workspace> READONLY;

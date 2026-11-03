@@ -429,19 +429,19 @@ fn encode_context(out: &mut Writer, context: &ReplayContext) {
     out.id(&context.admission);
     out.digest(&context.model_roster_digest);
     out.digest(&context.configuration_digest);
-    out.text(&context.tpe_version);
-    out.digest(&context.tpe_configuration_digest);
+    out.text(&context.tppe_version);
+    out.digest(&context.tppe_configuration_digest);
     out.buf.push(match context.radial_law {
         RadialLaw::LinearLogV1 => 1,
         RadialLaw::LogV1 => 2,
     });
     for value in [
-        context.tpe_numeric.radial_start,
-        context.tpe_numeric.radial_span,
-        context.tpe_numeric.omega_fast,
-        context.tpe_numeric.omega_slow,
-        context.tpe_numeric.coupling_fast,
-        context.tpe_numeric.coupling_slow,
+        context.tppe_numeric.radial_start,
+        context.tppe_numeric.radial_span,
+        context.tppe_numeric.omega_fast,
+        context.tppe_numeric.omega_slow,
+        context.tppe_numeric.coupling_fast,
+        context.tppe_numeric.coupling_slow,
     ] {
         out.f64_value(value);
     }
@@ -455,8 +455,8 @@ fn decode_context(reader: &mut Reader) -> Result<ReplayContext, String> {
     let admission = reader.id("admission")?;
     let model_roster_digest = reader.digest("roster")?;
     let configuration_digest = reader.digest("configuration")?;
-    let tpe_version = reader.text("tpe version")?;
-    let tpe_configuration_digest = reader.digest("tpe configuration")?;
+    let tppe_version = reader.text("tpe version")?;
+    let tppe_configuration_digest = reader.digest("tpe configuration")?;
     let radial_law = match reader.take(1, "radial law")?[0] {
         1 => RadialLaw::LinearLogV1,
         2 => RadialLaw::LogV1,
@@ -479,10 +479,10 @@ fn decode_context(reader: &mut Reader) -> Result<ReplayContext, String> {
         admission,
         model_roster_digest,
         configuration_digest,
-        tpe_version,
-        tpe_configuration_digest,
+        tppe_version,
+        tppe_configuration_digest,
         radial_law,
-        tpe_numeric: TppeConfig {
+        tppe_numeric: TppeConfig {
             law: radial_law,
             radial_start: numeric[0],
             radial_span: numeric[1],

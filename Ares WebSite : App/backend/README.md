@@ -112,18 +112,48 @@ backend-owned, never linked against the `rgah` crate. Framework: the Rust
   `default.otel_logs` / `otel_traces`, append-only. The prior SQLite
   spine (`store_sqlite.rs`, `ares_events.sqlite3`) is retired and removed
   from the backend. **Qdrant is the RAG + memory store** — the existing
-  `research_library_v1` corpus plus a new governed `session_memory_v1`
+  `research_library_v1` corpus plus a separate `session_memory_hash384_v2`
   collection for append-only session summaries + queryable memories; the
   newest summaries/memories auto-tail into session start via
   `load_session_context` (`GET /api/memory/context`). SurrealDB remains
   the governance authority (permits, audit chain, controls, runs) on
   :8000; it is not an MCP server, and `hypermind-mcp` remains an MCP
   server *backed by* SurrealDB.
-- Memory encoder disclosure: `session_memory_v1` uses a deterministic
-  hashed 3-gram embedding (384-d, L2-normalized, cosine) — real vector
-  search for recall + exact payload filters, **not** a neural encoder and
-  not a hyperbolic KV. A replacement embedding model can be swapped
-  behind `embed_text` without changing append-only semantics.
+- Memory encoder disclosure: the active backend selects the TPPE candidate
+  collection `session_memory_tppe_v1`, with a 384D vector built from lexical
+  content and a TPPE positional state. It is neither a neural embedding nor
+  transformer K/V, and its retrieval quality is not yet certified. The old
+  TPE hybrid was removed; the interim lexical `session_memory_hash384_v2`
+  collection remains separate and empty. The research library keeps its
+  existing 1024D dual-rank contract. See `STORE-SUBSTRATE-DESIGN.md`.
+- 2026-11-02 cutover: deleted the two old `session_memory_v1` points at
+  user request; `session_memory_hash384_v2` starts empty. Startup checks
+  both Qdrant vector contracts. The 48,422-point research library was
+  preserved. Its recorded ingest used Qwen3-VL-Embedding-2B-6bit-RUN
+  (the first 1024 final-hidden components, normalized, plus a rotated rank);
+  see `N3/Quadrant Brain Library RAG/KB_INGEST_RECEIPT_2026-11-02.md`.
+  The backend's current RAG endpoint scrolls payloads; a Qwen query
+  encoder and vector search have not yet been wired into this backend.
+- Typed research-vector retrieval is now available in Rust as
+  `QdrantMemory::query_research_rank0`: it validates a normalized 1024D
+  rank0 vector, derives rank1 with the recorded rotation, searches both
+  Qdrant vector names, and fuses hits by reciprocal rank. The live test
+  `tests/qdrant_research_live.rs` retrieved a stored SpecOps point as its
+  own top hit and checked rank1 parity (2026-11-02). Text-to-vector Qwen
+  inference remains the separate promotion gate for `/api/rag/query`.
+- Live Qdrant check (2026-11-02): `session_memory_tppe_v1` has the named
+  384D cosine vector and six payload indexes. `tests/qdrant_store_live.rs`
+  verified its startup contract alongside the research library.
+  `tests/qdrant_tppe_memory_live.rs` appended one true cutover event and
+  retrieved it by recency tail and TPPE vector query from a new client;
+  the collection has one point. This is an operational smoke, not a
+  retrieval-quality certification.
+- GlobalMind forward-pass status: the exact-model Layer-3 tensor K/V
+  hardware qualification was rerun on the current TPPE contract and
+  passed all seven gates. Full-model parity and the harness connection
+  remain open. The research harness's old text/string `MapPlugin` is
+  separate from typed GlobalMind graph and tensor K/V; see
+  `STORE-SUBSTRATE-DESIGN.md`.
 - HyperDX key handling: the ingestion key lives only in
   `~/.config/ares-backend/secrets.env` as `HYPERDX_API_KEY` (mode 0600,
   verified) and is sent only in the OTLP `Authorization` header — never
@@ -174,3 +204,5 @@ backend-owned, never linked against the `rgah` crate. Framework: the Rust
   governed persistence authority until that lands; memory in Qdrant and
   telemetry in HyperDX are unaffected by its outcome.
 - UI wiring (status pill in `AtomaCloudApp` footer) — UI untouched so far.
+
+Research vector route: `POST /api/rag/query` accepts a normalized 1024D `rank0` array from the pinned Qwen encoder, searches both named Qdrant ranks, and fuses hits by reciprocal rank. Text-only queries fail closed until a Rust-native Qwen query encoder matches the ingest recipe. Omit both `rank0` and `query` for payload scroll.

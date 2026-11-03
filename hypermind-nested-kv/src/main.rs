@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+mod capability_tree;
 mod coherence_gate;
 mod structured_egress;
 mod text;
@@ -21,7 +22,7 @@ use surreal::Store;
 
 // Symplectic MLIR envelope (SYMPLECTIC-ENVELOPE-SPEC.md).
 // Every SSA value has a position half (Atom{coord, phase}) plus a momentum
-// half derived at ingest from the TPE triple — no new inputs.
+// half derived at ingest from the TPPE triple — no new inputs.
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -722,11 +723,11 @@ fn coord_from_text(text: &str, salience: f64) -> ([f64; 4], [f64; 2]) {
 /// vault spiral-out law's analytic derivative at the atom's radius.
 /// dθ from the phase split (fast/slow proxy via phase magnitude),
 /// dr/dw = span·(0.35 + 0.65/(1+w)) — exact d/dw of r(w) (MATH-INVARIANTS.md),
-/// η from the amplitude channel (monotone in drive energy per TPE spec §4.3).
+/// η from the amplitude channel (monotone in drive energy per TPPE spec §4.3).
 /// This reads the law; it never integrates it. Evolution lives in the vault.
 fn symplectic_from_triple(coord: &[f64; 4], phase: &[f64; 2], salience: f64) -> SymplecticState {
     let r = (coord[1] * coord[1] + coord[2] * coord[2] + coord[3] * coord[3]).sqrt();
-    // Spiral-out slope dr/dw at this radius band (TPE spec §4.1 shape).
+    // Spiral-out slope dr/dw at this radius band (TPPE spec §4.1 shape).
     let span = 2.5f64;
     let w_est = (r / span).max(0.0);
     let dr_dw = span * (0.35 + 0.65 / (1.0 + w_est));
@@ -4112,7 +4113,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             // is [poincare(3) | idf-direction(3) | phase(2) | salience(1)]
             // = dim 9 by default, truncated/padded to requested dim. A
             // Euclidean model does cosine/dot directly — no hyperbolic math,
-            // no TPE knowledge, no map-side cooperation beyond this tool.
+            // no TPPE knowledge, no map-side cooperation beyond this tool.
             if !args.get("qtext").map(|x| x.is_string()).unwrap_or(false) {
                 return json!({"result": {"status": "error", "error": "schema: qtext must be string"}});
             }

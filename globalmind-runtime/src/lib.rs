@@ -11,6 +11,7 @@ mod holding_session;
 mod identity;
 pub mod inject;
 pub mod judge;
+mod kv_identity;
 mod manifest;
 mod model;
 pub mod replay;
@@ -28,6 +29,7 @@ pub use holding_session::{
     classify_trigger, controller_digest,
 };
 pub use identity::{Digest, RecordId};
+pub use kv_identity::ExactKvIdentity;
 pub use manifest::{
     ArtifactEntry, Manifest, ModelEntry, PROJECTOR_VERSION, VerifiedArtifact, VerifiedManifest,
     VerifiedModel,

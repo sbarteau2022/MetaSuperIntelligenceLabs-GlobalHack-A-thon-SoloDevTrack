@@ -9,15 +9,15 @@ export function Screen05Contact() {
 
         <form style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '500px', margin: '0 auto' }}>
           <div style={{ textAlign: 'left' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500', marginBottom: '8px', color: 'var(--fg-secondary)' }}>Name</label>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--fg-secondary)' }}>Name</label>
             <input type="text" placeholder="Your name" style={{ width: '100%', padding: '12px 16px', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', color: 'var(--fg-primary)', fontSize: '14px' }} />
           </div>
           <div style={{ textAlign: 'left' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500', marginBottom: '8px', color: 'var(--fg-secondary)' }}>Email</label>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--fg-secondary)' }}>Email</label>
             <input type="email" placeholder="you@example.com" style={{ width: '100%', padding: '12px 16px', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', color: 'var(--fg-primary)', fontSize: '14px' }} />
           </div>
           <div style={{ textAlign: 'left' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500', marginBottom: '8px', color: 'var(--fg-secondary)' }}>Message</label>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--fg-secondary)' }}>Message</label>
             <textarea placeholder="Your message..." rows={6} style={{ width: '100%', padding: '12px 16px', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', color: 'var(--fg-primary)', fontSize: '14px', resize: 'vertical', fontFamily: 'inherit' }} />
           </div>
           <button type="submit" style={{ padding: '14px 28px', borderRadius: 'var(--radius-md)', background: 'var(--accent-blue)', color: 'white', border: 'none', fontSize: '14px', fontWeight: 500, cursor: 'pointer', alignSelf: 'flex-start' }}>

@@ -22,7 +22,7 @@ Every SSA value already has a position half: the atom coordinate
 
 - `p_phase` = phase velocity proxy: `score` gradient is unavailable pre-query,
   so momentum = `(phase_drive, rapidity)` carried per atom, seeded at ingest
-  from the TPE triple `(θ, r, amp)`: `p = (dθ, dr)` with `dr` from the
+  from the TPPE triple `(θ, r, amp)`: `p = (dθ, dr)` with `dr` from the
   spiral-out law slope and `dθ` from the fast/slow drive split.
 - Per-arc traversal check (before dispatch, fail-explained not fail-silent):
   1. **Form check:** `ω(q1,p1) == ω(q2,p2)` within tolerance — the move is a
@@ -43,7 +43,7 @@ Every SSA value already has a position half: the atom coordinate
 ```rust
 /// Momentum half of an SSA value. Position half is Atom{coord, phase}.
 struct SymplecticState {
-    /// Phase-velocity proxy from the TPE triple at ingest.
+    /// Phase-velocity proxy from the TPPE triple at ingest.
     p_phase: [f64; 2],   // (dθ_f, dθ_s)
     /// Radial momentum from the spiral-out slope dr/dw.
     p_radial: f64,

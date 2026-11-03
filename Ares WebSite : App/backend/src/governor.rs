@@ -29,6 +29,11 @@ pub struct AppState {
     pub telemetry: Option<crate::harness::telemetry::HyperdxTelemetry>,
     pub memory: Option<crate::harness::qdrant_memory::QdrantMemory>,
     pub capability_gate: Mutex<crate::harness::runtime::CapabilityGate>,
+    /// O(1) sequence cache: one TppeSequence per session stream per
+    /// process. Append advances one step; rehydrate happens once per
+    /// (session, process lifetime), never per append (no O(N^2)).
+    pub sequences:
+        Mutex<std::collections::HashMap<String, crate::harness::tppe_memory::TppeSequence>>,
     /// Bounded-concurrency doctrine: at most this many governed runs at once.
     pub run_semaphore: Arc<tokio::sync::Semaphore>,
     pub surreal: Option<SurrealClient>,
@@ -46,6 +51,7 @@ impl AppState {
             telemetry: None,
             memory: None,
             capability_gate: Mutex::new(crate::harness::runtime::CapabilityGate::default()),
+            sequences: Mutex::new(std::collections::HashMap::new()),
             run_semaphore: Arc::new(tokio::sync::Semaphore::new(4)),
             surreal,
             last_seat: Mutex::new(None),

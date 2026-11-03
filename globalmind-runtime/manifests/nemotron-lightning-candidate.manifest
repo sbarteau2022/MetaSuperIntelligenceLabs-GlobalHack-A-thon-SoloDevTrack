@@ -4,8 +4,8 @@
 workspace = globalmind
 method = fresh-globalmind-distillation-v1
 configuration_digest = abd24302c897da5d3c7eb3043821bd18ddf206e3046e89c15ffc33bd97bd5523
-tpe_version = tppe-reference-v1
-tpe_configuration_digest = 07e0dbab82fa9181b1210daadf2eb4f64d46a6a0d799e0e356e29869e09e92de
+tppe_version = tppe-reference-v1
+tppe_configuration_digest = 07e0dbab82fa9181b1210daadf2eb4f64d46a6a0d799e0e356e29869e09e92de
 
 model.0.provider = local
 model.0.name = NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit-Abliterated

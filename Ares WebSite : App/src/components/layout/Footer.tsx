@@ -12,7 +12,7 @@ export default function Footer() {
             <a
               key={link}
               href="#"
-              className="font-mono text-[12px] text-fg-muted transition-colors hover:text-cyan-400"
+              className="font-mono text-[12px] text-fg-muted transition-colors hover:text-white"
             >
               {link}
             </a>

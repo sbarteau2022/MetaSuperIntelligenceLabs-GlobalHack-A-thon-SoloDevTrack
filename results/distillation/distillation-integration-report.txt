@@ -2,7 +2,7 @@ distillation integration report
 run_id=run_7783348d3617822290ac3a1e5690675fcc2c0e4e13a9c8e942799fa827a356e2
 input_digest=7783348d3617822290ac3a1e5690675fcc2c0e4e13a9c8e942799fa827a356e2
 model=DistillModel rev-1 (temp stub artifact, real rehash)
-radial_law=log_v1 tpe_schedule=replay-v1
+radial_law=log_v1 tppe_schedule=replay-v1
 candidates=5 passed=5 rejected=0
 rank0=2 rank1=2 rank2=1 rank8=0
 packets_written=5 atoms_written=2 steps_written=2 loops_written=1 charts_written=0

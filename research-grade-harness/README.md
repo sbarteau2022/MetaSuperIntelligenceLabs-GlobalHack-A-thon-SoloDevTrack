@@ -47,13 +47,28 @@ numbers as results.
 
 ## HyperMind graph/KV plugin
 
+`GlobalMindBridge` is now the read-only typed Rust entry point for the fresh
+GlobalMind substrate. It verifies the isolated Surreal contract and returns
+`GMRC` binary recall bundles from H3×T2 retrieval. It refuses quarantined
+`hypermind/core` and exposes tensor bytes only through the full exact-model
+session/page identity (never a bare page ID). See
+`GLOBALMIND-BRIDGE-DESIGN.md`. It is not yet connected to a live model executor;
+the older `MapPlugin` below remains a historical text/string MCP surface and
+does not qualify the nested transformer K/V path.
+The explicit `cargo test --test globalmind_bridge_live -- --ignored --nocapture`
+gate passed against a disposable SurrealKV instance, decoded one real atom
+in a GMRC bundle, fetched one typed K/V page by full identity, and rejected
+a changed model digest. This is bridge read proof, not model inference.
+The A14 capability gate reads the consolidated manifest from
+`../N3/CapabilityTreeSitter/capability-tree-manifest.json`.
+
 The canonical plugin source is `../hypermind-nested-kv`. Build its
 `hypermind-mcp` executable, then set `HYPERBOLIC_MAP_PLUGIN_BIN` to that absolute
 binary path. Plugin describes harness lifecycle; MCP describes transport. They
 are one executable, not separate graph/KV implementations. `MapPlugin::load`
 checks advertised map/KV tools and a receipted health call before registering
-it; `unload` closes the process. The harness never connects directly to
-SurrealDB. The old `live-n3` path remains for historical compatibility and must
+it; `unload` closes the process. That historical MCP path uses no direct
+SurrealDB connection; the fresh typed `GlobalMindBridge` above does. The old `live-n3` path remains for historical compatibility and must
 not be used as evidence of an independent plugin. The standalone `../hyperbolic-map-nested-kv-plugin` directory is absent.
 
 ```sh
@@ -66,3 +81,5 @@ tokens and energy until real model executors are provided. MCP tool errors,
 missing receipts, unaffordable budgets, and telemetry write failures fail a
 packet. A live map/KV smoke proves storage and retrieval, not a multi-model
 mind or transformer KV acceleration.
+
+Forward preparation: `GlobalMindBridge::prepare_forward_recall` joins binary GMRC neighborhood retrieval and exact-identity tensor K/V fetch. The model executor still must consume these bytes and produce activations before a full forward-pass smoke can be claimed.

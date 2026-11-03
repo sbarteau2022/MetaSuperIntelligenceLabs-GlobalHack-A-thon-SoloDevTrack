@@ -106,6 +106,14 @@ The model-agnostic atom admission gap and its proposed correction are specified
 in `MODEL-AGNOSTIC-ATOM-DESIGN.md`. Current hash-derived, run-scoped Layer-3 atoms
 are trace fixtures and do not yet carry independently verified shared knowledge.
 
+`GlobalMindStore::fetch_tensor_payload_exact` now performs a read-only lookup
+over the full model/request/prefix/TPPE/session/page identity before exposing
+model-bound K/V bytes. It checks expected key/value digests again after fetch.
+The candidate-v2 hardware qualification exercises the new lookup with a real
+stored baseline and 20 single-field identity misses after SurrealDB restart.
+The research harness exposes this through `GlobalMindBridge::fetch_tensor_exact`;
+full-model and deployed harness forward-pass gates remain open.
+
 # Problem Statement
 
 The SurrealDB schema had no fresh typed runtime writer. The legacy MCP ingest
@@ -130,7 +138,7 @@ receipt checks. Append-only run events enforce legal phase transitions.
 
 The native `globalmind-distill` ingress parses a typed line manifest, rehashes
 every frozen artifact before any database access, binds the run to an exact
-TPPE/TPE configuration, and opens only immutable source/admission/run receipts.
+TPPE/TPPE configuration, and opens only immutable source/admission/run receipts.
 Missing eligibility or independent-judge receipts fail before the transaction.
 This is roster ingress, not model distillation or candidate extraction.
 

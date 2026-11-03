@@ -5,7 +5,7 @@
 //! closes, reconstructs rank-0 atoms, and validates rank-8 charts. Emits one
 //! immutable walk artifact ([`artifact`]) plus a replay receipt digest.
 //!
-//! Identity rule: a different model, radial law, TPE configuration, address
+//! Identity rule: a different model, radial law, TPPE configuration, address
 //! contract, runtime, or digest is a MISS (error), never a conversion.
 //! [`verify_bindings`] enforces this before any downstream use.
 //!
@@ -45,10 +45,10 @@ pub struct ReplayContext {
     pub admission: RecordId,
     pub model_roster_digest: Digest,
     pub configuration_digest: Digest,
-    pub tpe_version: String,
-    pub tpe_configuration_digest: Digest,
+    pub tppe_version: String,
+    pub tppe_configuration_digest: Digest,
     pub radial_law: RadialLaw,
-    pub tpe_numeric: TppeConfig,
+    pub tppe_numeric: TppeConfig,
     pub address_contract_digest: Digest,
     pub runtime_digest: Digest,
 }
@@ -69,10 +69,10 @@ impl ReplayContext {
     }
 
     pub fn validate(&self) -> Result<(), String> {
-        if self.tpe_version.trim().is_empty() {
-            return Err("replay TPE version must be non-empty".into());
+        if self.tppe_version.trim().is_empty() {
+            return Err("replay TPPE version must be non-empty".into());
         }
-        self.tpe_numeric.validate()?;
+        self.tppe_numeric.validate()?;
         Ok(())
     }
 
@@ -85,17 +85,17 @@ impl ReplayContext {
                 self.admission.as_str(),
                 self.model_roster_digest.as_str(),
                 self.configuration_digest.as_str(),
-                &self.tpe_version,
-                self.tpe_configuration_digest.as_str(),
+                &self.tppe_version,
+                self.tppe_configuration_digest.as_str(),
                 self.radial_law.as_str(),
                 &format!(
                     "{:?}/{:?}/{:?}/{:?}/{:?}/{:?}",
-                    self.tpe_numeric.radial_start,
-                    self.tpe_numeric.radial_span,
-                    self.tpe_numeric.omega_fast,
-                    self.tpe_numeric.omega_slow,
-                    self.tpe_numeric.coupling_fast,
-                    self.tpe_numeric.coupling_slow
+                    self.tppe_numeric.radial_start,
+                    self.tppe_numeric.radial_span,
+                    self.tppe_numeric.omega_fast,
+                    self.tppe_numeric.omega_slow,
+                    self.tppe_numeric.coupling_fast,
+                    self.tppe_numeric.coupling_slow
                 ),
                 self.address_contract_digest.as_str(),
                 self.runtime_digest.as_str(),
@@ -199,7 +199,7 @@ pub fn replay(input: &ReplayInput) -> Result<ReplayedWalk, String> {
                 .map(|id| id.as_str().to_string())
                 .collect::<Vec<_>>()
                 .join(","),
-            input.context.tpe_configuration_digest.as_str(),
+            input.context.tppe_configuration_digest.as_str(),
             input.context.radial_law.as_str(),
         ],
     );
@@ -222,17 +222,17 @@ pub fn replay(input: &ReplayInput) -> Result<ReplayedWalk, String> {
         atoms: atom_walk,
         trajectory_digest: trajectory_digest.clone(),
         judge_receipt_digest: judge_bundle,
-        tpe_version: input.context.tpe_version.clone(),
-        tpe_configuration_digest: input.context.tpe_configuration_digest.clone(),
-        tpe_radial_law_digest: digest_fields(
+        tppe_version: input.context.tppe_version.clone(),
+        tppe_configuration_digest: input.context.tppe_configuration_digest.clone(),
+        tppe_radial_law_digest: digest_fields(
             b"globalmind-replay-radial-v1",
             &[input.context.radial_law.as_str(), REPLAY_TPPE_SCHEDULE],
         ),
-        tpe_boundary_receipt_digest: digest_fields(
+        tppe_boundary_receipt_digest: digest_fields(
             b"globalmind-replay-boundary-v1",
             &steps
                 .iter()
-                .map(|step| format!("{:?}", step.tpe_boundary_margin_after))
+                .map(|step| format!("{:?}", step.tppe_boundary_margin_after))
                 .collect::<Vec<_>>()
                 .iter()
                 .map(String::as_str)
@@ -530,7 +530,7 @@ fn walk_transitions(
     }
     let config = TppeConfig {
         law: context.radial_law,
-        ..context.tpe_numeric
+        ..context.tppe_numeric
     };
     let mut state = TppeState::origin(config)?;
     let mut steps = Vec::with_capacity(transitions.len());
@@ -582,12 +582,12 @@ fn walk_transitions(
             revision: 1,
             t2_phase_before: before.phase_t2(),
             t2_phase_after: state.phase_t2(),
-            tpe_radius_before: before.hyperbolic_radius,
-            tpe_radius_after: state.hyperbolic_radius,
-            tpe_revolutions_before: before.cumulative_revolutions as u64,
-            tpe_revolutions_after: state.cumulative_revolutions as u64,
-            tpe_boundary_margin_before: before.boundary_margin,
-            tpe_boundary_margin_after: state.boundary_margin,
+            tppe_radius_before: before.hyperbolic_radius,
+            tppe_radius_after: state.hyperbolic_radius,
+            tppe_revolutions_before: before.cumulative_revolutions as u64,
+            tppe_revolutions_after: state.cumulative_revolutions as u64,
+            tppe_boundary_margin_before: before.boundary_margin,
+            tppe_boundary_margin_after: state.boundary_margin,
             action_digest: digest_fields(b"globalmind-replay-action-v1", &[slice]),
             observation_digest: digest_fields(b"globalmind-replay-observation-v1", &[slice]),
             transition_digest: candidate.source_fragment_digest.clone(),
@@ -750,20 +750,20 @@ fn verify_trajectory_shape(trajectory: &Trajectory) -> Result<(), String> {
         if index > 0 && trajectory.steps[index - 1].t2_phase_after != step.t2_phase_before {
             return Err("trajectory TPPE phase state is discontinuous".into());
         }
-        if !step.tpe_radius_before.is_finite()
-            || !step.tpe_radius_after.is_finite()
-            || step.tpe_radius_before < 0.0
-            || step.tpe_radius_after < step.tpe_radius_before
-            || step.tpe_revolutions_after < step.tpe_revolutions_before
-            || !step.tpe_boundary_margin_before.is_finite()
-            || !step.tpe_boundary_margin_after.is_finite()
-            || step.tpe_boundary_margin_before <= 0.0
-            || step.tpe_boundary_margin_after <= 0.0
+        if !step.tppe_radius_before.is_finite()
+            || !step.tppe_radius_after.is_finite()
+            || step.tppe_radius_before < 0.0
+            || step.tppe_radius_after < step.tppe_radius_before
+            || step.tppe_revolutions_after < step.tppe_revolutions_before
+            || !step.tppe_boundary_margin_before.is_finite()
+            || !step.tppe_boundary_margin_after.is_finite()
+            || step.tppe_boundary_margin_before <= 0.0
+            || step.tppe_boundary_margin_after <= 0.0
         {
             return Err("trajectory TPPE radial/boundary state is invalid".into());
         }
-        if step.tpe_revolutions_after > step.tpe_revolutions_before
-            && step.tpe_radius_after <= step.tpe_radius_before
+        if step.tppe_revolutions_after > step.tppe_revolutions_before
+            && step.tppe_radius_after <= step.tppe_radius_before
         {
             return Err("TPPE radius must expand when revolution count advances".into());
         }
@@ -805,12 +805,12 @@ pub fn verify_bindings(expected: &ReplayContext, walk: &ReplayedWalk) -> Result<
             "configuration digest",
         ),
         (
-            walk.context.tpe_version == expected.tpe_version,
-            "TPE version",
+            walk.context.tppe_version == expected.tppe_version,
+            "TPPE version",
         ),
         (
-            walk.context.tpe_configuration_digest == expected.tpe_configuration_digest,
-            "TPE configuration digest",
+            walk.context.tppe_configuration_digest == expected.tppe_configuration_digest,
+            "TPPE configuration digest",
         ),
         (walk.context.radial_law == expected.radial_law, "radial law"),
         (
@@ -1067,10 +1067,10 @@ mod tests {
             admission: RecordId::parse("replay_adm").unwrap(),
             model_roster_digest: Digest::sha256(b"test-roster"),
             configuration_digest: Digest::sha256(b"test-config"),
-            tpe_version: "tppe-test-v1".into(),
-            tpe_configuration_digest: Digest::sha256(b"test-tpe-config"),
+            tppe_version: "tppe-test-v1".into(),
+            tppe_configuration_digest: Digest::sha256(b"test-tpe-config"),
             radial_law: RadialLaw::LogV1,
-            tpe_numeric: TppeConfig {
+            tppe_numeric: TppeConfig {
                 law: RadialLaw::LogV1,
                 radial_start: 0.0,
                 radial_span: 0.01,
@@ -1122,16 +1122,16 @@ mod tests {
         // Exact TPPE phase continuity and strict radial expansion.
         let steps = &walk.trajectory.steps;
         assert_eq!(steps[0].t2_phase_after, steps[1].t2_phase_before);
-        assert!(steps[0].tpe_radius_after > steps[0].tpe_radius_before);
-        assert!(steps[1].tpe_radius_after > steps[1].tpe_radius_before);
-        assert!(steps.iter().all(|s| s.tpe_boundary_margin_before > 0.0));
-        assert!(steps.iter().all(|s| s.tpe_boundary_margin_after > 0.0));
+        assert!(steps[0].tppe_radius_after > steps[0].tppe_radius_before);
+        assert!(steps[1].tppe_radius_after > steps[1].tppe_radius_before);
+        assert!(steps.iter().all(|s| s.tppe_boundary_margin_before > 0.0));
+        assert!(steps.iter().all(|s| s.tppe_boundary_margin_after > 0.0));
         // Revolutions are derived from unwrapped phase, never supplied:
         // the recorded count can only stay flat or advance by the turns
         // the phases actually turned (far less than one per step here).
-        assert_eq!(steps[0].tpe_revolutions_before, 0);
-        assert!(steps[0].tpe_revolutions_after >= steps[0].tpe_revolutions_before);
-        assert!(steps[1].tpe_revolutions_after >= steps[1].tpe_revolutions_before);
+        assert_eq!(steps[0].tppe_revolutions_before, 0);
+        assert!(steps[0].tppe_revolutions_after >= steps[0].tppe_revolutions_before);
+        assert!(steps[1].tppe_revolutions_after >= steps[1].tppe_revolutions_before);
         // Loop closes on the same atom.
         let atoms = &walk.trajectory.atoms;
         assert_eq!(atoms.len(), 3);
@@ -1206,7 +1206,7 @@ mod tests {
         drifted.model_roster_digest = Digest::sha256(b"other-model");
         assert!(verify_bindings(&drifted, &walk).is_err());
         let mut drifted = context.clone();
-        drifted.tpe_configuration_digest = Digest::sha256(b"other-tpe");
+        drifted.tppe_configuration_digest = Digest::sha256(b"other-tpe");
         assert!(verify_bindings(&drifted, &walk).is_err());
         let mut drifted = context.clone();
         drifted.address_contract_digest = Digest::sha256(b"other-address");
@@ -1215,7 +1215,7 @@ mod tests {
         drifted.runtime_digest = Digest::sha256(b"other-runtime");
         assert!(verify_bindings(&drifted, &walk).is_err());
         let mut drifted = context.clone();
-        drifted.tpe_numeric.radial_span = 0.02;
+        drifted.tppe_numeric.radial_span = 0.02;
         assert!(verify_bindings(&drifted, &walk).is_err());
     }
 

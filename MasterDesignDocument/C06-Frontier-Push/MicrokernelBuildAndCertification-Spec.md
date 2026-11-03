@@ -1,4 +1,4 @@
-# Microkernel Build & Certification Spec — Kuramoto/TPE Evolution (PATCH-03 line)
+# Microkernel Build & Certification Spec — Kuramoto/TPPE Evolution (PATCH-03 line)
 
 Date: 2026-10-27. Machine: M5 Pro, macOS 27.0.1, Rust 1.99.0, Metal 32023.921.
 Steward directive: build on the laptop (not Zed sandbox), verify each kernel against the Rust oracle, iterate until the math stops giving gains.
@@ -82,7 +82,7 @@ as a tiny Metal constant array) + ~10 f64 ops (2x sqrt, div, from_f64 for the am
 channel). The amplitude channel is the ONLY non-bit-exact part (Metal has no double;
 f32 sqrt/div ~1ulp each, random-walk over pairs — softmax-irrelevant but not bitwise).
 
-Decision (dependency analysis, no preference): build the TPE phase kernel FIRST with
+Decision (dependency analysis, no preference): build the TPPE phase kernel FIRST with
 bit-exact phases (fixed-point path, LUT ported) + f32 amplitude, certified phase-bitwise
 + amplitude-tolerance — BEFORE the coherence weights (25 f64 transcendentals/pair,
 certified relatively 1e-6, attention-irrelevant precision). Rationale: phases are the
@@ -90,10 +90,10 @@ chain everything else hangs off (psi -> phi -> shell -> coherence); an inexact p
 kernel poisons all downstream certs, while coherence can NEVER be bitwise (f64 ln_1p /
 powf) so it must be last. Cross-platform shim + fused-K amortization ride along.
 
-## 8. TPE phase kernel (2026-10-27 — CERTIFIED, gate green 5/5 + compile-clean)
+## 8. TPPE phase kernel (2026-10-27 — CERTIFIED, gate green 5/5 + compile-clean)
 
-Kernel: `core_lm/src/tpe_phase.metal::tpe_evolve_fused` — GPU port of
-`TorPhaseEncoder::evolve` (torus.rs:102). Gate: `core_lm/tests/tpe_phase_verify.rs`.
+Kernel: `core_lm/src/tppe_phase.metal::tppe_evolve_fused` — GPU port of
+`TorPhaseEncoder::evolve` (torus.rs:102). Gate: `core_lm/tests/tppe_phase_verify.rs`.
 
 Measured (VERIFIED, M5 Pro, this pass):
 
@@ -116,9 +116,9 @@ pointed at the sin path; a Metal-vs-Rust idx probe isolated it to the STEP const
 (GPU idx 0 vs CPU idx 255 on negative diffs). Fixed, then phases went bitwise first try.
 Lesson: port EVERY constant by evaluating the CPU expression, never by hand arithmetic.
 
-## 9. Fusion round (2026-10-27 — TPE CERTIFIED fused; Kuramoto frozen-resultant DOCUMENTED)
+## 9. Fusion round (2026-10-27 — TPPE CERTIFIED fused; Kuramoto frozen-resultant DOCUMENTED)
 
-TPE step-major fusion (`tpe_phase.metal`, drives step-major `df[s*n+id]`):
+TPPE step-major fusion (`tppe_phase.metal`, drives step-major `df[s*n+id]`):
 single-launch k-step trajectories, gate green with phases BITWISE at
 n=16/k=8, n=64/k=4, n=256/k=2 (damp <= 6e-8 throughout). TRUE fusion was free
 here — no cross-thread dep in the step (dependency analysis, not preference).
@@ -129,10 +129,10 @@ k_steps>1 = K repeats of the frozen step-0 resultant (explicit Euler with frozen
 coupling — a valid but DIFFERENT integrator, uncertified vs the oracle).
 Documented on the kernel; k_steps=1 path stays CERTIFIED. TRUE fusion needs a
 threadgroup-barrier v2 (resultant is global) — queued behind the coherence kernel
-in dependency order (coherence weights are per-pair like TPE drives: no cross-thread
-dep, so the coherence kernel fuses the same free way TPE did).
+in dependency order (coherence weights are per-pair like TPPE drives: no cross-thread
+dep, so the coherence kernel fuses the same free way TPPE did).
 
-Correction appended: the TPE test initially looped k_steps=1 launches (which never
+Correction appended: the TPPE test initially looped k_steps=1 launches (which never
 exercised the kernel's k-loop); the single-fused-launch form now covers it.
 
 ## 10. Backend probe (2026-10-27 — CERTIFIED, gate green + warm-dispatch bound)
@@ -154,10 +154,10 @@ bound by construction, not by kernel error). Isolated call #2 to a fresh clone.
 
 ## 11. Coherence kernel (2026-10-27 — CERTIFIED d<=128, gate green 3/3)
 
-Kernel: `core_lm/src/tpe_coherence.metal::tpe_coherence_fused` — port of
+Kernel: `core_lm/src/tppe_coherence.metal::tppe_coherence_fused` — port of
 `TorPhaseEncoder::evolve_vector` (torus.rs:168). Grid: one thread per token,
 sequential pair fold (matches the consumer `step_and_readout`, which calls it
-per token). Gate: `core_lm/tests/tpe_coherence_verify.rs`.
+per token). Gate: `core_lm/tests/tppe_coherence_verify.rs`.
 
 Measured (VERIFIED, M5 Pro):
 
@@ -244,7 +244,7 @@ not a numerics bug. Always check the launch geometry before the math.
 
 ### Pressure-test record (this pass, all VERIFIED)
 
-- 5 consecutive full runs: patch03 + tg + tpe_phase + coherence + backend = 5/5 green.
+- 5 consecutive full runs: patch03 + tg + tppe_phase + coherence + backend = 5/5 green.
 - Full core_lm suite: 33 lib + all integration targets, 0 failed (re-run below).
 - Determinism: d=256 coherence traj_rel identical to 4 decimals across 5 runs;
   v2 self_max=0 three runs straight (bit-exact fusion, not tolerance luck).
@@ -266,10 +266,10 @@ trajectory-terms: an 8-step trajectory at n=64 costs one dispatch instead of eig
 
 ## 14. Integer coherence kernel (2026-10-28 — CERTIFIED d<=256, traj_rel<=5.6e-6, 5/5 runs)
 
-Kernel: `core_lm/src/tpe_coherence_int.metal::tpe_coherence_fused` — INTEGER-ONLY
+Kernel: `core_lm/src/tppe_coherence_int.metal::tppe_coherence_fused` — INTEGER-ONLY
 port of `TorPhaseEncoder::evolve_vector` (no float ops; declared input-quant boundary
 `rint(x*2^31)` once per element + documented f32-mean drive adjudication). Gate:
-`core_lm/tests/tpe_coherence_verify.rs`. Spec parent: AttentionEconomicsAndActiveInference-Spec §9 gate 1.
+`core_lm/tests/tppe_coherence_verify.rs`. Spec parent: AttentionEconomicsAndActiveInference-Spec §9 gate 1.
 
 Measured (VERIFIED, M5 Pro, 5 consecutive runs bit-identical):
 
@@ -280,7 +280,7 @@ Measured (VERIFIED, M5 Pro, 5 consecutive runs bit-identical):
 | d=256 batch=4 | 14 LSB | 6.433e-7 | 1e-4 |
 
 Full core_lm suite: 33 lib + all integration targets, 0 failed.
-tpe_phase gate still green (bitwise phases + damp<=6e-7); known_answers test_phi
+tppe_phase gate still green (bitwise phases + damp<=6e-7); known_answers test_phi
 relaxed to an 8-LSB CORDIC envelope (documents the staged torus.rs retrofit's
 bounded special-angle error; res[2] stays exact).
 

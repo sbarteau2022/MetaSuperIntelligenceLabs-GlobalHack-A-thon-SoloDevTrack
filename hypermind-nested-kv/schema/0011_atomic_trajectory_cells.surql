@@ -17,12 +17,12 @@ DEFINE INDEX IF NOT EXISTS edge_crystallization_unique ON edge_crystallization
 DEFINE FIELD IF NOT EXISTS packet ON trajectory_step TYPE option<record<distillation_packet>> READONLY;
 DEFINE FIELD IF NOT EXISTS admission ON trajectory_step TYPE option<record<distillation_admission>> READONLY;
 DEFINE FIELD IF NOT EXISTS edge_crystallization ON trajectory_step TYPE option<record<edge_crystallization>> READONLY;
-DEFINE FIELD IF NOT EXISTS tpe_radius_before ON trajectory_step TYPE option<float> READONLY;
-DEFINE FIELD IF NOT EXISTS tpe_radius_after ON trajectory_step TYPE option<float> READONLY;
-DEFINE FIELD IF NOT EXISTS tpe_revolutions_before ON trajectory_step TYPE option<int> READONLY;
-DEFINE FIELD IF NOT EXISTS tpe_revolutions_after ON trajectory_step TYPE option<int> READONLY;
-DEFINE FIELD IF NOT EXISTS tpe_boundary_margin_before ON trajectory_step TYPE option<float> READONLY;
-DEFINE FIELD IF NOT EXISTS tpe_boundary_margin_after ON trajectory_step TYPE option<float> READONLY;
+DEFINE FIELD IF NOT EXISTS tppe_radius_before ON trajectory_step TYPE option<float> READONLY;
+DEFINE FIELD IF NOT EXISTS tppe_radius_after ON trajectory_step TYPE option<float> READONLY;
+DEFINE FIELD IF NOT EXISTS tppe_revolutions_before ON trajectory_step TYPE option<int> READONLY;
+DEFINE FIELD IF NOT EXISTS tppe_revolutions_after ON trajectory_step TYPE option<int> READONLY;
+DEFINE FIELD IF NOT EXISTS tppe_boundary_margin_before ON trajectory_step TYPE option<float> READONLY;
+DEFINE FIELD IF NOT EXISTS tppe_boundary_margin_after ON trajectory_step TYPE option<float> READONLY;
 
 DEFINE FIELD IF NOT EXISTS packet ON trajectory_loop TYPE option<record<distillation_packet>> READONLY;
 DEFINE FIELD IF NOT EXISTS admission ON trajectory_loop TYPE option<record<distillation_admission>> READONLY;
