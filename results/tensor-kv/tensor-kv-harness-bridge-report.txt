@@ -21,23 +21,23 @@ phase_state_digest: d3b6b384e99dac864504842b8b1e9dc90c29ec215bb71c702aa9cd1edd70
 
 ISOLATED SURREALDB 3.3.5 INSTANCE
 ---------------------------------
-endpoint: http://127.0.0.1:60516
+endpoint: http://127.0.0.1:64881
 namespace: globalmind_tensor_kv_iso
 database: tensor_kv_qual_001
 quarantined_core_touched: false (port 8000 untouched)
-pid_before_restart: 69566
-pid_after_restart: 69575
+pid_before_restart: 12830
+pid_after_restart: 12846
 
 GATE RECEIPTS
 -------------
-Gate 1 (Create TensorSession): PASS | session_id=kv_session_qwen36_layer3_qual_001 | latency_ms=23.098
-Gate 2 (Write TensorPage head=0): PASS | page_id=kv_page_qwen36_l3_h0_0_4_r1 | shape=[4, 256] | dtype=f32 | layout=token_major | key_bytes=4096 | value_bytes=4096 | key_sha256=7ae9089c17606f62bdadfd9bad8adb624a1b27326a9bdf077d4e710f019d5dec | value_sha256=4afd2ff7fa493819985b4bb2700b8af062d7a320b8895018f401d70524409ff0 | latency_ms=38.023
-Gate 2 (Write TensorPage head=1): PASS | page_id=kv_page_qwen36_l3_h1_0_4_r1 | shape=[4, 256] | dtype=f32 | layout=token_major | key_bytes=4096 | value_bytes=4096 | key_sha256=ae535b115dcbc4a35b9467013c6ab5d9554a28ae2aaee92e7df9b002980c04d7 | value_sha256=521d82d8a49a30ad5f6b29019ff8cb3e1deac00eb87d9b155eeb9d6248dd196c | latency_ms=30.048
-Gate 3 (Restart SurrealDB & Reverify Contract): PASS | pid_before=69566 -> pid_after=69575 | restart_latency_ms=630.568
-Gate 4 (Fetch & Byte-for-Byte Digest Equality head=0): PASS | key_sha256_match=true | value_sha256_match=true | byte_equal=true | fetch_latency_ms=15.495
-Gate 4 (Fetch & Byte-for-Byte Digest Equality head=1): PASS | key_sha256_match=true | value_sha256_match=true | byte_equal=true | fetch_latency_ms=15.846
-Gate 5 (Inject Fetched KV & Prove Decode/Logit Parity): PASS | layer=3 | vocab_size=248320 | max_hidden_abs_diff=0.00000000 | max_logit_abs_diff=0.00000000 | reference_logits_sha256=0d8b0dc0ba661cf2fee843ecfcb297738958b504bc9b31e69121686b5efaa7bc | injected_logits_sha256=0d8b0dc0ba661cf2fee843ecfcb297738958b504bc9b31e69121686b5efaa7bc | perturbed_control_logits_sha256=23a4e401142d972afaa243eaeff43cb229fd73595ff6a4e52342a0622e6a1e80 | top1_token_id=96156 | top1_logit=13.903345 | inject_decode_latency_ms=293.233
-Gate 6 (Single-Field Identity Mutations & Write/Readonly Rejections): PASS | lookup_identity_misses=20/20 | write_and_readonly_rejections=11/11 | latency_ms=845.832
+Gate 1 (Create TensorSession): PASS | session_id=kv_session_qwen36_layer3_qual_001 | latency_ms=17.960
+Gate 2 (Write TensorPage head=0): PASS | page_id=kv_page_qwen36_l3_h0_0_4_r1 | shape=[4, 256] | dtype=f32 | layout=token_major | key_bytes=4096 | value_bytes=4096 | key_sha256=7ae9089c17606f62bdadfd9bad8adb624a1b27326a9bdf077d4e710f019d5dec | value_sha256=4afd2ff7fa493819985b4bb2700b8af062d7a320b8895018f401d70524409ff0 | latency_ms=27.891
+Gate 2 (Write TensorPage head=1): PASS | page_id=kv_page_qwen36_l3_h1_0_4_r1 | shape=[4, 256] | dtype=f32 | layout=token_major | key_bytes=4096 | value_bytes=4096 | key_sha256=ae535b115dcbc4a35b9467013c6ab5d9554a28ae2aaee92e7df9b002980c04d7 | value_sha256=521d82d8a49a30ad5f6b29019ff8cb3e1deac00eb87d9b155eeb9d6248dd196c | latency_ms=27.982
+Gate 3 (Restart SurrealDB & Reverify Contract): PASS | pid_before=12830 -> pid_after=12846 | restart_latency_ms=625.801
+Gate 4 (Fetch & Byte-for-Byte Digest Equality head=0): PASS | key_sha256_match=true | value_sha256_match=true | byte_equal=true | fetch_latency_ms=10.447
+Gate 4 (Fetch & Byte-for-Byte Digest Equality head=1): PASS | key_sha256_match=true | value_sha256_match=true | byte_equal=true | fetch_latency_ms=10.298
+Gate 5 (Inject Fetched KV & Prove Decode/Logit Parity): PASS | layer=3 | vocab_size=248320 | max_hidden_abs_diff=0.00000000 | max_logit_abs_diff=0.00000000 | reference_logits_sha256=0d8b0dc0ba661cf2fee843ecfcb297738958b504bc9b31e69121686b5efaa7bc | injected_logits_sha256=0d8b0dc0ba661cf2fee843ecfcb297738958b504bc9b31e69121686b5efaa7bc | perturbed_control_logits_sha256=23a4e401142d972afaa243eaeff43cb229fd73595ff6a4e52342a0622e6a1e80 | top1_token_id=96156 | top1_logit=13.903345 | inject_decode_latency_ms=277.521
+Gate 6 (Single-Field Identity Mutations & Write/Readonly Rejections): PASS | lookup_identity_misses=20/20 | write_and_readonly_rejections=11/11 | latency_ms=660.138
   - lookup_mutation[workspace]: MISS (cache miss: no matching active TensorSession)
   - lookup_mutation[model_id]: MISS (cache miss: no matching active TensorSession)
   - lookup_mutation[model_revision]: MISS (cache miss: no matching active TensorSession)
@@ -72,20 +72,20 @@ Gate 6 (Single-Field Identity Mutations & Write/Readonly Rejections): PASS | loo
 
 GATE 7 — REAL HARDWARE LATENCY & MEMORY MEASUREMENTS
 ----------------------------------------------------
-manifest_rehash_verify_ms: 35123.762
-model_weights_binary_load_ms: 40.414
-uninterrupted_forward_pass_ms: 332.341
-surreal_isolated_boot_and_schema_ms: 6449.510
-session_create_ms: 23.098
-page_write_head0_ms: 38.023
-page_write_head1_ms: 30.048
-surreal_restart_ms: 630.568
-page_fetch_head0_ms: 15.495
-page_fetch_head1_ms: 15.846
-injected_decode_forward_pass_ms: 293.233
-gate6_identity_and_immutability_checks_ms: 845.832
-total_qualification_suite_ms: 45340.985
-test_process_rss_after_model_load_bytes: 590807040
-test_process_rss_final_bytes: 599670784
-surreal_process_rss_before_restart_bytes: 109592576
-surreal_process_rss_after_restart_bytes: 101302272
+manifest_rehash_verify_ms: 33576.927
+model_weights_binary_load_ms: 64.115
+uninterrupted_forward_pass_ms: 341.670
+surreal_isolated_boot_and_schema_ms: 6334.941
+session_create_ms: 17.960
+page_write_head0_ms: 27.891
+page_write_head1_ms: 27.982
+surreal_restart_ms: 625.801
+page_fetch_head0_ms: 10.447
+page_fetch_head1_ms: 10.298
+injected_decode_forward_pass_ms: 277.521
+gate6_identity_and_immutability_checks_ms: 660.138
+total_qualification_suite_ms: 43268.686
+test_process_rss_after_model_load_bytes: 590757888
+test_process_rss_final_bytes: 599703552
+surreal_process_rss_before_restart_bytes: 116916224
+surreal_process_rss_after_restart_bytes: 107560960

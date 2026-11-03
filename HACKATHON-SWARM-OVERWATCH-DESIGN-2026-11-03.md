@@ -35,6 +35,12 @@ MCP JSON-RPC framing, where required by MCP, stays transport-only; the
 model-facing recall/K/V payload is typed binary. No JSON or Python enters the
 model I/O boundary.
 
+The carved swarm is **Glimmer's harness function**: one Glimmer weight owner,
+task decomposition by its L0 seat, scoped worker views, and L0 quality gate,
+adversarial pressure test and merge. It is not part of the automaton. The
+automaton only overwatches proposal admission and loop quality across the
+MCP↔harness seam; it cannot take worker turns or command the brigade.
+
 ## Source register and scope
 
 - `N3/design/CARVED_SWARM_SPEC.md` and `MasterDesignDocument/C30-Multi-Agent-Lanes-Autorunner/BrigadeSwarmPluginBinding.md` state the one-weight, carved-view and brigade gates. Current backend `src/store.rs` has one `Arc<FrozenBaseWeights>` and 12 in-memory `SiloView`s. That is component evidence, not a live multi-agent run.
