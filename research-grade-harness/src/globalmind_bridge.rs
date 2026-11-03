@@ -3,7 +3,7 @@
 //! Model-facing recall is the native GMRC binary format. This bridge never
 //! ingests atoms, creates a mind map, or exposes tensor K/V by page ID alone.
 
-use globalmind_runtime::retrieval::{RetrievalConfig, encode_bundle, retrieve};
+use globalmind_runtime::retrieval::{RetrievalConfig, decode_bundle, encode_bundle, retrieve};
 use globalmind_runtime::{ExactKvIdentity, GlobalMindStore, StoreConfig, TensorPayload};
 
 #[derive(Debug)]
@@ -62,6 +62,14 @@ impl GlobalMindBridge {
         identity: &ExactKvIdentity,
     ) -> Result<ForwardRecall, String> {
         let neighborhood_gmrc = self.recall_binary(query_h3, query_t2, query_provenance, k)?;
+        let bundle = decode_bundle(&neighborhood_gmrc)?;
+        if !bundle
+            .members
+            .iter()
+            .any(|member| member.address == identity.address)
+        {
+            return Err("tensor K/V address is absent from the recalled neighborhood".into());
+        }
         let tensor = self.fetch_tensor_exact(identity)?;
         Ok(ForwardRecall {
             neighborhood_gmrc,

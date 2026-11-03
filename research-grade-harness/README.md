@@ -83,3 +83,5 @@ packet. A live map/KV smoke proves storage and retrieval, not a multi-model
 mind or transformer KV acceleration.
 
 Forward preparation: `GlobalMindBridge::prepare_forward_recall` joins binary GMRC neighborhood retrieval and exact-identity tensor K/V fetch. The model executor still must consume these bytes and produce activations before a full forward-pass smoke can be claimed.
+
+The forward-preparation bridge now checks that the exact tensor page address is a member of the decoded recalled neighborhood. An isolated two-atom SurrealKV test rejects a valid K/V page from an unrelated recalled atom. Math and active-inference limits are recorded in `../results/forward-recall-math/report.tex`; this is still a read-boundary gate, not model execution.

@@ -151,3 +151,7 @@ The rejected implementation replaced RoPE 1:1 at constant radius. This spec **re
 ## What was NOT checked
 
 RoPE paper beyond excerpts; full HNPA Atlas theory (structure adopted as REPORTED); bakeoff for triple-channel; the unfound Q2.30/BKM kernel and toroidal_q32 sources (steward record says they exist off-disk — ingest on sight); live A/B numbers for the reward falsifier (unrun by design — spec precedes silicon).
+
+## Correction entry 2026-11-02: reward/free-energy equivalence refuted
+
+The claim that maximizing `Q/(H+cN)` necessarily minimizes `F=complexity−accuracy` is false. With `complexity=H+cN` and `accuracy=Q`, action A `(Q,C)=(0.9,3)` has higher reward than B `(0.2,1)`, yet B has lower free energy. The exact-integer counterexample and bounded enumeration are in `results/forward-recall-math/report.tex` and `scripts/verify.rs`. This specification remains PROPOSED, not certified as policy. The ratio may be tested as a separate objective; policy promotion requires a declared quality floor, resource budget, and measured-cost calibration. Landauer's lower bound alone does not establish an alignment guarantee.

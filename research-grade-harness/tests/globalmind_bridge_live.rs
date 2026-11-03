@@ -285,6 +285,33 @@ fn bridge_reads_one_real_atom_as_binary_recall() {
     let fetched = prepared.tensor;
     assert_eq!(fetched.key.as_ref(), key.as_slice());
     assert_eq!(fetched.value.as_ref(), value.as_slice());
+    // Both reads would independently succeed: the K/V page belongs to
+    // bridge_sample, while the nearest recalled atom is bridge_decoy.
+    let decoy_seed = format!(
+        "CREATE atom:`bridge_decoy` CONTENT {{ workspace: workspace:`globalmind`, external_id: 'bridge_decoy', content_kind: 'text', content_text: 'decoy', content_uri: NONE, content_digest: '{digest}', domain: 'bridge', rank: 0, salience: 0.5, provenance: 'live-test', taint: 'none', pinned: false, current_address: NONE }} RETURN NONE; \
+         CREATE atom_address:`bridge_decoy` CONTENT {{ workspace: workspace:`globalmind`, atom: atom:`bridge_decoy`, h3_lorentz: [{}, {}, 0.0, 0.0], t2_phase: [0.0, 0.0], geometry_model: 'lorentz-t2', geometry_version: 'v1', revision: 1, active: true }} RETURN NONE;",
+        1.0_f64.cosh(),
+        1.0_f64.sinh()
+    );
+    let decoy_response = db.sql(&decoy_seed);
+    assert!(
+        !decoy_response.contains("\"status\":\"ERR\""),
+        "decoy seed failed"
+    );
+    let wrong_recall = bridge
+        .prepare_forward_recall(
+            [1.0_f64.cosh(), 1.0_f64.sinh(), 0.0, 0.0],
+            [0.0, 0.0],
+            "bridge-live-test",
+            1,
+            &exact,
+        )
+        .err()
+        .expect("unrelated K/V page must be refused");
+    assert!(
+        wrong_recall.contains("absent from the recalled neighborhood"),
+        "{wrong_recall}"
+    );
     let mut drifted = exact.clone();
     drifted.model_digest = hash("different-model");
     assert!(bridge.fetch_tensor_exact(&drifted).is_err());
