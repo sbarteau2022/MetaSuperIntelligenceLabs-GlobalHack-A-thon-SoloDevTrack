@@ -34,6 +34,7 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/api/harness/mission/geometry",
             post(harness_mission_geometry),
         )
+        .route("/api/harness/mission/live", post(harness_mission_live))
         .route("/api/harness/dry-run", post(harness_dry_run))
         .route("/api/memory/context", get(memory_context))
         .route("/api/memory", post(memory_append))
@@ -639,6 +640,53 @@ async fn harness_mission_geometry(
         Err(v) => err_json(
             StatusCode::FORBIDDEN,
             WhyReceipt::from_violation("/api/harness/mission/geometry", &v),
+        )
+        .into_response(),
+    }
+}
+
+// Live mission run through the native MTP automaton executor. The
+// built-in geometry plan uses a non-map tool, so it escalates
+// fail-closed even on a live run by design ("execution unavailable:
+// no admitted map.* output") — it proves the wiring path, not a
+// passing mission. A passing live mission needs map.* packets, gate
+// nodes carrying judged atoms, and registered judges.
+async fn harness_mission_live(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<MissionRequest>,
+) -> impl IntoResponse {
+    let role = req
+        .role
+        .and_then(RoleId::from_level)
+        .unwrap_or(RoleId::LaneBuilder);
+    let input = crate::harness::mission::geometry_mission();
+    match crate::governor::dispatch_mission_live(&state, role, input, req.budget_j.unwrap_or(100.0)).await {
+        Ok((permit, receipt, seat)) => Json(serde_json::json!({
+            "executor": "native-mtp-automaton",
+            "seat_identity": seat,
+            "permit": {
+                "sequence": permit.sequence(),
+                "action_summary": permit.action_summary(),
+                "chain_digest": permit.chain_digest().to_hex(),
+            },
+            "mission": {
+                "mission_id": receipt.mission_id,
+                "passed": receipt.passed,
+                "failed": receipt.failed,
+                "skipped": receipt.skipped,
+                "escalated": receipt.escalated,
+                "passed_all": receipt.passed_all(),
+                "energy_spent_j": receipt.energy_spent_j,
+                "energy_remaining_j": receipt.energy_remaining_j,
+                "receipt_chain_head": receipt.receipts.entries.last().map(|e| e.evidence_hash.clone()),
+                "receipt_count": receipt.receipts.entries.len(),
+                "chain_verified": receipt.receipts.verify_chain().is_ok(),
+            }
+        }))
+        .into_response(),
+        Err(e) => err_json(
+            StatusCode::SERVICE_UNAVAILABLE,
+            WhyReceipt::internal("/api/harness/mission/live", &e),
         )
         .into_response(),
     }

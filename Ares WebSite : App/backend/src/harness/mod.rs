@@ -20,9 +20,10 @@
 //! secrets resolved at call time from 0600 `secrets.env`, never serialized.
 
 pub mod baseline;
-pub mod mission;
-pub mod qdrant_memory;
 pub mod glimmer_tokenizer;
+pub mod mission;
+pub mod native_mtp;
+pub mod qdrant_memory;
 pub mod qwen_vl_native;
 pub mod runtime;
 pub mod telemetry;

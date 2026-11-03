@@ -117,6 +117,85 @@ pub async fn dispatch_spawn(
     Ok(permit)
 }
 
+/// Live dispatch: like `dispatch_mission`, but through the native MTP
+/// automaton executor (model-agnostic) instead of the fail-closed local
+/// orchestrator. The permit gate still runs first. Gate nodes are NOT
+/// auto-registered here: a `map.*` call with no judged-atom gate node
+/// is denied by the engine, and an unreachable automaton escalates —
+/// both by design, never papered over. Returns (permit, receipt, seat).
+pub async fn dispatch_mission_live(
+    state: &Arc<AppState>,
+    role: RoleId,
+    mut input: crate::harness::mission::MissionInput,
+    budget_j: f64,
+) -> Result<
+    (
+        CompliancePermit,
+        crate::harness::mission::MissionReceipt,
+        String,
+    ),
+    String,
+> {
+    let _permit_slot = state
+        .run_semaphore
+        .clone()
+        .acquire_owned()
+        .await
+        .expect("run semaphore never closes");
+    let permit = dispatch_spawn(state, role)
+        .await
+        .map_err(|_| "permit denied".to_string())?;
+    let telemetry = state
+        .telemetry
+        .as_ref()
+        .ok_or_else(|| "live run requires HyperDX telemetry configured".to_string())?;
+    let gate = state.capability_gate.lock().await.clone();
+    let mut executor = crate::harness::native_mtp::NativeMtpExecutor::from_env()?;
+    let mut engine = crate::harness::runtime::Engine::new();
+    for judge in input.judges {
+        engine.register_judge(judge);
+    }
+    let mut budget = crate::harness::mission::EnergyBudget::new(budget_j);
+    let mut receipts = crate::harness::mission::ReceiptLog::default();
+    let report = engine
+        .run_sequential_live(
+            &mut input.plan,
+            &mut receipts,
+            &mut budget,
+            &mut executor,
+            telemetry,
+            &gate,
+        )
+        .await;
+    let seat = executor
+        .seat_identity()
+        .unwrap_or_else(|| "native-mtp-unreachable".to_string());
+    let receipt = crate::harness::mission::MissionReceipt {
+        mission_id: input.plan.id.clone(),
+        passed: report.passed,
+        failed: report.failed,
+        skipped: report.skipped,
+        escalated: report.escalated,
+        receipts,
+        energy_spent_j: budget.spent_j,
+        energy_remaining_j: budget.remaining(),
+    };
+    if let Some(client) = &state.surreal {
+        let stmt = format!(
+            "CREATE run SET thread = '{}', status = '{}', model_seat = '{}';",
+            sql_escape(&receipt.mission_id),
+            if receipt.passed_all() {
+                "passed"
+            } else {
+                "escalated"
+            },
+            sql_escape(&seat),
+        );
+        let _ = client.sql(&stmt).await;
+    }
+    Ok((permit, receipt, seat))
+}
+
 /// Gate 3 dispatch: inter-role handoff carrying an atom.
 pub async fn dispatch_handoff(
     state: &Arc<AppState>,

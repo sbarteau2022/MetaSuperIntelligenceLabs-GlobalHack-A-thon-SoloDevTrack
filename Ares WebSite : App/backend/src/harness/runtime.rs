@@ -94,8 +94,8 @@ pub struct CallOutcome {
     pub dt_ns: u64,
 }
 
-/// The execution boundary. Implementations: governed model seats (oMLX
-/// local, gateway cloud) and the mind-map MCP child. The engine never
+/// The execution boundary. Implementations: the native MTP automaton seat
+/// (model-agnostic) and the mind-map MCP child. The engine never
 /// talks to a provider directly.
 pub trait Executor: Send {
     fn call(&mut self, tool: &str, args_json: &str) -> Result<CallOutcome, String>;
