@@ -89,3 +89,15 @@ The forward-preparation bridge now checks that the exact tensor page address is 
 Radix cache keys are now domain-separated and length-delimited across parent, token block, model, tokenizer, and quantization identity. The previous raw concatenation admitted deterministic tuple collisions. The in-memory key format is versioned; cache-hit performance remains unmeasured.
 
 An explicit release-mode real Qwen3.6 Layer-3 smoke now consumes both K/V heads returned by `GlobalMindBridge` after an isolated SurrealKV restart. Hidden output and all 248,320 logits were bit-exact against the uninterrupted control on 2026-11-02. See `../results/tensor-kv/tensor-kv-harness-bridge-report.txt`. Run it with `cargo test --manifest-path ../globalmind-runtime/Cargo.toml --release --features live-forward-model --test tensor_kv_qualification -- --ignored --nocapture`. This qualifies one Layer-3 continuation, not the full 40-layer model.
+# Bounded resource selection (component)
+
+`active_inference::BoundedResourcePolicy` selects the least predicted Q32.31
+resource cost among actions that meet a judged quality floor and a declared
+budget. Equal-cost ties use information gain, quality, then stable ID. Unit
+mismatches, invalid estimates, and empty feasible sets fail closed. See
+`ACTIVE-INFERENCE-RESOURCE-POLICY-DESIGN.md` and
+`tests/bounded_resource_policy.rs`. This selector is not yet connected to the
+live executor: cost/quality forecasts need calibration and runtime metering.
+The older floating-point `PolicyRanker` remains separate historical behavior;
+neither component measures thermodynamic heat or proves an FEP optimum.
+

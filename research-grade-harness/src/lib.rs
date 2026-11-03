@@ -39,7 +39,10 @@ pub mod superposition;
 pub mod telemetry;
 pub mod temple;
 
-pub use active_inference::{BeliefState, PolicyCandidate, PolicyRanker, RankedPolicy};
+pub use active_inference::{
+    BeliefState, BoundedResourcePolicy, BudgetedCandidate, PolicyCandidate, PolicyRanker, Q32_31,
+    RankedPolicy, ResourceUnit,
+};
 pub use bench::{BaselineRun, BenchmarkResult, HarnessBaseline, Task};
 pub use cache::Cache;
 pub use calibration::{
