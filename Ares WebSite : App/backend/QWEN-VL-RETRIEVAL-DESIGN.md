@@ -1,6 +1,7 @@
 # Rust-native Qwen VL retrieval encoder — frozen contract, 2026-11-02
 
-Status: design and oracle fixture only. No live encoder parity claim.
+Status: Rust tokenizer parity and oracle fixture; native 28-layer execution
+and dense query integration remain open. No live encoder parity claim.
 
 ## Source and exact ingest contract
 
