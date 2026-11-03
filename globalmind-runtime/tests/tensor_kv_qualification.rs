@@ -933,7 +933,7 @@ impl IsolatedSurreal {
             "never touch quarantined live SurrealDB port 8000"
         );
 
-        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let manifest_dir = runtime_manifest_dir();
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| e.to_string())?
@@ -1333,10 +1333,23 @@ fn process_rss_bytes(pid: u32) -> u64 {
     }
 }
 
+fn runtime_manifest_dir() -> PathBuf {
+    let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    if crate_dir.join("manifests").is_dir() {
+        crate_dir
+    } else {
+        crate_dir.join("../globalmind-runtime")
+    }
+}
+
 #[test]
+#[cfg_attr(
+    feature = "live-forward-model",
+    ignore = "explicit real Qwen Layer-3 harness smoke"
+)]
 fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
     let suite_start = Instant::now();
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let manifest_dir = runtime_manifest_dir();
     let repo_root = manifest_dir
         .parent()
         .ok_or_else(|| "missing repo root".to_string())?;
@@ -1538,6 +1551,13 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
         expected_val_digests.push(val_digest);
     }
 
+    #[cfg(feature = "live-forward-model")]
+    surreal.raw_sql(&format!(
+        "CREATE atom:`kv_qual_prefix` CONTENT {{ workspace: workspace:`globalmind`, external_id: 'kv_qual_prefix', content_kind: 'text', content_text: 'frozen Qwen prefix', content_uri: NONE, content_digest: '{}', domain: 'forward-smoke', rank: 0, salience: 1.0, provenance: 'real-layer3-qualification', taint: 'none', pinned: false, current_address: NONE }} RETURN NONE; \
+         CREATE atom_address:`{}` CONTENT {{ workspace: workspace:`globalmind`, atom: atom:`kv_qual_prefix`, h3_lorentz: [1.0, 0.0, 0.0, 0.0], t2_phase: [0.0, 0.0], geometry_model: 'lorentz-t2', geometry_version: 'v1', revision: 1, active: true }} RETURN NONE;",
+        prefix_digest.as_str(), address_id.as_str()
+    ))?;
+
     // =========================================================================
     // GATE 3: Restart SurrealDB / runtime.
     // =========================================================================
@@ -1698,6 +1718,87 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
         expected_key_digests[0],
         "baseline exact identity query must hit head 0"
     );
+
+    #[cfg(feature = "live-forward-model")]
+    {
+        use globalmind_runtime::retrieval::{RetrievalConfig, RetrievalMetric};
+        use rgah::GlobalMindBridge;
+
+        let bridge = GlobalMindBridge::connect(RetrievalConfig {
+            endpoint: format!("http://127.0.0.1:{}", surreal.port),
+            namespace: surreal.namespace.clone(),
+            database: surreal.database.clone(),
+            username: surreal.username.clone(),
+            password: surreal.password.clone(),
+            workspace: workspace_id.clone(),
+            candidate_budget: 8,
+            metric: RetrievalMetric::Hyperbolic,
+        })?;
+        let mut bridge_payloads = Vec::with_capacity(KV_HEADS);
+        for head in 0..KV_HEADS {
+            let mut query = base_query.clone();
+            query.kv_head = head as u32;
+            let identity = runtime_exact_identity(
+                &query,
+                &session_id,
+                &page_ids[head],
+                &expected_key_digests[head],
+                &expected_val_digests[head],
+            );
+            let prepared = bridge.prepare_forward_recall(
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0],
+                "qwen-layer3-real-forward",
+                1,
+                &identity,
+            )?;
+            if !prepared.neighborhood_gmrc.starts_with(b"GMRC") {
+                return Err("bridge returned no binary GlobalMind neighborhood".into());
+            }
+            bridge_payloads.push(prepared.tensor);
+        }
+        let bridge_pair: [TensorPayload; KV_HEADS] = bridge_payloads
+            .try_into()
+            .map_err(|_| "bridge returned wrong KV head count".to_string())?;
+        let (bridge_hidden, bridge_logits) = model.run_injected_decode(
+            &bridge_pair,
+            prefix_tokens.len(),
+            decode_token,
+            &tppe_config,
+        )?;
+        if bridge_hidden.len() != trace.decode_hidden_out.len()
+            || bridge_logits.len() != trace.decode_logits.len()
+            || bridge_hidden
+                .iter()
+                .zip(&trace.decode_hidden_out)
+                .any(|(a, b)| a.to_bits() != b.to_bits())
+            || bridge_logits
+                .iter()
+                .zip(&trace.decode_logits)
+                .any(|(a, b)| a.to_bits() != b.to_bits())
+        {
+            return Err(
+                "bridge-injected Layer-3 forward diverged from uninterrupted control".into(),
+            );
+        }
+        let mut drifted = base_runtime_query.clone();
+        drifted.model_digest = Digest::sha256(b"different-model");
+        if bridge
+            .prepare_forward_recall(
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0],
+                "qwen-layer3-real-forward",
+                1,
+                &drifted,
+            )
+            .is_ok()
+        {
+            return Err("bridge admitted a changed model digest".into());
+        }
+        eprintln!(
+            "REAL HARNESS BRIDGE FORWARD PASS: Layer-3 hidden and 248320 logits bit-exact; both K/V heads consumed"
+        );
+    }
 
     let t_gate6 = Instant::now();
     let mut single_field_miss_receipts: Vec<(String, String)> = Vec::new();
@@ -1880,7 +1981,11 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
     // =========================================================================
     let report_dir = repo_root.join("results").join("tensor-kv");
     fs::create_dir_all(&report_dir).map_err(|e| format!("create report dir: {e}"))?;
-    let report_path = report_dir.join("tensor-kv-qualification-report.txt");
+    let report_path = if cfg!(feature = "live-forward-model") {
+        report_dir.join("tensor-kv-harness-bridge-report.txt")
+    } else {
+        report_dir.join("tensor-kv-qualification-report.txt")
+    };
 
     let mut report = String::new();
     use std::fmt::Write as _;
@@ -1895,6 +2000,8 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
     )
     .unwrap();
     writeln!(&mut report, "status: PASS (all 7 required gates passed)").unwrap();
+    #[cfg(feature = "live-forward-model")]
+    writeln!(&mut report, "harness_bridge_forward: PASS (real Layer-3; both exact K/V heads consumed; hidden and 248320 logits bit-exact)").unwrap();
     writeln!(&mut report, "canonical_workspace: {}", repo_root.display()).unwrap();
     writeln!(&mut report, "model_directory: {MODEL_DIR}").unwrap();
     writeln!(&mut report, "model_id: {MODEL_ID}").unwrap();

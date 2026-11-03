@@ -9,3 +9,7 @@
 - [ ] Specify a quality-floor and resource-budget controller with measured-cost calibration before promoting AttentionEconomics as policy. The current reward/free-energy equivalence is refuted in `report.tex`.
 - [ ] Independently review the math and the live counterexample; no agent vote was run because spawning agents requires owner approval.
 - [ ] Measure recall candidate scan latency at current corpus size before claiming fast graph traversal; the current read path ranks candidates client-side.
+
+## 2026-11-02 milestone
+- [x] Real Qwen3.6 Layer-3 harness smoke consumed both bridge-fetched K/V heads and matched hidden output and all 248,320 logits bit-exact after isolated SurrealKV restart. Receipt: `results/tensor-kv/tensor-kv-harness-bridge-report.txt`.
+- [ ] Full 40-layer model smoke remains open; the Layer-3 component result must not be promoted to whole-model parity.

@@ -9,6 +9,12 @@ license = "UNLICENSED"
 serde_json = "1"
 sha2 = "0.10"
 
+[features]
+live-forward-model = []
+
+[dev-dependencies]
+rgah = { path = "../research-grade-harness" }
+
 [lib]
 path = "src/lib.rs"
 

@@ -367,3 +367,5 @@ Trajectory admission must be atomic across its header and ordered steps. A
 prediction-error observation needs separate raw, precision-weighted, surprisal,
 and Bayesian-update fields to prevent incompatible quantities from being
 silently compared.
+
+The optional `live-forward-model` integration gate uses the research harness bridge to retrieve both exact-model prefix K/V heads from isolated SurrealKV and inject them into a real Qwen3.6 Layer-3 continuation. The 2026-11-02 release run matched the uninterrupted hidden output and all 248,320 logits bit for bit; see `../results/tensor-kv/tensor-kv-harness-bridge-report.txt`. The default Q1.5 qualification remains separate, and no full-model claim follows.
