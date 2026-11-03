@@ -50,6 +50,17 @@ tags: ["globalmind", "rust", "surrealdb", "distillation", "trajectories"]
 
 # Executive Summary
 
+Glimmer native forward setup (2026-11-03):
+`src/bin/glimmer_forward_preflight.rs` rehashes the frozen Glimmer roster,
+checks its 52-layer architecture and pinned tokenizer/config, and refuses the
+retired TPPE reference contract or an unpinned native executor. It performs
+no inference or SurrealDB write. See `GLIMMER-FORWARD-SMOKE-DESIGN.md` and
+`../results/glimmer-forward/preflight-2026-11-03.md`. The real Qwen Layer-3
+SurrealKV bridge qualification remains a separate component baseline; it is
+not Glimmer execution.
+The Qwen Layer-3 smoke now checks MCP boundary authority through the typed
+GlobalMind bridge; this does not mean a live MCP child participated.
+
 Queue 1.2 update (2026-11-02): the current position ablation uses a sequential,
 token-independent TPPE carry and applies each arm at the same Layer-3 Q/K
 boundary. `TppeState::validate` now checks cross-coordinate consistency,
