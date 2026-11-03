@@ -437,10 +437,22 @@ impl NativeMtpExecutor {
 impl Executor for NativeMtpExecutor {
     fn call(&mut self, tool: &str, args_json: &str) -> Result<CallOutcome, String> {
         let started = Instant::now();
-        let result = tokio::task::block_in_place(|| match tokio::runtime::Handle::try_current() {
-            Ok(handle) => handle.block_on(self.generate(tool, args_json)),
-            Err(_) => Err("no tokio runtime for native-mtp call".to_string()),
-        });
+        // Prefer the caller's runtime (axum workers); fall back to a
+        // fresh runtime when there is none (unit / live tests). A new
+        // runtime per call is heavier, but it never deadlocks, and
+        // executor calls are model generations, not hot-path calls.
+        let result = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                tokio::task::block_in_place(|| handle.block_on(self.generate(tool, args_json)))
+            }
+            Err(_) => match tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(rt) => rt.block_on(self.generate(tool, args_json)),
+                Err(e) => Err(format!("runtime build: {}", e)),
+            },
+        };
         let dt_ns = started.elapsed().as_nanos() as u64;
         let (output, identity) = result?;
         let receipt = Sha256Digest::compute(
