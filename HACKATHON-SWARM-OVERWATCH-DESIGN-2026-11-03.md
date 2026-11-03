@@ -4,6 +4,37 @@ Date: 2026-11-03. Status: design and preregistration. Canonical repository only.
 User decision: pause further MLIR lowering; restore the tokenizer as the
 checkpoint-specific model adapter. Do not delete prior MLIR research.
 
+## Substrate and exact placement (locked 2026-11-03)
+
+The **one GlobalMind** is the existing SurrealDB-backed hyperbolic map with
+its nested exact-model tensor K/V. Keep the map, typed relational edges,
+trajectories, and K/V under that single authority; K/V is model/session-bound
+and never promoted to shared semantic atom content. Qdrant remains the fact
+library and HyperDX remains observation/telemetry. A worker's carved view is
+a scoped read capability into this one map, not a copied or second map.
+
+The **one Meta Automaton overwatch sits at the MCP-to-harness boundary**:
+
+```text
+Glimmer model seat / carved workers in harness
+    ↕ typed proposal and observed outcome
+Meta Automaton overwatch: audit → confidence update → rank/prefill prediction
+    ↕ governed, receipted MCP adapter
+one SurrealDB GlobalMind: hyperbolic atoms/edges/trajectories + nested exact K/V
+```
+
+The automaton sees requests and verified outcome receipts at that boundary;
+it admits/rolls back proposals and updates confidence without becoming the
+step executor or owning another memory store. `research-grade-harness/src/globalmind_bridge.rs`
+already provides a read-only typed GlobalMind recall + exact K/V seam; the
+MCP adapter must route to the **same** SurrealDB authority and enforce carved
+handles. `research-grade-harness/src/map_plugin.rs` still describes a separate
+installed map plugin/root. Do not use that path to create another mind or
+claim it is the Surreal-backed boundary until its target is verified.
+MCP JSON-RPC framing, where required by MCP, stays transport-only; the
+model-facing recall/K/V payload is typed binary. No JSON or Python enters the
+model I/O boundary.
+
 ## Source register and scope
 
 - `N3/design/CARVED_SWARM_SPEC.md` and `MasterDesignDocument/C30-Multi-Agent-Lanes-Autorunner/BrigadeSwarmPluginBinding.md` state the one-weight, carved-view and brigade gates. Current backend `src/store.rs` has one `Arc<FrozenBaseWeights>` and 12 in-memory `SiloView`s. That is component evidence, not a live multi-agent run.
@@ -39,7 +70,12 @@ The “Gödel point” is a design analogy about snapshot insufficiency, not an 
    automatically a calibrated semantic retrieval embedding; qualify that
    separately before indexing or comparing it to Qwen vectors.
 2. Implement the carved graph handle against the one GlobalMind, enforced at read/traverse/tool boundaries; connect governor permits, real model seat and L0 judge. Do not port N3 canned `carve-specialist` percentages.
-3. Extract/reuse the existing Meta Automaton transition/rollback semantics; add one typed proposer envelope for retrieval and prefill rather than separate controller loops. Persist confidence history and receipts in the governed store. Keep telemetry observation in HyperDX.
+3. Place the single Meta Automaton at the MCP-to-harness seam, reusing the
+   existing transition/rollback semantics. Add one typed proposer envelope
+   for retrieval and prefill rather than separate controller loops. Persist
+   confidence history and receipts in the governed SurrealDB substrate, with
+   HyperDX as observation. Verify the MCP target resolves to that exact
+   substrate and cannot create a second map.
 4. Add across-turn paper-style holding telemetry and branch-hold arbitration with same-policy scrutiny. Use Q32.31 for admission/confidence state; verify numeric bounds separately. Guard against circular self-evidence: model proposals cannot serve as independent outcome judges.
 5. Run a real end-to-end task with two carved workers on one model buffer, retrieval proposal, MTP/prefill proposal, a forced failure and recovery, L0 adversarial merge, exact K/V identity checks and restart. Compare to same model without carving/overwatch, measuring task outcome, wrong-context prefetch, acceptance, latency, memory, and receipt completeness. Negative results stay in the report.
 
