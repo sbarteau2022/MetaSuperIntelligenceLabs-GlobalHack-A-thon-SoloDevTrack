@@ -23,6 +23,8 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
+pub mod scoped;
+
 pub const RECALL_MAGIC: [u8; 4] = *b"GMRC";
 pub const RECALL_VERSION: u16 = 1;
 pub const DEFAULT_CANDIDATE_BUDGET: u32 = 4096;
@@ -1000,6 +1002,81 @@ mod tests {
             candidate_budget: DEFAULT_CANDIDATE_BUDGET,
             metric,
         }
+    }
+
+    #[test]
+    fn live_scoped_well_excludes_hidden_atoms_and_cross_edges() {
+        let db = IsolatedRetrievalDb::start();
+        seed_retrieval_db(&db);
+        let schema = std::fs::read_to_string(
+            "../hypermind-nested-kv/schema/0007_globalmind_distillation_trajectories.surql",
+        )
+        .expect("well schema");
+        let applied = db.sql(&schema);
+        assert!(
+            !applied.contains("\"status\":\"ERR\""),
+            "well schema: {applied:.500}"
+        );
+        let setup = format!(
+            "CREATE cognitive_well:scope_a SET workspace = workspace:recall, geometry_space = geometry_space:demo, ordinal = 0, label = 'scope_a', h3_center_lorentz = [1.0,0.0,0.0,0.0], t2_sector = 0, boundary_contract_digest = '{}', status = 'specified'; \
+            CREATE address_well_membership:hub SET workspace = workspace:recall, address = atom_address:addr_hub, well = cognitive_well:scope_a, classifier_version = 'test', classifier_digest = '{}', boundary_receipt_digest = '{}'; \
+            CREATE address_well_membership:near SET workspace = workspace:recall, address = atom_address:addr_near, well = cognitive_well:scope_a, classifier_version = 'test', classifier_digest = '{}', boundary_receipt_digest = '{}'; \
+            RELATE atom:hub->atom_edge:inside->atom:near SET workspace = workspace:recall, kind = 'semantic', weight = 0.8, confidence = 0.9, evidence_digest = '{}', producer = 'test', revision = 1; \
+            RELATE atom:hub->atom_edge:outside->atom:far SET workspace = workspace:recall, kind = 'semantic', weight = 0.8, confidence = 0.9, evidence_digest = '{}', producer = 'test', revision = 1;",
+            Digest::sha256(b"well"),
+            Digest::sha256(b"classifier"),
+            Digest::sha256(b"boundary"),
+            Digest::sha256(b"classifier"),
+            Digest::sha256(b"boundary"),
+            Digest::sha256(b"evidence"),
+            Digest::sha256(b"evidence")
+        );
+        let seeded = db.sql(&setup);
+        assert!(
+            !seeded.contains("\"status\":\"ERR\""),
+            "scope seed: {seeded:.800}"
+        );
+        let config = test_config(&db, RetrievalMetric::Hyperbolic);
+        let well = RecordId::parse("scope_a").unwrap();
+        let first = scoped::retrieve_scoped(
+            &config,
+            std::slice::from_ref(&well),
+            HUB,
+            PHASE0,
+            "scope-test",
+            5,
+        )
+        .unwrap();
+        assert_eq!(
+            first
+                .bundle
+                .members
+                .iter()
+                .map(|m| m.atom.as_str())
+                .collect::<Vec<_>>(),
+            ["hub", "near"]
+        );
+        assert_eq!(first.edges.len(), 1);
+        assert_eq!(first.edges[0].id.as_str(), "inside");
+        let second =
+            scoped::retrieve_scoped(&config, &[well], HUB, PHASE0, "scope-test", 5).unwrap();
+        assert_eq!(first.scope_digest, second.scope_digest);
+        assert!(scoped::retrieve_scoped(&config, &[], HUB, PHASE0, "scope-test", 5).is_err());
+        let narrow = RetrievalConfig {
+            candidate_budget: 2,
+            ..config
+        };
+        assert!(
+            scoped::retrieve_scoped(
+                &narrow,
+                &[RecordId::parse("scope_a").unwrap()],
+                HUB,
+                PHASE0,
+                "scope-test",
+                5
+            )
+            .is_err()
+        );
     }
 
     #[test]
