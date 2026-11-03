@@ -40,22 +40,17 @@ async fn post(state: Arc<AppState>, body: serde_json::Value) -> (StatusCode, ser
 
 #[tokio::test]
 async fn core_scope_route_without_permit_is_forbidden() {
-    let (status, body) = post(
-        state(),
-        serde_json::json!({"scope": "model_swap"}),
-    )
-    .await;
+    let (status, body) = post(state(), serde_json::json!({"scope": "model_swap"})).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert!(body.get("why_receipt").is_some(), "failure must carry a why-receipt");
+    assert!(
+        body.get("why_receipt").is_some(),
+        "failure must carry a why-receipt"
+    );
 }
 
 #[tokio::test]
 async fn core_scope_route_unknown_scope_is_bad_request() {
-    let (status, _body) = post(
-        state(),
-        serde_json::json!({"scope": "not_a_scope"}),
-    )
-    .await;
+    let (status, _body) = post(state(), serde_json::json!({"scope": "not_a_scope"})).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
