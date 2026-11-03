@@ -12,6 +12,10 @@ path = "src/lib.rs"
 name = "ares-backend"
 path = "src/main.rs"
 
+[[bin]]
+name = "ares-mcp-mind"
+path = "src/bin/ares_mcp_mind.rs"
+
 [dependencies]
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "sync"] }

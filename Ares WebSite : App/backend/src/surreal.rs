@@ -120,6 +120,10 @@ impl SurrealClient {
         })
     }
 
+    pub fn authority(&self) -> (String, String, String) {
+        (self.base.clone(), self.ns.clone(), self.db.clone())
+    }
+
     pub fn sql_url(&self) -> String {
         format!("{}/sql", self.base)
     }

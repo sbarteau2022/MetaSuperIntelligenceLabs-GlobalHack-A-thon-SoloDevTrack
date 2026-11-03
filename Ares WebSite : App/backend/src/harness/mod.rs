@@ -22,6 +22,8 @@
 pub mod automaton;
 pub mod baseline;
 pub mod glimmer_tokenizer;
+pub mod mcp;
+pub mod mcp_server;
 pub mod mission;
 pub mod native_mtp;
 pub mod qdrant_memory;
