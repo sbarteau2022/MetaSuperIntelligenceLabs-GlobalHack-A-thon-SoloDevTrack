@@ -196,6 +196,48 @@ fn apply_schema(db: &IsolatedDb) {
     );
 }
 
+#[test]
+fn isolated_mcp_child_attests_recall_and_exact_kv_contract() {
+    use std::io::{BufRead, BufReader};
+    let db = IsolatedDb::start();
+    apply_schema(&db);
+    let store = GlobalMindStore::connect(db.config()).unwrap();
+    store.verify_recall_kv_contract().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_globalmind-mcp"))
+        .env(
+            "GLOBALMIND_SURREAL_URL",
+            format!("http://127.0.0.1:{}", db.port),
+        )
+        .env("GLOBALMIND_SURREAL_NS", "gmtest5")
+        .env("GLOBALMIND_SURREAL_DB", "gmdev")
+        .env("GLOBALMIND_SURREAL_USER", "root")
+        .env("GLOBALMIND_SURREAL_PASS", "testpass123")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let mut output = BufReader::new(child.stdout.take().unwrap());
+    input.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"mind.db_status\",\"arguments\":{}}}\n").unwrap();
+    input.flush().unwrap();
+    let mut line = String::new();
+    output.read_line(&mut line).unwrap();
+    let outer: serde_json::Value = serde_json::from_str(&line).unwrap();
+    let inner: serde_json::Value =
+        serde_json::from_str(outer["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(inner["mode"], "On", "{inner}");
+    assert_eq!(inner["contract"], "verified");
+    assert_eq!(inner["namespace"], "gmtest5");
+    assert_eq!(inner["database"], "gmdev");
+    assert_eq!(inner["receipt_sha256"].as_str().map(str::len), Some(64));
+    drop(input);
+    let _ = child.wait();
+
+    let storage = db.storage.clone();
+    db.stop();
+    let _ = std::fs::remove_dir_all(storage);
+}
+
 fn envelope(token: u64, values: &[f32]) -> TraceEnvelope {
     let payload: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
     TraceEnvelope {

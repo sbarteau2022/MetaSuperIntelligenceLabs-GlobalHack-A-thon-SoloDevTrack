@@ -60,6 +60,13 @@ SurrealKV bridge qualification remains a separate component baseline; it is
 not Glimmer execution.
 The Qwen Layer-3 smoke now checks MCP boundary authority through the typed
 GlobalMind bridge; this does not mean a live MCP child participated.
+`globalmind-mcp` now reports `On` only after verifying the immutable atom,
+address, and exact transformer K/V fields that its read tools need. Full
+distillation schema verification remains a separate write admission gate.
+An isolated SurrealKV integration test spawns the real stdio child and checks
+its authority and read contract. The backend's automaton route separately
+attests that child before dispatch; model-facing typed hydration and a full
+Glimmer task with recalled evidence are still open.
 
 Queue 1.2 update (2026-11-02): the current position ablation uses a sequential,
 token-independent TPPE carry and applies each arm at the same Layer-3 Q/K

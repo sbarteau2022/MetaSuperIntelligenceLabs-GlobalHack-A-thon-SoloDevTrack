@@ -31,6 +31,20 @@ executor. The current adapter still sends textual tool/args input, and
 `../../FORWARD-SMOKE-BRIGADE-HANDOFF-2026-11-03.md` for the remaining typed
 model-seat and carved-swarm gates.
 
+The live `/api/harness/mcp/execute` route now requires an explicit
+`ARES_MCP_MIND_URL`, `ARES_MCP_MIND_NS`, and `ARES_MCP_MIND_DB` outside the
+quarantined `core` database. It spawns `globalmind-mcp` (override with
+`ARES_MCP_MIND_BIN`), supplies the existing governance client's credentials
+to that child, and checks the child's `mind.db_status` authority and contract
+before automaton-gated dispatch. Governance receipts still persist in the
+backend database. A well-formed MCP response alone is not an independently
+verified task outcome, so this route does not update confidence from that
+response. The request must carry an explicit valid role and exact
+`URL|namespace|database` map identity. Until scoped capability handles are
+bound end to end, only L0 can invoke recall or exact K/V through this route;
+workers can request status only. The full shared-atom recall plus exact model-bound K/V use loop is
+specified in the handoff and still needs a real model task gate.
+
 Status: LANDED (core skeleton), 2026-11-02. One Rust binary (axum + Tokio),
 loopback `127.0.0.1:4810`. Governance is baked in, not added on: **no
 dispatch, no memory write, no model call, no erasure, and no run ships

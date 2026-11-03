@@ -7,33 +7,13 @@
 //! never trusts the transport: the receipt it returns must be an
 //! exact 64-hex digest, or the call fails with no confidence change.
 //!
-//! Authority, two databases on one server, distinct by role:
-//! - Mind authority: the existing mind the MCP child serves,
-//!   default (http://127.0.0.1:8000, hypermind, core) —
-//!   hypermind-mcp's Surreal defaults, 2079 atoms. The child
-//!   must point at THIS mind, never create a new one.
-//! - Governance authority: the backend's Surreal substrate,
-//!   default (http://127.0.0.1:8000, ares, ares) — receipts,
-//!   permits, automaton confidence and transition receipts.
-//! The adapter checks MCP authority against the EXPECTED MIND
-//! authority, not against governance. An earlier version checked
-//! MCP == harness (governance) authority; that was wrong for a
-//! mind child, because mind and governance are different
-//! databases by design. Persistence SQL is executed by the
-//! caller against the governance client — the adapter never
-//! writes confidence into the mind database, so atom identity
-//! is never polluted by confidence state. The hypermind-mcp
-//! child declares its authority the same way
-//! (`HYPERMIND_SURREAL=on` + URL/NS/DB env), and the caller
-//! verifies the live child with `map.db_status` attestation
-//! (see research-grade-harness `globalmind_bridge.rs`) — this
-//! adapter checks the configured authority; live attestation is
-//! the caller's step, not a claim made here.
+//! The mind and governance databases have different authority. The backend
+//! requires an explicit non-core GlobalMind target, spawns `globalmind-mcp`,
+//! and checks the child's `mind.db_status` before a governed call. Receipts
+//! and confidence remain in the governance database; they do not alter atoms.
 //!
-//! Transport is a trait so tests can stub it. A stdio child
-//! transport (spawning hypermind-mcp) is the next wiring step;
-//! this module does not spawn processes and does not claim a
-//! live child.
+//! Transport is a trait so tests can stub it. `StdioMcpTransport` owns the
+//! child process; the governor owns the authority and admission checks.
 
 use crate::harness::automaton::{
     confidence_upsert_sql, transition, transition_insert_sql, update_from_outcome,
@@ -58,6 +38,32 @@ pub struct McpCall {
 
 pub trait McpTransport {
     fn call(&mut self, tool: &str, args_json: &str) -> Result<McpCall, String>;
+}
+
+/// Check the child process itself, not merely the configuration that spawned it.
+/// The globalmind-mcp status tool reports a verified contract only when its
+/// Surreal target is reachable and the runtime contract matches.
+pub fn attest_mind_child<T: McpTransport>(
+    transport: &mut T,
+    expected: &McpAuthority,
+) -> Result<(), String> {
+    let call = transport.call("mind.db_status", "{}")?;
+    if !is_64_hex(&call.receipt_sha256) {
+        return Err("mind child status receipt invalid".into());
+    }
+    let body: serde_json::Value = serde_json::from_str(&call.inner_text)
+        .map_err(|e| format!("mind child status parse: {e}"))?;
+    let field = |name: &str| body.get(name).and_then(|v| v.as_str());
+    if field("status") != Some("ok")
+        || field("mode") != Some("On")
+        || field("contract") != Some("verified")
+        || field("endpoint") != Some(expected.base.as_str())
+        || field("namespace") != Some(expected.ns.as_str())
+        || field("database") != Some(expected.db.as_str())
+    {
+        return Err("mind child authority or contract attestation mismatch".into());
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -268,13 +274,17 @@ mod tests {
     struct StubTransport {
         calls: usize,
         receipt: String,
+        response: Option<String>,
     }
 
     impl McpTransport for StubTransport {
         fn call(&mut self, _tool: &str, _args_json: &str) -> Result<McpCall, String> {
             self.calls += 1;
             Ok(McpCall {
-                inner_text: "{\"status\":\"ok\"}".to_string(),
+                inner_text: self
+                    .response
+                    .clone()
+                    .unwrap_or_else(|| "{\"status\":\"ok\"}".to_string()),
                 receipt_sha256: self.receipt.clone(),
                 dt_ns: 42,
             })
@@ -328,11 +338,30 @@ mod tests {
     }
 
     #[test]
+    fn child_attestation_rejects_wrong_database() {
+        let mut t = StubTransport {
+            calls: 0,
+            receipt: good_receipt(),
+            response: Some(r#"{"status":"ok","mode":"On","contract":"verified","endpoint":"http://127.0.0.1:8000","namespace":"hypermind","database":"wrong"}"#.into()),
+        };
+        let expected = McpAuthority {
+            base: "http://127.0.0.1:8000".into(),
+            ns: "hypermind".into(),
+            db: "smoke".into(),
+        };
+        assert!(attest_mind_child(&mut t, &expected).is_err());
+        t.response = Some(r#"{"status":"ok","mode":"On","contract":"verified","endpoint":"http://127.0.0.1:8000","namespace":"hypermind","database":"smoke"}"#.into());
+        assert!(attest_mind_child(&mut t, &expected).is_ok());
+        assert_eq!(t.calls, 2);
+    }
+
+    #[test]
     fn admit_calls_transport_once_and_updates_confidence_on_verified_outcome() {
         let mut s = state();
         let mut t = StubTransport {
             calls: 0,
             receipt: good_receipt(),
+            response: None,
         };
         let ex = execute_via_automaton(
             &mut s,
@@ -360,6 +389,7 @@ mod tests {
         let mut t = StubTransport {
             calls: 0,
             receipt: good_receipt(),
+            response: None,
         };
         let ex = execute_via_automaton(
             &mut s,
@@ -386,6 +416,7 @@ mod tests {
         let mut t = StubTransport {
             calls: 0,
             receipt: good_receipt(),
+            response: None,
         };
         let other = McpAuthority {
             base: "http://127.0.0.1:8000".to_string(),
@@ -416,6 +447,7 @@ mod tests {
         let mut t = StubTransport {
             calls: 0,
             receipt: "not-a-digest".to_string(),
+            response: None,
         };
         assert!(execute_via_automaton(
             &mut s,
@@ -441,6 +473,7 @@ mod tests {
         let mut t = StubTransport {
             calls: 0,
             receipt: good_receipt(),
+            response: None,
         };
         let ex = execute_via_automaton(
             &mut s,

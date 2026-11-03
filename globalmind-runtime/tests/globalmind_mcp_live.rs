@@ -9,13 +9,16 @@ use globalmind_runtime::{
     Digest, GlobalMindStore, RecordId, StoreConfig, TensorDtype, TensorLayout, TensorPage,
     TensorSession,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn discover_credentials() -> Option<(String, String)> {
-    let out = std::process::Command::new("ps").args(["-eo", "command"]).output().ok()?;
+    let out = std::process::Command::new("ps")
+        .args(["-eo", "command"])
+        .output()
+        .ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
     for line in text.lines() {
         if line.contains("surreal") && line.contains("--bind 127.0.0.1:8000") {
@@ -53,7 +56,12 @@ fn spawn_mcp(env: &[(&str, &str)]) -> (Child, ChildStdin, BufReader<std::process
     (child, stdin, stdout)
 }
 
-fn call(stdin: &mut ChildStdin, stdout: &mut BufReader<std::process::ChildStdout>, _id: u64, req: Value) -> Value {
+fn call(
+    stdin: &mut ChildStdin,
+    stdout: &mut BufReader<std::process::ChildStdout>,
+    _id: u64,
+    req: Value,
+) -> Value {
     let mut line = req.to_string();
     line.push('\n');
     stdin.write_all(line.as_bytes()).unwrap();
@@ -64,7 +72,9 @@ fn call(stdin: &mut ChildStdin, stdout: &mut BufReader<std::process::ChildStdout
 }
 
 fn inner_text(resp: &Value) -> Value {
-    let text = resp["result"]["content"][0]["text"].as_str().expect("text content");
+    let text = resp["result"]["content"][0]["text"]
+        .as_str()
+        .expect("text content");
     serde_json::from_str(text).expect("inner json")
 }
 
@@ -74,7 +84,10 @@ fn globalmind_mcp_live() {
         eprintln!("SKIP: no SurrealDB process found on 8000");
         return;
     };
-    let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
     let session_id = format!("mcp_test_session_{}", stamp);
     let page_id = format!("mcp_test_page_{}", stamp);
     let key: Vec<u8> = (0u8..16).collect();
@@ -110,7 +123,9 @@ fn globalmind_mcp_live() {
         address_contract_digest: zero.clone(),
         tensor_contract_digest: zero.clone(),
     };
-    store.create_tensor_session(&session).expect("create session");
+    store
+        .create_tensor_session(&session)
+        .expect("create session");
     let page = TensorPage {
         id: RecordId::parse(page_id.clone()).unwrap(),
         workspace: RecordId::parse("hypermind").unwrap(),
@@ -143,10 +158,25 @@ fn globalmind_mcp_live() {
         ("GLOBALMIND_SURREAL_DB", "globalmind_mcp_test"),
     ];
     let (mut child, mut stdin, mut stdout) = spawn_mcp(&env);
-    let init = call(&mut stdin, &mut stdout, 1, json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}));
+    let init = call(
+        &mut stdin,
+        &mut stdout,
+        1,
+        json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+    );
     assert_eq!(init["result"]["serverInfo"]["name"], "globalmind-mcp");
-    let list = call(&mut stdin, &mut stdout, 2, json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}));
-    let names: Vec<&str> = list["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
+    let list = call(
+        &mut stdin,
+        &mut stdout,
+        2,
+        json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
+    );
+    let names: Vec<&str> = list["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
     assert!(names.contains(&"mind.recall"));
     assert!(names.contains(&"mind.kv_exact"));
     assert!(names.contains(&"mind.db_status"));
@@ -165,13 +195,23 @@ fn globalmind_mcp_live() {
         "phase_state_digest": zero.as_str(), "revision": 1,
         "key_digest": key_digest.as_str(), "value_digest": value_digest.as_str(),
     });
-    let kv = call(&mut stdin, &mut stdout, 3, json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "mind.kv_exact", "arguments": kv_args}}));
+    let kv = call(
+        &mut stdin,
+        &mut stdout,
+        3,
+        json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "mind.kv_exact", "arguments": kv_args}}),
+    );
     let kv_inner = inner_text(&kv);
     assert_eq!(kv_inner["key_bytes"], 16);
     assert_eq!(kv_inner["value_bytes"], 16);
     assert_eq!(kv_inner["key_digest"], key_digest.as_str());
     // Base64 of 0..16 and 100..116, small payload so bytes are returned.
-    assert!(kv_inner["key_base64"].as_str().unwrap().starts_with("AAECAw"));
+    assert!(
+        kv_inner["key_base64"]
+            .as_str()
+            .unwrap()
+            .starts_with("AAECAw")
+    );
     drop(stdin);
     let _ = child.wait();
 }

@@ -506,6 +506,7 @@ mod tests {
     // substitute for a frame produced by the native MTP server itself,
     // which is why live verification against a running server is still
     // required before any live receipt is claimed.
+    #[allow(clippy::too_many_arguments)]
     fn build_frame(
         kind: u8,
         sequence: u64,

@@ -67,6 +67,57 @@ impl GlobalMindStore {
         Ok(Self { config, host, port })
     }
 
+    /// The MCP read surface needs the atom-address and exact tensor K/V
+    /// contracts. Distillation ingress has additional tables and is checked
+    /// separately by `verify_contract` before any distillation write.
+    pub fn verify_recall_kv_contract(&self) -> Result<(), String> {
+        for (table, required) in [
+            (
+                "atom",
+                &["content_digest", "content_kind", "provenance"][..],
+            ),
+            (
+                "atom_address",
+                &["atom", "h3_lorentz", "t2_phase", "revision"][..],
+            ),
+            (
+                "transformer_kv_session",
+                &[
+                    "model_digest",
+                    "prefix_digest",
+                    "tensor_contract_digest",
+                    "tppe_configuration_digest",
+                ][..],
+            ),
+            (
+                "transformer_kv_page",
+                &[
+                    "key_tensor",
+                    "value_tensor",
+                    "key_digest",
+                    "value_digest",
+                    "phase_state_digest",
+                ][..],
+            ),
+        ] {
+            let result = self.one(&format!("INFO FOR TABLE {table};"))?;
+            let fields = result
+                .get("fields")
+                .and_then(Value::as_object)
+                .ok_or_else(|| format!("GlobalMind table {table} is missing"))?;
+            for field in required {
+                let definition = fields
+                    .get(*field)
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| format!("GlobalMind field {table}.{field} is missing"))?;
+                if !definition.contains("READONLY") {
+                    return Err(format!("GlobalMind field {table}.{field} is not immutable"));
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn verify_contract(&self) -> Result<(), String> {
         for (table, required) in [
             (

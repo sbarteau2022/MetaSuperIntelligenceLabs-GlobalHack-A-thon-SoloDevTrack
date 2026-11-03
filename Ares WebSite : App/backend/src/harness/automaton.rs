@@ -218,13 +218,11 @@ pub fn transition(
 ) -> AutomatonTransition {
     let prior = state.digest();
     let proposal_digest = proposal.digest();
-    let verdict = if proposal.policy_version != state.policy_version {
-        Verdict::Reject
-    } else if proposal.prefix_identity != state.prefix_identity
+    let verdict = if proposal.policy_version != state.policy_version
+        || proposal.prefix_identity != state.prefix_identity
         || proposal.map_identity != state.map_identity
+        || now_ms > proposal.expiry_ms
     {
-        Verdict::Reject
-    } else if now_ms > proposal.expiry_ms {
         Verdict::Reject
     } else if signals.unresolved_dependencies > 0
         || signals.entity_ambiguity

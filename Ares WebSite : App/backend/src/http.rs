@@ -612,10 +612,16 @@ async fn harness_mission_geometry(
     State(state): State<Arc<AppState>>,
     Json(req): Json<MissionRequest>,
 ) -> impl IntoResponse {
-    let role = req
-        .role
-        .and_then(RoleId::from_level)
-        .unwrap_or(RoleId::LaneBuilder);
+    let role = match req.role.and_then(RoleId::from_level) {
+        Some(role) => role,
+        None => {
+            return err_json(
+                StatusCode::BAD_REQUEST,
+                WhyReceipt::internal("/api/harness/mcp/execute", "valid explicit role required"),
+            )
+            .into_response()
+        }
+    };
     let input = crate::harness::mission::geometry_mission();
     match crate::governor::dispatch_mission(&state, role, input, req.budget_j.unwrap_or(100.0)).await {
         Ok((permit, receipt)) => Json(serde_json::json!({
@@ -780,21 +786,77 @@ async fn harness_mcp_execute(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    let (mcp_base, mcp_ns, mcp_db) = match &state.surreal {
-        Some(c) => c.authority(),
-        None => (
-            "http://127.0.0.1:8000".to_string(),
-            "ares".to_string(),
-            "ares".to_string(),
-        ),
+    let Some(governance) = &state.surreal else {
+        return err_json(
+            StatusCode::SERVICE_UNAVAILABLE,
+            WhyReceipt::internal(
+                "/api/harness/mcp/execute",
+                "governance SurrealDB unavailable",
+            ),
+        )
+        .into_response();
     };
-    let mcp_authority = crate::harness::mcp::McpAuthority {
-        base: mcp_base,
-        ns: mcp_ns,
-        db: mcp_db,
+    let configured = || -> Result<crate::harness::mcp::McpAuthority, String> {
+        let base = std::env::var("ARES_MCP_MIND_URL").map_err(|_| "ARES_MCP_MIND_URL required")?;
+        let ns = std::env::var("ARES_MCP_MIND_NS").map_err(|_| "ARES_MCP_MIND_NS required")?;
+        let db = std::env::var("ARES_MCP_MIND_DB").map_err(|_| "ARES_MCP_MIND_DB required")?;
+        if !base.starts_with("http://127.0.0.1:") || ns.is_empty() || db.is_empty() || db == "core"
+        {
+            return Err(
+                "mind MCP target must be explicit loopback and outside quarantined core".into(),
+            );
+        }
+        Ok(crate::harness::mcp::McpAuthority { base, ns, db })
     };
+    let mcp_authority = match configured() {
+        Ok(v) => v,
+        Err(e) => {
+            return err_json(
+                StatusCode::SERVICE_UNAVAILABLE,
+                WhyReceipt::internal("/api/harness/mcp/execute", &e),
+            )
+            .into_response()
+        }
+    };
+    let canonical_map_identity = format!(
+        "{}|{}|{}",
+        mcp_authority.base, mcp_authority.ns, mcp_authority.db
+    );
+    if req.map_identity != canonical_map_identity {
+        return err_json(
+            StatusCode::BAD_REQUEST,
+            WhyReceipt::internal(
+                "/api/harness/mcp/execute",
+                "proposal map identity differs from configured mind authority",
+            ),
+        )
+        .into_response();
+    }
+    if !matches!(
+        req.tool.as_str(),
+        "mind.db_status" | "mind.recall" | "mind.kv_exact"
+    ) {
+        return err_json(
+            StatusCode::BAD_REQUEST,
+            WhyReceipt::internal(
+                "/api/harness/mcp/execute",
+                "tool is outside the governed mind read surface",
+            ),
+        )
+        .into_response();
+    }
+    if req.tool != "mind.db_status" && role != RoleId::Coordinator {
+        return err_json(
+            StatusCode::FORBIDDEN,
+            WhyReceipt::internal(
+                "/api/harness/mcp/execute",
+                "carved worker recall requires a scoped capability handle",
+            ),
+        )
+        .into_response();
+    }
     let mcp_bin =
-        std::env::var("ARES_MCP_MIND_BIN").unwrap_or_else(|_| "ares-mcp-mind".to_string());
+        std::env::var("ARES_MCP_MIND_BIN").unwrap_or_else(|_| "globalmind-mcp".to_string());
     let mcp_root = std::env::var("ARES_MCP_MIND_ROOT").unwrap_or_else(|_| ".".to_string());
     match crate::governor::dispatch_mcp_execute(
         &state,
@@ -808,6 +870,7 @@ async fn harness_mcp_execute(
         &mcp_bin,
         &mcp_root,
         mcp_authority,
+        governance.credentials(),
     )
     .await
     {

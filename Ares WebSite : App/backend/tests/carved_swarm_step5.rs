@@ -34,13 +34,23 @@ fn immune(fp: Sha256Digest) -> ImmuneSystem {
 /// L0 gate: merge (issue a Merkle root) only if the frozen buffer is
 /// intact, both workers' atoms are globally present, and each worker
 /// can see only its own atom. Anything else fails closed, merging nothing.
-fn l0_merge(map: &CarvedSwarmMap, sys: &mut ImmuneSystem, a: u64, b: u64) -> Result<Sha256Digest, String> {
-    sys.check_base_weights(map).map_err(|e| format!("L0 gate: {:?}", e))?;
+fn l0_merge(
+    map: &CarvedSwarmMap,
+    sys: &mut ImmuneSystem,
+    a: u64,
+    b: u64,
+) -> Result<Sha256Digest, String> {
+    sys.check_base_weights(map)
+        .map_err(|e| format!("L0 gate: {:?}", e))?;
     if map.global_atom(a).is_none() || map.global_atom(b).is_none() {
         return Err("L0 gate: worker atom missing from global map".into());
     }
-    let wa = map.scoped_read(RoleId::LaneBuilder).ok_or("L0 gate: no worker A reader")?;
-    let wb = map.scoped_read(RoleId::LaneVerifier).ok_or("L0 gate: no worker B reader")?;
+    let wa = map
+        .scoped_read(RoleId::LaneBuilder)
+        .ok_or("L0 gate: no worker A reader")?;
+    let wb = map
+        .scoped_read(RoleId::LaneVerifier)
+        .ok_or("L0 gate: no worker B reader")?;
     if wa.atom(a).is_none() || wb.atom(b).is_none() {
         return Err("L0 gate: worker cannot see its own atom".into());
     }
@@ -108,8 +118,14 @@ fn step5_two_workers_one_buffer_forced_failure_l0_merge_restart() {
     let original_base = Arc::clone(&map.base_weights);
     map.base_weights = Arc::new(tampered);
     let err = sys.check_base_weights(&map).unwrap_err();
-    assert!(matches!(err, ComplianceViolation::BaseWeightsModified { .. }));
-    assert!(l0_merge(&map, &mut sys, atom_a, atom_b).is_err(), "failed gate must not merge");
+    assert!(matches!(
+        err,
+        ComplianceViolation::BaseWeightsModified { .. }
+    ));
+    assert!(
+        l0_merge(&map, &mut sys, atom_a, atom_b).is_err(),
+        "failed gate must not merge"
+    );
     // A failed worker attempt creates no atom: count and root are unchanged.
     assert_eq!(map.global_atom_count(), 2);
 
@@ -117,7 +133,8 @@ fn step5_two_workers_one_buffer_forced_failure_l0_merge_restart() {
     //    merge root are exactly what they were before the failure.
     map.base_weights = original_base;
     assert!(map.base_weights.verify_integrity());
-    let root_recovered = l0_merge(&map, &mut sys, atom_a, atom_b).expect("recovered L0 merge must pass");
+    let root_recovered =
+        l0_merge(&map, &mut sys, atom_a, atom_b).expect("recovered L0 merge must pass");
     assert_eq!(root_recovered, root_clean);
 
     // 6. Restart comparison: rebuild from the same frozen weights and replay

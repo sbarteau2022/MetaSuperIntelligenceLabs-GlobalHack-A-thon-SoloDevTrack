@@ -22,10 +22,10 @@
 //!   computed by this bin — it binds the call, it is not a claim that
 //!   inner content is true (that is the caller's judge step).
 use globalmind_runtime::{
-    retrieval::{retrieve, RetrievalConfig, RetrievalMetric},
     ExactKvIdentity, GlobalMindStore, RecordId, StoreConfig,
+    retrieval::{RetrievalConfig, RetrievalMetric, retrieve},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest as ShaDigest, Sha256};
 use std::io::{BufRead, Write};
 
@@ -113,15 +113,22 @@ fn parse_f64_array(args: &Value, k: &str, n: usize) -> Result<Vec<f64>, String> 
         return Err(format!("argument {} must have {} elements", k, n));
     }
     arr.iter()
-        .map(|v| v.as_f64().ok_or_else(|| format!("argument {} must be numbers", k)))
+        .map(|v| {
+            v.as_f64()
+                .ok_or_else(|| format!("argument {} must be numbers", k))
+        })
         .collect()
 }
 
 fn db_status() -> Value {
     let cfg = StoreConfig::from_env();
-    let (endpoint, ns, db) = (cfg.endpoint.clone(), cfg.namespace.clone(), cfg.database.clone());
+    let (endpoint, ns, db) = (
+        cfg.endpoint.clone(),
+        cfg.namespace.clone(),
+        cfg.database.clone(),
+    );
     let (mode, contract): (&str, String) = match GlobalMindStore::connect(cfg) {
-        Ok(store) => match store.verify_contract() {
+        Ok(store) => match store.verify_recall_kv_contract() {
             Ok(()) => ("On", "verified".to_string()),
             Err(e) => ("Unavailable", e),
         },
@@ -134,7 +141,7 @@ fn db_status() -> Value {
         "namespace": ns,
         "database": db,
         "contract": contract,
-        "contract_scope": "globalmind-runtime tables (distillation, trajectory, superposition) — not hypermind atom tables; mind.recall uses atom_address only and does not require this contract",
+        "contract_scope": "immutable atom_address and exact transformer K/V fields required by mind.recall and mind.kv_exact; full distillation contract is checked separately before writes",
     })
 }
 
@@ -249,18 +256,20 @@ fn automaton_decide(args: &Value) -> Result<Value, String> {
     let expiry = get_u64(args, "expiry_ms");
     let now = get_u64(args, "now_ms");
     let unresolved = get_u64(args, "unresolved_dependencies");
-    let ambiguity = args.get("entity_ambiguity").and_then(Value::as_bool).unwrap_or(false);
+    let ambiguity = args
+        .get("entity_ambiguity")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let confidence = get_f64(args, "measured_confidence");
     let floor = get_f64(args, "confidence_floor");
-    let verdict = if policy != state_policy || prefix != state_prefix || map != state_map {
-        "Reject"
-    } else if now > expiry {
-        "Reject"
-    } else if unresolved > 0 || ambiguity || confidence < floor {
-        "Clarify"
-    } else {
-        "Admit"
-    };
+    let verdict =
+        if policy != state_policy || prefix != state_prefix || map != state_map || now > expiry {
+            "Reject"
+        } else if unresolved > 0 || ambiguity || confidence < floor {
+            "Clarify"
+        } else {
+            "Admit"
+        };
     Ok(json!({
         "verdict": verdict,
         "committed": verdict == "Admit",
@@ -307,12 +316,24 @@ mod base64_helper {
     pub fn encode(data: &[u8]) -> String {
         let mut out = String::new();
         for chunk in data.chunks(3) {
-            let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+            let b = [
+                chunk[0],
+                *chunk.get(1).unwrap_or(&0),
+                *chunk.get(2).unwrap_or(&0),
+            ];
             let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | (b[2] as u32);
             out.push(TABLE[(n >> 18) as usize & 63] as char);
             out.push(TABLE[(n >> 12) as usize & 63] as char);
-            out.push(if chunk.len() > 1 { TABLE[(n >> 6) as usize & 63] as char } else { '=' });
-            out.push(if chunk.len() > 2 { TABLE[n as usize & 63] as char } else { '=' });
+            out.push(if chunk.len() > 1 {
+                TABLE[(n >> 6) as usize & 63] as char
+            } else {
+                '='
+            });
+            out.push(if chunk.len() > 2 {
+                TABLE[n as usize & 63] as char
+            } else {
+                '='
+            });
         }
         out
     }
@@ -328,7 +349,9 @@ fn main() {
         }
         let resp = match serde_json::from_str::<serde_json::Value>(&line) {
             Ok(req) => handle_request(&req),
-            Err(_) => json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32700, "message": "parse error"}}),
+            Err(_) => {
+                json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32700, "message": "parse error"}})
+            }
         };
         if resp != Value::Null {
             let _ = writeln!(stdout, "{}", resp);

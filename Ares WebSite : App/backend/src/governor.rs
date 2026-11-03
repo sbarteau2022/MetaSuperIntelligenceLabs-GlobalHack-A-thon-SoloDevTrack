@@ -512,18 +512,17 @@ pub fn default_policy() -> OverlapPolicyMatrix {
 /// the mission runs fail-closed locally unless a live executor is wired
 /// by the caller. The mission receipt is persisted to SurrealDB
 /// (run/receipt rows) and anchored by the audit chain.
-
+///
 /// Governed MCP execution through the automaton, live dispatch.
 /// Permit first, telemetry required, automaton transition, stdio
-/// MCP child only if Admit, verified-outcome confidence update,
+/// MCP child only if Admit, confidence update only after an independent
+/// outcome judge,
 /// persistence to the governance Surreal substrate, HyperDX
 /// observation. The MCP child binary path and root come from
 /// server configuration (env), never from the request — a
 /// request-controlled binary path would be a code-execution hole.
-/// Verified here means: the tool returned a well-formed,
-/// receipt-bound ok result (receipt 64-hex, inner JSON parses,
-/// inner status ok). It does NOT mean the result is true;
-/// an independent judge re-query is Step 5 territory.
+/// A well-formed response is only a transport result; this path deliberately
+/// marks it unverified and does not raise confidence from the child's claim.
 #[allow(clippy::too_many_arguments)]
 pub async fn dispatch_mcp_execute(
     state: &Arc<AppState>,
@@ -537,6 +536,7 @@ pub async fn dispatch_mcp_execute(
     mcp_bin: &str,
     mcp_root: &str,
     mcp_authority: crate::harness::mcp::McpAuthority,
+    mind_credentials: (String, String),
 ) -> Result<
     (
         CompliancePermit,
@@ -558,7 +558,17 @@ pub async fn dispatch_mcp_execute(
         .telemetry
         .as_ref()
         .ok_or_else(|| "live run requires HyperDX telemetry configured".to_string())?;
-    let mut transport = crate::harness::mcp::StdioMcpTransport::spawn(mcp_bin, mcp_root, &[])?;
+    let child_env = [
+        ("GLOBALMIND_SURREAL_URL", mcp_authority.base.as_str()),
+        ("GLOBALMIND_SURREAL_NS", mcp_authority.ns.as_str()),
+        ("GLOBALMIND_SURREAL_DB", mcp_authority.db.as_str()),
+        ("GLOBALMIND_SURREAL_USER", mind_credentials.0.as_str()),
+        ("GLOBALMIND_SURREAL_PASS", mind_credentials.1.as_str()),
+        ("GLOBALMIND_ALLOW_QUARANTINED_CORE", "0"),
+    ];
+    let mut transport =
+        crate::harness::mcp::StdioMcpTransport::spawn(mcp_bin, mcp_root, &child_env)?;
+    crate::harness::mcp::attest_mind_child(&mut transport, &mcp_authority)?;
     let execution = crate::harness::mcp::execute_via_automaton(
         &mut strategy,
         &envelope,
@@ -569,8 +579,8 @@ pub async fn dispatch_mcp_execute(
         tool,
         args_json,
         &mut transport,
-        true,
-        true,
+        false,
+        false,
     )?;
     // Verified = outcome present with a valid receipt (adapter
     // enforces receipt hex + transport enforces inner status ok).
