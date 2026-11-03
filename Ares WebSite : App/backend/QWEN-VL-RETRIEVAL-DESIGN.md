@@ -1,7 +1,9 @@
 # Rust-native Qwen VL retrieval encoder — frozen contract, 2026-11-02
 
-Status: Rust tokenizer parity and oracle fixture; native 28-layer execution
-and dense query integration remain open. No live encoder parity claim.
+Status: historical tokenizer oracle fixture only. The Rust tokenizer module is
+retired by the bidirectional Boundary Symplectic Transducer decision. Native
+28-layer execution and dense query integration remain open; no live encoder
+parity claim. See `../../GLOBALMIND-MULTIMODEL-TRANSDUCER-HANDOFF-2026-11-02.md`.
 
 ## Source and exact ingest contract
 
