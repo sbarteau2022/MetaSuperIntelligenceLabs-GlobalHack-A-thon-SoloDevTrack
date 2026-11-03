@@ -49,8 +49,21 @@ fn error(id: &Value, code: i64, message: &str) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}})
 }
 
-fn text_result(id: &Value, inner: Value) -> Value {
-    json!({"jsonrpc": "2.0", "id": id, "result": {"content": [{"type": "text", "text": inner.to_string()}]}})
+/// MCP result envelope. The inner JSON carries a receipt_sha256
+/// binding tool + arguments + inner content (SHA-256, same binding
+/// style as backend receipts). A client that checks the receipt
+/// can verify the inner text was not altered in transit; a tool
+/// that returns no receipt fails the adapter's receipt check.
+/// This receipt binds the tool call, it is NOT a claim that the
+/// inner content is true — that is the caller's judge step.
+fn text_result(id: &Value, tool: &str, args: &Value, inner: Value) -> Value {
+    let receipt =
+        crate::digest::Sha256Digest::compute(format!("{}\n{}\n{}", tool, args, inner).as_bytes())
+            .to_hex();
+    let mut obj = inner.as_object().cloned().unwrap_or_default();
+    obj.insert("receipt_sha256".to_string(), Value::String(receipt));
+    let text = Value::Object(obj).to_string();
+    json!({"jsonrpc": "2.0", "id": id, "result": {"content": [{"type": "text", "text": text}]}})
 }
 
 fn tools_list() -> Value {
@@ -166,9 +179,9 @@ pub fn handle_request(req: &Value, auth: &MindAuthority) -> Value {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
             let args = params.get("arguments").cloned().unwrap_or(json!({}));
             match name {
-                "mind.db_status" => text_result(&id, db_status(auth)),
+                "mind.db_status" => text_result(&id, "mind.db_status", &args, db_status(auth)),
                 "mind.automaton_decide" => match automaton_decide(&args) {
-                    Ok(v) => text_result(&id, v),
+                    Ok(v) => text_result(&id, "mind.automaton_decide", &args, v),
                     Err(e) => error(&id, -32602, &e),
                 },
                 _ => error(&id, -32601, "method not found"),

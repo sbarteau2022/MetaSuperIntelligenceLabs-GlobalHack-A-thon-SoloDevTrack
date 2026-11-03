@@ -512,6 +512,102 @@ pub fn default_policy() -> OverlapPolicyMatrix {
 /// the mission runs fail-closed locally unless a live executor is wired
 /// by the caller. The mission receipt is persisted to SurrealDB
 /// (run/receipt rows) and anchored by the audit chain.
+
+/// Governed MCP execution through the automaton, live dispatch.
+/// Permit first, telemetry required, automaton transition, stdio
+/// MCP child only if Admit, verified-outcome confidence update,
+/// persistence to the governance Surreal substrate, HyperDX
+/// observation. The MCP child binary path and root come from
+/// server configuration (env), never from the request — a
+/// request-controlled binary path would be a code-execution hole.
+/// Verified here means: the tool returned a well-formed,
+/// receipt-bound ok result (receipt 64-hex, inner JSON parses,
+/// inner status ok). It does NOT mean the result is true;
+/// an independent judge re-query is Step 5 territory.
+#[allow(clippy::too_many_arguments)]
+pub async fn dispatch_mcp_execute(
+    state: &Arc<AppState>,
+    role: RoleId,
+    mut strategy: crate::harness::automaton::StrategyState,
+    envelope: crate::harness::automaton::ProposerEnvelope,
+    signals: crate::harness::automaton::AuditSignals,
+    now_ms: u64,
+    tool: &str,
+    args_json: &str,
+    mcp_bin: &str,
+    mcp_root: &str,
+    mcp_authority: crate::harness::mcp::McpAuthority,
+) -> Result<
+    (
+        CompliancePermit,
+        crate::harness::mcp::McpExecution,
+        crate::harness::automaton::StrategyState,
+    ),
+    String,
+> {
+    let _permit_slot = state
+        .run_semaphore
+        .clone()
+        .acquire_owned()
+        .await
+        .expect("run semaphore never closes");
+    let permit = dispatch_spawn(state, role)
+        .await
+        .map_err(|_| "permit denied".to_string())?;
+    let telemetry = state
+        .telemetry
+        .as_ref()
+        .ok_or_else(|| "live run requires HyperDX telemetry configured".to_string())?;
+    let mut transport = crate::harness::mcp::StdioMcpTransport::spawn(mcp_bin, mcp_root, &[])?;
+    let execution = crate::harness::mcp::execute_via_automaton(
+        &mut strategy,
+        &envelope,
+        &signals,
+        now_ms,
+        &mcp_authority,
+        &mcp_authority,
+        tool,
+        args_json,
+        &mut transport,
+        true,
+        true,
+    )?;
+    // Verified = outcome present with a valid receipt (adapter
+    // enforces receipt hex + transport enforces inner status ok).
+    // Confidence was already updated inside execute_via_automaton
+    // on verified=true; here we only persist and observe.
+    if let Some(client) = &state.surreal {
+        let _ = client
+            .sql(&crate::harness::automaton::confidence_create_sql(&strategy))
+            .await;
+        client
+            .sql(&crate::harness::automaton::confidence_upsert_sql(&strategy))
+            .await
+            .map_err(|e| format!("persist automaton_confidence: {}", e))?;
+        client
+            .sql(&crate::harness::automaton::transition_insert_sql(
+                &execution.transition,
+            ))
+            .await
+            .map_err(|e| format!("persist automaton_receipt: {}", e))?;
+    }
+    let (ok, receipt) = match &execution.outcome {
+        Some(o) => (true, Some(o.receipt_sha256.as_str())),
+        None => (false, None),
+    };
+    let _ = telemetry
+        .record_call(
+            &execution.transition.receipt_digest,
+            tool,
+            args_json,
+            execution.outcome.as_ref().map(|o| o.dt_ns).unwrap_or(0),
+            ok,
+            receipt,
+        )
+        .await;
+    Ok((permit, execution, strategy))
+}
+
 pub async fn dispatch_mission(
     state: &Arc<AppState>,
     role: RoleId,

@@ -7,12 +7,25 @@
 //! never trusts the transport: the receipt it returns must be an
 //! exact 64-hex digest, or the call fails with no confidence change.
 //!
-//! Authority: the MCP target must resolve to exactly the harness
-//! GlobalMind authority (base, namespace, database). Any mismatch
-//! fails before any transport call, so no MCP path can create a
-//! second map. The hypermind-mcp child declares its authority the
-//! same way (`HYPERMIND_SURREAL=on` + URL/NS/DB env), and the
-//! caller verifies the live child with `map.db_status` attestation
+//! Authority, two databases on one server, distinct by role:
+//! - Mind authority: the existing mind the MCP child serves,
+//!   default (http://127.0.0.1:8000, hypermind, core) —
+//!   hypermind-mcp's Surreal defaults, 2079 atoms. The child
+//!   must point at THIS mind, never create a new one.
+//! - Governance authority: the backend's Surreal substrate,
+//!   default (http://127.0.0.1:8000, ares, ares) — receipts,
+//!   permits, automaton confidence and transition receipts.
+//! The adapter checks MCP authority against the EXPECTED MIND
+//! authority, not against governance. An earlier version checked
+//! MCP == harness (governance) authority; that was wrong for a
+//! mind child, because mind and governance are different
+//! databases by design. Persistence SQL is executed by the
+//! caller against the governance client — the adapter never
+//! writes confidence into the mind database, so atom identity
+//! is never polluted by confidence state. The hypermind-mcp
+//! child declares its authority the same way
+//! (`HYPERMIND_SURREAL=on` + URL/NS/DB env), and the caller
+//! verifies the live child with `map.db_status` attestation
 //! (see research-grade-harness `globalmind_bridge.rs`) — this
 //! adapter checks the configured authority; live attestation is
 //! the caller's step, not a claim made here.
@@ -58,6 +71,130 @@ pub struct McpExecution {
     pub receipt_sql: String,
 }
 
+/// Stdio MCP child transport: spawns an MCP server binary
+/// (hypermind-mcp, ares-mcp-mind, or any stdio JSON-RPC MCP
+/// server), sends `tools/call` lines, reads one response line
+/// per call. The child is killed on drop. Credentials and
+/// authority env vars are the caller's responsibility — they
+/// are passed to the child process env, never printed or
+/// logged by this module.
+pub struct StdioMcpTransport {
+    child: std::process::Child,
+    reader: std::io::BufReader<std::process::ChildStdout>,
+    writer: std::process::ChildStdin,
+    stderr: Option<std::process::ChildStderr>,
+    next_id: u64,
+}
+
+impl StdioMcpTransport {
+    pub fn spawn(path: &str, root: &str, env_vars: &[(&str, &str)]) -> Result<Self, String> {
+        let mut cmd = std::process::Command::new(path);
+        cmd.env("HYPERMIND_ROOT", root);
+        for (k, v) in env_vars {
+            cmd.env(k, v);
+        }
+        let mut child = cmd
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("spawn {}: {}", path, e))?;
+        let reader = std::io::BufReader::new(
+            child
+                .stdout
+                .take()
+                .ok_or_else(|| "child stdout unavailable".to_string())?,
+        );
+        let writer = child
+            .stdin
+            .take()
+            .ok_or_else(|| "child stdin unavailable".to_string())?;
+        let stderr = child.stderr.take();
+        Ok(Self {
+            child,
+            reader,
+            writer,
+            stderr,
+            next_id: 1,
+        })
+    }
+}
+
+impl Drop for StdioMcpTransport {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl McpTransport for StdioMcpTransport {
+    fn call(&mut self, tool: &str, args_json: &str) -> Result<McpCall, String> {
+        let id = self.next_id;
+        self.next_id += 1;
+        let args: serde_json::Value =
+            serde_json::from_str(args_json).map_err(|e| format!("args_json parse: {}", e))?;
+        let req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "tools/call",
+            "params": {"name": tool, "arguments": args},
+        });
+        let started = std::time::Instant::now();
+        use std::io::{BufRead, Write};
+        self.writer
+            .write_all(format!("{}\n", req).as_bytes())
+            .map_err(|e| format!("write: {}", e))?;
+        self.writer.flush().map_err(|e| format!("flush: {}", e))?;
+        let mut line = String::new();
+        self.reader
+            .read_line(&mut line)
+            .map_err(|e| format!("read: {}", e))?;
+        if line.is_empty() {
+            // Child exited: read its stderr tail for diagnosis
+            // (diagnostics only, never evidence).
+            let mut tail = String::new();
+            if let Some(mut s) = self.stderr.take() {
+                use std::io::Read;
+                let _ = s.read_to_string(&mut tail);
+            }
+            return Err(format!("eof: child closed stdout stderr={:?}", tail));
+        }
+        let body: serde_json::Value =
+            serde_json::from_str(&line).map_err(|e| format!("response parse: {}", e))?;
+        if let Some(err) = body.get("error") {
+            let msg = err
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("rpc error");
+            return Err(format!("rpc error: {}", msg));
+        }
+        let text = body
+            .get("result")
+            .and_then(|r| r.get("content"))
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("text"))
+            .and_then(|t| t.as_str())
+            .ok_or_else(|| "missing result content text".to_string())?;
+        let inner: serde_json::Value =
+            serde_json::from_str(text).map_err(|e| format!("inner parse: {}", e))?;
+        if let Some(status) = inner.get("status").and_then(|s| s.as_str()) {
+            if status != "ok" {
+                return Err(format!("mcp tool {} status: {}", tool, status));
+            }
+        }
+        let receipt = inner
+            .get("receipt_sha256")
+            .and_then(|r| r.as_str())
+            .ok_or_else(|| format!("{}: missing receipt_sha256", tool))?
+            .to_string();
+        Ok(McpCall {
+            inner_text: text.to_string(),
+            receipt_sha256: receipt,
+            dt_ns: started.elapsed().as_nanos() as u64,
+        })
+    }
+}
+
 fn is_64_hex(s: &str) -> bool {
     s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
@@ -73,7 +210,7 @@ pub fn execute_via_automaton<T: McpTransport>(
     signals: &AuditSignals,
     now_ms: u64,
     mcp_authority: &McpAuthority,
-    harness_authority: &McpAuthority,
+    expected_mind_authority: &McpAuthority,
     tool: &str,
     args_json: &str,
     transport: &mut T,
@@ -84,9 +221,9 @@ pub fn execute_via_automaton<T: McpTransport>(
         &mcp_authority.base,
         &mcp_authority.ns,
         &mcp_authority.db,
-        &harness_authority.base,
-        &harness_authority.ns,
-        &harness_authority.db,
+        &expected_mind_authority.base,
+        &expected_mind_authority.ns,
+        &expected_mind_authority.db,
     )?;
     let transition_record = transition(state, envelope, signals, now_ms);
     let receipt_sql = transition_insert_sql(&transition_record);

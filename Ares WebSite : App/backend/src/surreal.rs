@@ -120,6 +120,14 @@ impl SurrealClient {
         })
     }
 
+    /// Credentials this client was built with, for spawning an
+    /// MCP child that must authenticate to the same SurrealDB.
+    /// Returned only to the caller that already owns this client;
+    /// never printed or logged by this module.
+    pub fn credentials(&self) -> (String, String) {
+        (self.user.clone(), self.pass.clone())
+    }
+
     pub fn authority(&self) -> (String, String, String) {
         (self.base.clone(), self.ns.clone(), self.db.clone())
     }

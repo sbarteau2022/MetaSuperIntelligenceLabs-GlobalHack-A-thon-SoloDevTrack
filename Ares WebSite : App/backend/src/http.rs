@@ -35,6 +35,7 @@ pub fn router(state: Arc<AppState>) -> Router {
             post(harness_mission_geometry),
         )
         .route("/api/harness/mission/live", post(harness_mission_live))
+        .route("/api/harness/mcp/execute", post(harness_mcp_execute))
         .route("/api/harness/dry-run", post(harness_dry_run))
         .route("/api/memory/context", get(memory_context))
         .route("/api/memory", post(memory_append))
@@ -687,6 +688,148 @@ async fn harness_mission_live(
         Err(e) => err_json(
             StatusCode::SERVICE_UNAVAILABLE,
             WhyReceipt::internal("/api/harness/mission/live", &e),
+        )
+        .into_response(),
+    }
+}
+
+// Live MCP execution through the automaton (Step 3 seam, live).
+// Permit-gated, telemetry required (via governor). The MCP child
+// binary/root come from server env (ARES_MCP_MIND_BIN /
+// ARES_MCP_MIND_ROOT), never from the request body. Strategy
+// state is loaded from Surreal when a row exists, else fresh
+// from the request floor — confidence history persists across
+// calls, it is not reset by a new request.
+#[derive(Deserialize)]
+struct McpExecuteRequest {
+    role: Option<u8>,
+    strategy_id: String,
+    policy_version: String,
+    prefix_identity: String,
+    map_identity: String,
+    payload: String,
+    expiry_ms: u64,
+    measured_confidence: f64,
+    unresolved_dependencies: u32,
+    entity_ambiguity: bool,
+    expected_information_gain: f64,
+    confidence_floor: f64,
+    tool: String,
+    args_json: String,
+}
+
+async fn harness_mcp_execute(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<McpExecuteRequest>,
+) -> impl IntoResponse {
+    let role = req
+        .role
+        .and_then(RoleId::from_level)
+        .unwrap_or(RoleId::LaneBuilder);
+    let mut strategy = crate::harness::automaton::StrategyState {
+        strategy_id: req.strategy_id.clone(),
+        policy_version: req.policy_version.clone(),
+        prefix_identity: req.prefix_identity.clone(),
+        map_identity: req.map_identity.clone(),
+        confidence: crate::fixed::Q32_31::from_f64(0.6),
+        confidence_floor: crate::fixed::Q32_31::from_f64(req.confidence_floor),
+        calibration_count: 0,
+        outcome_history_digest: "h0".to_string(),
+    };
+    if let Some(client) = &state.surreal {
+        if let Ok(rows) = client
+            .sql(&format!(
+                "SELECT * FROM automaton_confidence WHERE strategy_id = '{}';",
+                crate::surreal::sql_escape(&req.strategy_id),
+            ))
+            .await
+        {
+            if let Some(row) = rows.as_array().and_then(|a| a.first()) {
+                if let Some(raw) = row.get("confidence_raw").and_then(|v| v.as_i64()) {
+                    strategy.confidence = crate::fixed::Q32_31(raw);
+                }
+                if let Some(c) = row.get("calibration_count").and_then(|v| v.as_u64()) {
+                    strategy.calibration_count = c;
+                }
+                if let Some(h) = row.get("outcome_history_digest").and_then(|v| v.as_str()) {
+                    strategy.outcome_history_digest = h.to_string();
+                }
+            }
+        }
+    }
+    let envelope = crate::harness::automaton::ProposerEnvelope {
+        family: crate::harness::automaton::ProposerFamily::Retrieval,
+        strategy_id: req.strategy_id.clone(),
+        policy_version: req.policy_version.clone(),
+        prefix_identity: req.prefix_identity.clone(),
+        map_identity: req.map_identity.clone(),
+        payload: req.payload.clone(),
+        expiry_ms: req.expiry_ms,
+    };
+    let signals = crate::harness::automaton::AuditSignals {
+        measured_confidence: crate::fixed::Q32_31::from_f64(req.measured_confidence),
+        unresolved_dependencies: req.unresolved_dependencies,
+        entity_ambiguity: req.entity_ambiguity,
+        expected_information_gain: crate::fixed::Q32_31::from_f64(req.expected_information_gain),
+    };
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let (mcp_base, mcp_ns, mcp_db) = match &state.surreal {
+        Some(c) => c.authority(),
+        None => (
+            "http://127.0.0.1:8000".to_string(),
+            "ares".to_string(),
+            "ares".to_string(),
+        ),
+    };
+    let mcp_authority = crate::harness::mcp::McpAuthority {
+        base: mcp_base,
+        ns: mcp_ns,
+        db: mcp_db,
+    };
+    let mcp_bin =
+        std::env::var("ARES_MCP_MIND_BIN").unwrap_or_else(|_| "ares-mcp-mind".to_string());
+    let mcp_root = std::env::var("ARES_MCP_MIND_ROOT").unwrap_or_else(|_| ".".to_string());
+    match crate::governor::dispatch_mcp_execute(
+        &state,
+        role,
+        strategy,
+        envelope,
+        signals,
+        now_ms,
+        &req.tool,
+        &req.args_json,
+        &mcp_bin,
+        &mcp_root,
+        mcp_authority,
+    )
+    .await
+    {
+        Ok((permit, execution, strategy)) => Json(serde_json::json!({
+            "executor": "mcp-automaton",
+            "tool": req.tool,
+            "permit": {
+                "sequence": permit.sequence(),
+                "action_summary": permit.action_summary(),
+                "chain_digest": permit.chain_digest().to_hex(),
+            },
+            "verdict": execution.transition.verdict.as_str(),
+            "committed": execution.transition.committed,
+            "transition_receipt": execution.transition.receipt_digest,
+            "outcome": execution.outcome.map(|o| serde_json::json!({
+                "inner_text": o.inner_text,
+                "receipt_sha256": o.receipt_sha256,
+                "dt_ns": o.dt_ns,
+            })),
+            "confidence_raw": strategy.confidence.0,
+            "calibration_count": strategy.calibration_count,
+        }))
+        .into_response(),
+        Err(e) => err_json(
+            StatusCode::SERVICE_UNAVAILABLE,
+            WhyReceipt::internal("/api/harness/mcp/execute", &e),
         )
         .into_response(),
     }

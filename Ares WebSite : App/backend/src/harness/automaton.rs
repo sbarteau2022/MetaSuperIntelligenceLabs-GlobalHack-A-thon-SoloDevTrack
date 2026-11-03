@@ -339,6 +339,23 @@ pub fn confidence_upsert_sql(state: &StrategyState) -> String {
     )
 }
 
+/// SurrealDB create for one strategy's confidence state, used
+/// before the first upsert (Surreal UPDATE on a missing row is a
+/// no-op, so a first run must create the row). SQL text only.
+pub fn confidence_create_sql(state: &StrategyState) -> String {
+    format!(
+        "CREATE automaton_confidence SET strategy_id = '{}', policy_version = '{}', prefix_identity = '{}', map_identity = '{}', confidence_raw = {}, confidence_floor_raw = {}, calibration_count = {}, outcome_history_digest = '{}';",
+        sql_escape(&state.strategy_id),
+        sql_escape(&state.policy_version),
+        sql_escape(&state.prefix_identity),
+        sql_escape(&state.map_identity),
+        state.confidence.0,
+        state.confidence_floor.0,
+        state.calibration_count,
+        sql_escape(&state.outcome_history_digest),
+    )
+}
+
 /// SurrealDB insert for one transition receipt. SQL text only.
 pub fn transition_insert_sql(t: &AutomatonTransition) -> String {
     format!(
