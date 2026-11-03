@@ -37,3 +37,7 @@ path = "src/bin/globalmind_tppe_qualify.rs"
 [[bin]]
 name = "globalmind-stage"
 path = "src/bin/globalmind_stage.rs"
+
+[[bin]]
+name = "globalmind-mcp"
+path = "src/bin/globalmind_mcp.rs"
