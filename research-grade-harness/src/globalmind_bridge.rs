@@ -3,6 +3,8 @@
 //! Model-facing recall is the native GMRC binary format. This bridge never
 //! ingests atoms, creates a mind map, or exposes tensor K/V by page ID alone.
 
+use crate::json::Json;
+use crate::mcp_client::McpChild;
 use globalmind_runtime::retrieval::{RetrievalConfig, decode_bundle, encode_bundle, retrieve};
 use globalmind_runtime::{ExactKvIdentity, GlobalMindStore, StoreConfig, TensorPayload};
 
@@ -19,10 +21,10 @@ pub struct McpSurrealTarget {
 impl McpSurrealTarget {
     pub fn from_env() -> Self {
         Self {
-            mode: std::env::var("HYPERMIND_SURREAL").unwrap_or_default(),
-            endpoint: std::env::var("HYPERMIND_SURREAL_URL").unwrap_or_default(),
-            namespace: std::env::var("HYPERMIND_SURREAL_NS").unwrap_or_default(),
-            database: std::env::var("HYPERMIND_SURREAL_DB").unwrap_or_default(),
+            mode: "on".into(),
+            endpoint: std::env::var("GLOBALMIND_SURREAL_URL").unwrap_or_default(),
+            namespace: std::env::var("GLOBALMIND_SURREAL_NS").unwrap_or_default(),
+            database: std::env::var("GLOBALMIND_SURREAL_DB").unwrap_or_default(),
         }
     }
 
@@ -42,6 +44,30 @@ impl McpSurrealTarget {
             return Err("MCP and harness bridge target different GlobalMind authorities".into());
         }
         Ok(())
+    }
+
+    /// Query the running child, not just inherited environment. The receipt
+    /// binds the child-reported authority and recall contract at this instant.
+    pub fn verify_live_child(
+        &self,
+        retrieval: &RetrievalConfig,
+        child: &mut McpChild,
+    ) -> Result<String, String> {
+        self.verify_same_mind(retrieval)?;
+        if !child.advertises("mind.db_status")? {
+            return Err("MCP child does not advertise mind.db_status".into());
+        }
+        let status = child.call("mind.db_status", &Json::Obj(Default::default()))?;
+        let field = |key| status.inner.get(key).and_then(Json::as_str);
+        if field("mode") != Some("On")
+            || field("endpoint") != Some(self.endpoint.as_str())
+            || field("namespace") != Some(self.namespace.as_str())
+            || field("database") != Some(self.database.as_str())
+            || field("contract") != Some("verified")
+        {
+            return Err("MCP child did not attest the exact single SurrealDB authority".into());
+        }
+        Ok(status.receipt_sha256)
     }
 }
 

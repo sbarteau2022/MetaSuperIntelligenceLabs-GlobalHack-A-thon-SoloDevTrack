@@ -49,8 +49,39 @@ impl McpChild {
     /// Stderr is captured to a bounded 64 KiB ring (diagnostics on transport
     /// failure); it is never parsed as evidence.
     pub fn spawn(mcp_path: &str, root: &str) -> Result<Self, String> {
-        let mut child = Command::new(mcp_path)
-            .env("HYPERMIND_ROOT", root)
+        Self::spawn_with_env(mcp_path, root, &[])
+    }
+
+    /// Process-local env for isolated single-mind qualification. No global
+    /// environment mutation or hidden fallback target.
+    pub fn spawn_with_env(
+        mcp_path: &str,
+        root: &str,
+        vars: &[(&str, &str)],
+    ) -> Result<Self, String> {
+        let mut command = Command::new(mcp_path);
+        command.env("HYPERMIND_ROOT", root);
+        for &(key, value) in vars {
+            if !matches!(
+                key,
+                "HYPERMIND_SURREAL"
+                    | "HYPERMIND_SURREAL_URL"
+                    | "HYPERMIND_SURREAL_NS"
+                    | "HYPERMIND_SURREAL_DB"
+                    | "HYPERMIND_SURREAL_USER"
+                    | "HYPERMIND_SURREAL_PASS"
+                    | "HYPERMIND_ROLE"
+                    | "GLOBALMIND_SURREAL_URL"
+                    | "GLOBALMIND_SURREAL_NS"
+                    | "GLOBALMIND_SURREAL_DB"
+                    | "GLOBALMIND_SURREAL_USER"
+                    | "GLOBALMIND_SURREAL_PASS"
+            ) {
+                return Err("unsupported MCP child environment key".into());
+            }
+            command.env(key, value);
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

@@ -56,9 +56,11 @@ session/page identity (never a bare page ID). See
 the older `MapPlugin` below remains a historical text/string MCP surface and
 does not qualify the nested transformer K/V path.
 The explicit `cargo test --test globalmind_bridge_live -- --ignored --nocapture`
-gate passed against a disposable SurrealKV instance, decoded one real atom
-in a GMRC bundle, fetched one typed K/V page by full identity, and rejected
-a changed model digest. This is bridge read proof, not model inference.
+gate passed against a disposable SurrealKV instance, attested the active
+`globalmind-mcp` child's exact authority and recall contract, decoded one real
+atom in a GMRC bundle, fetched one typed K/V page by full identity, and
+rejected a changed model digest. This is MCP and bridge read proof, not model
+inference.
 The A14 capability gate reads the consolidated manifest from
 `../N3/CapabilityTreeSitter/capability-tree-manifest.json`.
 
@@ -86,11 +88,13 @@ Forward preparation: `GlobalMindBridge::prepare_forward_recall` joins binary GMR
 
 For an MCP-connected forward smoke, use
 `GlobalMindBridge::connect_at_mcp_boundary(retrieval, &McpSurrealTarget::from_env())`.
-It rejects an MCP authority in `off`/`shadow` mode, the quarantined `core`
-database, or an endpoint/namespace/database different from the typed bridge.
+It rejects a non-`on` MCP authority, the quarantined `core` database, or an
+endpoint/namespace/database different from the typed bridge. The active child
+uses process-local `GLOBALMIND_SURREAL_*` settings and advertises
+`mind.db_status` with `contract=verified`.
 `MCP-SINGLE-MIND-FORWARD-PREFLIGHT-DESIGN.md` records the scope. The isolated
-live bridge test checks this gate against real SurrealKV rows; it does not
-prove an MCP child process was started or healthy.
+live bridge test checks this gate against real SurrealKV rows and a real MCP
+child. It does not prove a full model forward.
 
 The forward-preparation bridge now checks that the exact tensor page address is a member of the decoded recalled neighborhood. An isolated two-atom SurrealKV test rejects a valid K/V page from an unrelated recalled atom. Math and active-inference limits are recorded in `../results/forward-recall-math/report.tex`; this is still a read-boundary gate, not model execution.
 

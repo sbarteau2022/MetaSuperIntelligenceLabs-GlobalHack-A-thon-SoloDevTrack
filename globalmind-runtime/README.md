@@ -402,4 +402,10 @@ The optional `live-forward-model` integration gate uses the research harness bri
 
 ### Scoped Glimmer recall seam
 
+The model-independent native execution contract is specified in
+[UNIVERSAL-DECODER-DESIGN.md](UNIVERSAL-DECODER-DESIGN.md). It separates the
+model-neutral harness/MCP ABI from an operator graph compiled from each
+checkpoint and requires a second architecture conformance run. No universal
+executor or full Glimmer forward is certified yet.
+
 `retrieval::scoped::retrieve_scoped` reads persisted cognitive-well memberships and exposes only member atoms and active edges whose endpoints both survive the scoped top-k. It does not write SurrealDB. It rejects empty scopes, missing well memberships, malformed rows, and candidate-budget saturation. The caller must validate the governor permit, one Glimmer weight owner, and `McpSurrealTarget` against the bridge before calling it. This is a read-only component seam for a carved worker; the harness permit binding and live Glimmer forward proof remain open. See [SCOPED-RECALL-DESIGN.md](SCOPED-RECALL-DESIGN.md).

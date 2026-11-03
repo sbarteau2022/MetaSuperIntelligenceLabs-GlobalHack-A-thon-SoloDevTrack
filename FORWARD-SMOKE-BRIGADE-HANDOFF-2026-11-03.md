@@ -47,6 +47,19 @@ Native model note: the frozen Glimmer checkpoint's own architecture uses RoPE on
 
 ## Safe commands and boundaries
 
+The 2026-11-03 disposable SurrealKV live gate now passes through the active
+`globalmind-mcp` child (`mind.db_status`) and the typed harness bridge for one
+atom and exact K/V page. Receipt:
+`results/forward-smoke/globalmind-mcp-child-bridge-2026-11-03.md`. The retired
+`hypermind-mcp` fails on model-neutral string atom IDs and is not the forward
+path. No model activation was executed by this gate.
+
+The decoder must be a native operator-graph executor, not a hardcoded Glimmer
+branch. `globalmind-runtime/UNIVERSAL-DECODER-DESIGN.md` defines the binary
+harness ABI, admission, operator families, and second-model falsifier. A new
+checkpoint revision can reuse the same engine when its graph operators remain
+supported; exact model-bound K/V must miss after the revision changes.
+
 ## Attention policy gate from the three design references
 
 `hypermind-nested-kv/ATTENTION-ECONOMICS-FEP.md` proposes I-RECALL, but explicitly says dependency edges, exact invalidation, and measured agreement between local depth cost and session cost are not built. `MasterDesignDocument/C06-Frontier-Push/AttentionEconomicsAndActiveInference-Spec.md` corrects its own reward claim: maximizing `Q/(H+cN)` is not equivalent to minimizing `F=C-Q`. `Ares WebSite : App/backend/HYPERBOLIC-SCHEDULER-FRAMEWORK-2026-11-02.md` gives CE1 worst-case scan, CE2 graph-distortion, CE3 stale-producer recall, and CE4 beta/SLO counterexamples. Keep these as design references, not certified runtime policy. For promotion, receipt actual retrieval quality, producer validity, elapsed time, measured energy or a clearly labeled proxy, and thermal state; preregister a quality floor, deadline, and budget. Fail closed on stale producer or missing dependency lineage. Landauer's bound is a physical lower bound, not evidence of actual per-call dissipation or an alignment guarantee.

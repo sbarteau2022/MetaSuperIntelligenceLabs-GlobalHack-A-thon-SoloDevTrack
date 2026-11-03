@@ -7,6 +7,7 @@ use globalmind_runtime::{
 };
 use rgah::GlobalMindBridge;
 use rgah::globalmind_bridge::McpSurrealTarget;
+use rgah::mcp_client::McpChild;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::process::{Child, Command, Stdio};
@@ -136,11 +137,33 @@ fn bridge_reads_one_real_atom_as_binary_recall() {
         let allowed = usize::from(schema.starts_with("0001"));
         assert!(errors <= allowed, "schema {schema} errors: {response:.200}");
     }
+    // The MCP child pins these append-only contract receipts at startup.
+    let migration_receipts = [
+        (
+            "0004_tppe_contract_correction",
+            "31c467e26dd81d9fddf61e10b605e6726a25b7c0cb573c399d73d79fec7f1246",
+        ),
+        (
+            "0005_universal_atom_lineage",
+            "a2c4a85303874233048b73d18e36538f38c05e36b2503c37499b6489a92729c0",
+        ),
+        (
+            "0006_immutable_atom_address",
+            "f91fb405f54b5bac454808e571c116819b6329061b6ce44817447559f1449a04",
+        ),
+    ];
+    for (version, digest) in migration_receipts {
+        let response = db.sql(&format!("CREATE schema_migration:`{version}` CONTENT {{ version: '{version}', digest: '{digest}', applied_at: time::now() }} RETURN NONE;"));
+        assert!(
+            !response.contains("\"status\":\"ERR\""),
+            "migration receipt {version}: {response:.200}"
+        );
+    }
     let digest = "a".repeat(64);
     let seed = format!(
         "CREATE workspace:`globalmind` CONTENT {{ slug: 'globalmind' }} RETURN NONE; \
          CREATE geometry_space:`bridge_h3t2` CONTENT {{ name: 'bridge_h3t2', manifold: 'H3xT2', quotient_symbol: 'Gamma12', quotient_status: 'specified', coordinate_model: 'lorentz-t2', contract_version: 'v1', contract_digest: '{digest}' }} RETURN NONE; \
-         CREATE atom:`bridge_sample` CONTENT {{ workspace: workspace:`globalmind`, external_id: 'bridge_sample', content_kind: 'text', content_text: 'bridge live read', content_uri: NONE, content_digest: '{digest}', domain: 'bridge', rank: 0, salience: 0.5, provenance: 'live-test', taint: 'none', pinned: false, current_address: NONE }} RETURN NONE; \
+         CREATE atom:`bridge_sample` CONTENT {{ workspace: workspace:`globalmind`, external_id: 'bridge_sample', content_kind: 'text', content_text: 'bridge live read', content_uri: NONE, content_digest: '{digest}', domain: 'bridge', rank: 0, salience: 0.5, provenance: 'live-test', taint: 'none', pinned: false, current_address: atom_address:`bridge_sample` }} RETURN NONE; \
          CREATE atom_address:`bridge_sample` CONTENT {{ workspace: workspace:`globalmind`, atom: atom:`bridge_sample`, h3_lorentz: [1.0, 0.0, 0.0, 0.0], t2_phase: [0.0, 0.0], geometry_model: 'lorentz-t2', geometry_version: 'v1', revision: 1, active: true }} RETURN NONE;"
     );
     let response = db.sql(&seed);
@@ -174,6 +197,30 @@ fn bridge_reads_one_real_atom_as_binary_recall() {
     mismatch = target.clone();
     mismatch.database = "core".into();
     assert!(GlobalMindBridge::connect_at_mcp_boundary(config.clone(), &mismatch).is_err());
+    let mcp_binary = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../globalmind-runtime/target/debug/globalmind-mcp");
+    assert!(
+        mcp_binary.is_file(),
+        "build the native globalmind-mcp binary first"
+    );
+    let root = db.storage.join("mcp-read-only-root");
+    let endpoint = config.endpoint.as_str();
+    let mut child = McpChild::spawn_with_env(
+        mcp_binary.to_str().unwrap(),
+        root.to_str().unwrap(),
+        &[
+            ("GLOBALMIND_SURREAL_URL", endpoint),
+            ("GLOBALMIND_SURREAL_NS", "rgah_bridge"),
+            ("GLOBALMIND_SURREAL_DB", "bridge_live"),
+            ("GLOBALMIND_SURREAL_USER", "root"),
+            ("GLOBALMIND_SURREAL_PASS", "testpass123"),
+        ],
+    )
+    .unwrap();
+    let child_receipt = target.verify_live_child(&config, &mut child).unwrap();
+    assert_eq!(child_receipt.len(), 64);
+    assert!(!root.join(".hypermind").exists());
+    child.close();
     let bridge = GlobalMindBridge::connect_at_mcp_boundary(config, &target).unwrap();
     let bytes = bridge
         .recall_binary([1.0, 0.0, 0.0, 0.0], [0.0, 0.0], "bridge-live-test", 1)
@@ -304,7 +351,7 @@ fn bridge_reads_one_real_atom_as_binary_recall() {
     // Both reads would independently succeed: the K/V page belongs to
     // bridge_sample, while the nearest recalled atom is bridge_decoy.
     let decoy_seed = format!(
-        "CREATE atom:`bridge_decoy` CONTENT {{ workspace: workspace:`globalmind`, external_id: 'bridge_decoy', content_kind: 'text', content_text: 'decoy', content_uri: NONE, content_digest: '{digest}', domain: 'bridge', rank: 0, salience: 0.5, provenance: 'live-test', taint: 'none', pinned: false, current_address: NONE }} RETURN NONE; \
+        "CREATE atom:`bridge_decoy` CONTENT {{ workspace: workspace:`globalmind`, external_id: 'bridge_decoy', content_kind: 'text', content_text: 'decoy', content_uri: NONE, content_digest: '{digest}', domain: 'bridge', rank: 0, salience: 0.5, provenance: 'live-test', taint: 'none', pinned: false, current_address: atom_address:`bridge_decoy` }} RETURN NONE; \
          CREATE atom_address:`bridge_decoy` CONTENT {{ workspace: workspace:`globalmind`, atom: atom:`bridge_decoy`, h3_lorentz: [{}, {}, 0.0, 0.0], t2_phase: [0.0, 0.0], geometry_model: 'lorentz-t2', geometry_version: 'v1', revision: 1, active: true }} RETURN NONE;",
         1.0_f64.cosh(),
         1.0_f64.sinh()
