@@ -3,6 +3,11 @@
 Date: 2026-11-03. Status: preregistered setup gate, not forward qualification.
 
 The shared swarm seat is the frozen Muse Glimmer checkpoint on the WD Drive.
+Its trained attention path uses RoPE on sliding layers and NoPE on full layers.
+No full-model experiment has promoted TPPE as a Q/K replacement. The
+`--native-baseline` lane therefore preserves the checkpoint's position path
+and does not claim TPPE memory-address use. The mind-integrated lane still
+requires a qualified separate TPPE address contract.
 The existing Qwen Layer-3 test is a real weight-backed SurrealKV bridge smoke,
 but its 40-layer Qwen implementation cannot decode Glimmer's 52-layer, 6656
 hidden, mixed 4/5/6-bit affine, gated-Q, sandwich-norm, NoPE/sliding/full
@@ -15,7 +20,7 @@ GlobalMind can be claimed yet.
 
 Before calling a Glimmer forward run, preflight must rehash every frozen
 artifact, bind Glimmer config/tokenizer identities and architecture, reject
-the retired `tppe-reference-v1` manifest, require a native executable plus
+the retired `tppe-reference-v1` manifest for mind-integrated runs, require a native executable plus
 its pinned SHA256, and refuse writes to `hypermind/core`. A valid native
 executor must load the exact four mixed-quantized shards, execute all 52
 layers on the same tokenizer IDs as the frozen Glimmer tokenizer, emit
@@ -25,8 +30,10 @@ use native typed/binary I/O; JSON is allowed only for bounded on-disk model
 metadata and MCP transport, never between harness and model compute.
 
 The existing Qwen test remains the current integration baseline. The
-Glimmer preflight intentionally fails until a new candidate TPPE contract
-and native executable are qualified. Do not change the manifest's identity
+Glimmer mind-integrated preflight intentionally fails until a new candidate
+TPPE address contract and native executable are qualified. The native baseline
+can proceed once that executable is pinned, without pretending TPPE Q/K is
+admitted. Do not change the manifest's identity
 to make a gate green. Keep the live `hypermind/core` quarantined and write
 only to disposable SurrealKV for the smoke.
 

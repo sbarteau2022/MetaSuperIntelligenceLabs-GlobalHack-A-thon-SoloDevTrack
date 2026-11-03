@@ -12,9 +12,12 @@ const EXPECTED_TOKENIZER: &str = "c9dbee66967b58f31a7c27f723c3760da3526ccd042757
 
 fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 2 {
-        return Err("usage: glimmer-forward-preflight <frozen-manifest>".into());
+    if args.len() != 2 && !(args.len() == 3 && args[2] == "--native-baseline") {
+        return Err(
+            "usage: glimmer-forward-preflight <frozen-manifest> [--native-baseline]".into(),
+        );
     }
+    let native_baseline = args.len() == 3;
     let manifest = Manifest::load(&args[1])?;
     if manifest.models.len() != 1 || manifest.models[0].name != EXPECTED_MODEL {
         return Err("preflight requires the one frozen Glimmer model".into());
@@ -62,12 +65,16 @@ fn run() -> Result<(), String> {
         "artifact_rehash=PASS roster_digest={} input_digest={}",
         verified.models[0].roster_digest, verified.input_digest
     );
-    if manifest.tppe_version == "tppe-reference-v1"
-        || !manifest.tppe_version.starts_with("tppe-glimmer-")
+    if !native_baseline
+        && (manifest.tppe_version == "tppe-reference-v1"
+            || !manifest.tppe_version.starts_with("tppe-glimmer-"))
     {
         return Err(
             "Glimmer TPPE contract is unqualified; reference-v1 cannot enter forward smoke".into(),
         );
+    }
+    if native_baseline {
+        println!("position_mode=native_glimmer_rope_nope tppe_memory_address=not_exercised");
     }
     let bin = std::env::var("GLIMMER_NATIVE_FORWARD_BIN")
         .map_err(|_| "GLIMMER_NATIVE_FORWARD_BIN is unset".to_string())?;

@@ -480,18 +480,35 @@ async fn get_run(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> 
 }
 
 async fn models(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let native_url = std::env::var("ARES_NATIVE_MTP_URL")
+        .unwrap_or_else(|_| crate::harness::native_mtp::DEFAULT_NATIVE_MTP_URL.to_string());
+    let native_seat = crate::harness::native_mtp::probe_seat(&native_url).await;
     let (omlx_up, _) = probe("http://127.0.0.1:8002/v1/models", 1500).await;
+    let omlx_models = probe_json("http://127.0.0.1:8002/v1/models").await;
     let gateway_models = probe_json("http://127.0.0.1:4001/v1/models").await;
     let last_seat = state.last_seat.lock().await.clone();
+    let (native_identity, native_profile) = match &native_seat {
+        Ok((identity, profile)) => (Some(identity.as_str()), Some(profile.as_str())),
+        Err(_) => (None, None),
+    };
     Json(serde_json::json!({
         "seats": [
             {
+                "id": "native-mtp",
+                "kind": "native",
+                "model_identity": native_identity,
+                "profile": native_profile,
+                "endpoint": native_url,
+                "up": native_seat.is_ok(),
+                "is_default": true
+            },
+            {
                 "id": "local-omlx",
                 "kind": "local",
-                "model": "Qwen3.6-MoE-Combined",
                 "endpoint": "127.0.0.1:8002",
                 "up": omlx_up,
-                "is_default": true
+                "models": omlx_models,
+                "is_default": false
             },
             {
                 "id": "gateway-3p",

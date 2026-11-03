@@ -271,7 +271,6 @@ fn validate_frame(f: &AmstFrame) -> Result<(), String> {
                 || !f.profile.is_empty()
                 || f.sequence == 0
                 || f.index >= 128
-                || f.token_id >= 248320
                 || f.output_tokens != 0
                 || f.stop != 0
                 || f.error_code != 0
@@ -333,6 +332,36 @@ pub fn parse_stream(body: &[u8]) -> Result<Vec<AmstFrame>, String> {
         return Err("empty stream".to_string());
     }
     Ok(frames)
+}
+
+pub fn parse_info_body(body: &[u8]) -> Result<(String, String), String> {
+    let mut frames = parse_stream(body)?;
+    if frames.len() != 1 || frames[0].kind != 0 {
+        return Err("native model info must contain exactly one metadata frame".into());
+    }
+    let frame = frames.remove(0);
+    Ok((frame.model_identity, frame.profile))
+}
+
+/// Attest the actual loaded native seat through its binary AMST info frame.
+pub async fn probe_seat(base_url: &str) -> Result<(String, String), String> {
+    if !base_url.starts_with("http://127.0.0.1:") && !base_url.starts_with("http://localhost:") {
+        return Err("native model probe requires loopback".into());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(1500))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let url = format!("{}/v1/info", base_url.trim_end_matches('/'));
+    let response = client.get(url).send().await.map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("native model info status {}", response.status()));
+    }
+    let body = response.bytes().await.map_err(|e| e.to_string())?;
+    if body.len() > MAX_FRAME_BYTES {
+        return Err("native model info frame exceeds cap".into());
+    }
+    parse_info_body(&body)
 }
 
 #[derive(Debug, Clone)]
@@ -580,11 +609,19 @@ mod tests {
         assert_eq!(f.kind, 0);
         assert_eq!(f.model_identity, ident);
         assert_eq!(f.profile, "width-4");
+        assert_eq!(
+            parse_info_body(&meta).unwrap(),
+            (ident.clone(), "width-4".into())
+        );
         let tok = build_frame(1, 1, "hello", "", "", 0, 0, 0);
         let f = parse_frame(&tok).expect("token parses");
         assert_eq!(f.kind, 1);
         assert_eq!(f.sequence, 1);
         assert_eq!(f.text, "hello");
+        let mut future_vocab = f.clone();
+        future_vocab.token_id = 300_000;
+        assert!(validate_frame(&future_vocab).is_ok());
+        assert!(parse_info_body(&tok).is_err());
         let fin = build_frame(2, 2, "", "", "", 1, 1, 0);
         let f = parse_frame(&fin).expect("finish parses");
         assert_eq!(f.kind, 2);
