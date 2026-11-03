@@ -7,6 +7,11 @@ evidence, not a live model forward-pass qualification. Run it with an external
 target directory because this checkout path contains a colon:
 `CARGO_TARGET_DIR=/tmp/hypermind-toy-target cargo test --manifest-path 'hypermind-toy/Cargo.toml'`.
 
+Qwen VL dense research retrieval is specified in
+`QWEN-VL-RETRIEVAL-DESIGN.md` with a pinned binary MLX oracle fixture.
+The live text route remains BM25 until a Rust-native 28-layer VL executor
+passes the fixture, stored-point, and Qdrant self-retrieval gates.
+
 Status: LANDED (core skeleton), 2026-11-02. One Rust binary (axum + Tokio),
 loopback `127.0.0.1:4810`. Governance is baked in, not added on: **no
 dispatch, no memory write, no model call, no erasure, and no run ships
