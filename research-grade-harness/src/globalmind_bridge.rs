@@ -6,6 +6,45 @@
 use globalmind_runtime::retrieval::{RetrievalConfig, decode_bundle, encode_bundle, retrieve};
 use globalmind_runtime::{ExactKvIdentity, GlobalMindStore, StoreConfig, TensorPayload};
 
+/// Declared authority of the MCP endpoint that sits beside this bridge.
+/// This is a config preflight, not proof that an MCP child is healthy.
+#[derive(Clone, Debug)]
+pub struct McpSurrealTarget {
+    pub mode: String,
+    pub endpoint: String,
+    pub namespace: String,
+    pub database: String,
+}
+
+impl McpSurrealTarget {
+    pub fn from_env() -> Self {
+        Self {
+            mode: std::env::var("HYPERMIND_SURREAL").unwrap_or_default(),
+            endpoint: std::env::var("HYPERMIND_SURREAL_URL").unwrap_or_default(),
+            namespace: std::env::var("HYPERMIND_SURREAL_NS").unwrap_or_default(),
+            database: std::env::var("HYPERMIND_SURREAL_DB").unwrap_or_default(),
+        }
+    }
+
+    pub fn verify_same_mind(&self, retrieval: &RetrievalConfig) -> Result<(), String> {
+        if self.mode != "on" || self.database == "core" {
+            return Err(
+                "MCP must declare SurrealDB authority mode on outside quarantined core".into(),
+            );
+        }
+        if self.endpoint.is_empty()
+            || self.namespace.is_empty()
+            || self.database.is_empty()
+            || self.endpoint != retrieval.endpoint
+            || self.namespace != retrieval.namespace
+            || self.database != retrieval.database
+        {
+            return Err("MCP and harness bridge target different GlobalMind authorities".into());
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct GlobalMindBridge {
     retrieval: RetrievalConfig,
@@ -20,6 +59,15 @@ pub struct ForwardRecall {
 }
 
 impl GlobalMindBridge {
+    /// Admit a forward smoke only when MCP and typed bridge name one authority.
+    pub fn connect_at_mcp_boundary(
+        retrieval: RetrievalConfig,
+        mcp: &McpSurrealTarget,
+    ) -> Result<Self, String> {
+        mcp.verify_same_mind(&retrieval)?;
+        Self::connect(retrieval)
+    }
+
     pub fn connect(retrieval: RetrievalConfig) -> Result<Self, String> {
         retrieval.validate()?;
         let store = GlobalMindStore::connect(StoreConfig {

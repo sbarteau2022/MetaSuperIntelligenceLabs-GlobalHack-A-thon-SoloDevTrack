@@ -6,6 +6,7 @@ use globalmind_runtime::{
     TensorPage, TensorSession,
 };
 use rgah::GlobalMindBridge;
+use rgah::globalmind_bridge::McpSurrealTarget;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::process::{Child, Command, Stdio};
@@ -158,7 +159,22 @@ fn bridge_reads_one_real_atom_as_binary_recall() {
         candidate_budget: 8,
         metric: RetrievalMetric::Hyperbolic,
     };
-    let bridge = GlobalMindBridge::connect(config).unwrap();
+    let target = McpSurrealTarget {
+        mode: "on".into(),
+        endpoint: config.endpoint.clone(),
+        namespace: config.namespace.clone(),
+        database: config.database.clone(),
+    };
+    let mut mismatch = target.clone();
+    mismatch.database = "other_mind".into();
+    assert!(GlobalMindBridge::connect_at_mcp_boundary(config.clone(), &mismatch).is_err());
+    mismatch = target.clone();
+    mismatch.mode = "shadow".into();
+    assert!(GlobalMindBridge::connect_at_mcp_boundary(config.clone(), &mismatch).is_err());
+    mismatch = target.clone();
+    mismatch.database = "core".into();
+    assert!(GlobalMindBridge::connect_at_mcp_boundary(config.clone(), &mismatch).is_err());
+    let bridge = GlobalMindBridge::connect_at_mcp_boundary(config, &target).unwrap();
     let bytes = bridge
         .recall_binary([1.0, 0.0, 0.0, 0.0], [0.0, 0.0], "bridge-live-test", 1)
         .unwrap();
