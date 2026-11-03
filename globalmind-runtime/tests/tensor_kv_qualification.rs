@@ -1722,9 +1722,9 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
     #[cfg(feature = "live-forward-model")]
     {
         use globalmind_runtime::retrieval::{RetrievalConfig, RetrievalMetric};
-        use rgah::GlobalMindBridge;
+        use rgah::globalmind_bridge::{GlobalMindBridge, McpSurrealTarget};
 
-        let bridge = GlobalMindBridge::connect(RetrievalConfig {
+        let retrieval = RetrievalConfig {
             endpoint: format!("http://127.0.0.1:{}", surreal.port),
             namespace: surreal.namespace.clone(),
             database: surreal.database.clone(),
@@ -1733,7 +1733,14 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
             workspace: workspace_id.clone(),
             candidate_budget: 8,
             metric: RetrievalMetric::Hyperbolic,
-        })?;
+        };
+        let mcp_target = McpSurrealTarget {
+            mode: "on".into(),
+            endpoint: retrieval.endpoint.clone(),
+            namespace: retrieval.namespace.clone(),
+            database: retrieval.database.clone(),
+        };
+        let bridge = GlobalMindBridge::connect_at_mcp_boundary(retrieval, &mcp_target)?;
         let mut bridge_payloads = Vec::with_capacity(KV_HEADS);
         for head in 0..KV_HEADS {
             let mut query = base_query.clone();
@@ -2002,6 +2009,8 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
     writeln!(&mut report, "status: PASS (all 7 required gates passed)").unwrap();
     #[cfg(feature = "live-forward-model")]
     writeln!(&mut report, "harness_bridge_forward: PASS (real Layer-3; both exact K/V heads consumed; hidden and 248320 logits bit-exact)").unwrap();
+    #[cfg(feature = "live-forward-model")]
+    writeln!(&mut report, "mcp_authority_preflight: PASS (declared MCP target equals isolated GlobalMind bridge target; MCP child transport not exercised)").unwrap();
     writeln!(&mut report, "canonical_workspace: {}", repo_root.display()).unwrap();
     writeln!(&mut report, "model_directory: {MODEL_DIR}").unwrap();
     writeln!(&mut report, "model_id: {MODEL_ID}").unwrap();

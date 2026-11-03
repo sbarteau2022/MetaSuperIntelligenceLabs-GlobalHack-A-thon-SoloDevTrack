@@ -43,6 +43,9 @@ carved-swarm qualification.
    namespace/database as `GlobalMindBridge`, never a separate `.hypermind`
    root. Assert target identity and schema before any call. Use read-only
    recall and exact-model K/V fetch; keep writes behind existing admission.
+   The next Layer-3 baseline run must enter via
+   `GlobalMindBridge::connect_at_mcp_boundary` with the disposable instance's
+   exact target, so the authority check and real K/V injection share one test.
 3. **Glimmer carved task** — L0 Glimmer proposes two packets and scoped
    atom/edge handles.
    Backend governor permits them, and every worker read/traverse is checked
