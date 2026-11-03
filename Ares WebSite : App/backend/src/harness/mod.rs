@@ -22,6 +22,7 @@
 pub mod baseline;
 pub mod mission;
 pub mod qdrant_memory;
+pub mod glimmer_tokenizer;
 pub mod qwen_vl_native;
 pub mod runtime;
 pub mod telemetry;

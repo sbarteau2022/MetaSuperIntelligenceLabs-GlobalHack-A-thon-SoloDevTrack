@@ -13,6 +13,11 @@ The Rust Qwen VL tokenizer adapter has been restored for the hackathon pass.
 Its pinned digest and oracle token sequence are a model-specific boundary
 check, not shared atom identity or full encoder parity. Further MLIR lowering
 is paused; see `../../HACKATHON-SWARM-OVERWATCH-DESIGN-2026-11-03.md`.
+The shared carved-swarm seat uses the pinned **Glimmer** tokenizer and config
+from the WD Drive (`harness::glimmer_tokenizer`); Qwen remains the separate
+research-library intake adapter. Glimmer's 6656-wide hidden state is not an
+admitted semantic embedding. The live tokenizer gate is
+`cargo test --test glimmer_tokenizer_live -- --ignored`.
 The live text route remains BM25 until a Rust-native 28-layer VL executor
 passes the fixture, stored-point, and Qdrant self-retrieval gates.
 

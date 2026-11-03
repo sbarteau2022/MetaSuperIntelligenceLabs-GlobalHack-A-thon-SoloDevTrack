@@ -29,7 +29,15 @@ The “Gödel point” is a design analogy about snapshot insufficiency, not an 
 
 ## Implementation order and stop gates
 
-1. Restore the backend checkpoint tokenizer adapter; retain its model digest/version guard. Pause new MLIR work. The tokenizer remains model-bound and never enters shared atom identity.
+1. Bind the shared swarm model seat to the Glimmer checkpoint on the WD Drive:
+   config SHA256 `3ce829f4654d2f5f5f43acca424fe17d72e74015d375d385a86b7fff24d4a031`,
+   tokenizer SHA256 `c9dbee66967b58f31a7c27f723c3760da3526ccd0427578e8905b0abb0031c4d`.
+   The config declares 52 layers, hidden width 6656 and vocabulary 202048.
+   The tokenizer is model-bound and never enters shared atom identity. The
+   separate Qwen tokenizer adapter is only for the previously specified
+   Qdrant intake model. Pause new MLIR work. A 6656-wide hidden state is not
+   automatically a calibrated semantic retrieval embedding; qualify that
+   separately before indexing or comparing it to Qwen vectors.
 2. Implement the carved graph handle against the one GlobalMind, enforced at read/traverse/tool boundaries; connect governor permits, real model seat and L0 judge. Do not port N3 canned `carve-specialist` percentages.
 3. Extract/reuse the existing Meta Automaton transition/rollback semantics; add one typed proposer envelope for retrieval and prefill rather than separate controller loops. Persist confidence history and receipts in the governed store. Keep telemetry observation in HyperDX.
 4. Add across-turn paper-style holding telemetry and branch-hold arbitration with same-policy scrutiny. Use Q32.31 for admission/confidence state; verify numeric bounds separately. Guard against circular self-evidence: model proposals cannot serve as independent outcome judges.
