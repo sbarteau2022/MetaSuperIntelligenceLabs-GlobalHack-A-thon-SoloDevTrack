@@ -605,6 +605,7 @@ pub async fn core_scope_change(
 struct MissionRequest {
     role: Option<u8>,
     budget_j: Option<f64>,
+    mission: Option<String>,
 }
 
 async fn harness_mission_geometry(
@@ -660,7 +661,10 @@ async fn harness_mission_live(
         .role
         .and_then(RoleId::from_level)
         .unwrap_or(RoleId::LaneBuilder);
-    let input = crate::harness::mission::geometry_mission();
+    let input = match req.mission.as_deref() {
+        Some("map") => crate::harness::mission::map_live_mission(),
+        _ => crate::harness::mission::geometry_mission(),
+    };
     match crate::governor::dispatch_mission_live(&state, role, input, req.budget_j.unwrap_or(100.0)).await {
         Ok((permit, receipt, seat)) => Json(serde_json::json!({
             "executor": "native-mtp-automaton",

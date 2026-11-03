@@ -893,3 +893,62 @@ pub fn geometry_mission() -> MissionInput {
         }],
     }
 }
+
+/// Live map mission: the passing counterpart to `geometry_mission`.
+/// Two packets, both on tools seeded at startup with judged atoms and
+/// receipts (`map.query`, `map.kv_fetch` in main.rs). The judge is
+/// ExitCodeZero, which the engine calls with 0 exactly when the
+/// executor call succeeded and telemetry recorded — so a PASS here
+/// certifies admitted live execution, a bound receipt digest, and a
+/// verified receipt chain, not a claim about model answer quality.
+pub fn map_live_mission() -> MissionInput {
+    let packet = |id: &str, task: &str, tool: &str, args: &str, depends_on: Vec<String>| Packet {
+        id: id.into(),
+        task: task.into(),
+        depends_on,
+        declared_context_tokens: 100,
+        tool_calls: vec![ToolCall {
+            tool: tool.into(),
+            args_json: args.into(),
+            declared: true,
+        }],
+        judges: vec![JudgeRef {
+            id: "judge-exit-zero".into(),
+            kind: "exit_code_zero".into(),
+        }],
+        branch: None,
+        retry_policy: RetryPolicy {
+            max_rounds: 2,
+            material_change_required: true,
+        },
+        status: PacketStatus::Pending,
+        attempts: 0,
+        judge_joined: false,
+    };
+    MissionInput {
+        plan: Plan {
+            id: "mission-map-live-2026-11-03".into(),
+            objective: "live map capability receipt: admitted map.* execution through the native MTP automaton, judged, receipt-chained".into(),
+            packets: vec![
+                packet(
+                    "packet-map-01",
+                    "live map.query through the native MTP automaton",
+                    "map.query",
+                    "{\"query\": \"map capability live check\"}",
+                    vec![],
+                ),
+                packet(
+                    "packet-map-02",
+                    "live map.kv_fetch after packet-map-01",
+                    "map.kv_fetch",
+                    "{\"key\": \"map-live-check\"}",
+                    vec!["packet-map-01".to_string()],
+                ),
+            ],
+        },
+        judges: vec![Judge {
+            id: "judge-exit-zero".into(),
+            kind: JudgeKind::ExitCodeZero,
+        }],
+    }
+}
