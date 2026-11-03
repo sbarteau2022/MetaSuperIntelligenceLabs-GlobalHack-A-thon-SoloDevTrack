@@ -9,8 +9,10 @@ target directory because this checkout path contains a colon:
 
 Qwen VL dense research retrieval is specified in
 `QWEN-VL-RETRIEVAL-DESIGN.md` with a pinned binary MLX oracle fixture.
-The former Rust tokenizer check is a retired historical oracle receipt; the
-new model boundary is the bidirectional Boundary Symplectic Transducer.
+The Rust Qwen VL tokenizer adapter has been restored for the hackathon pass.
+Its pinned digest and oracle token sequence are a model-specific boundary
+check, not shared atom identity or full encoder parity. Further MLIR lowering
+is paused; see `../../HACKATHON-SWARM-OVERWATCH-DESIGN-2026-11-03.md`.
 The live text route remains BM25 until a Rust-native 28-layer VL executor
 passes the fixture, stored-point, and Qdrant self-retrieval gates.
 

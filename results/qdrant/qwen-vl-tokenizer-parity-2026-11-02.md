@@ -1,9 +1,9 @@
 # Qwen VL tokenizer parity receipt
 
-**Historical, retired 2026-11-02:** this test and module were removed from the
-backend after the Boundary Symplectic Transducer was selected as the model
-I/O contract. The result below records the old checkpoint-specific ingest
-oracle only; it is not a current live boundary or a dense retrieval pass.
+**History:** this test and module were removed on 2026-11-02, then restored
+for the 2026-11-03 hackathon pass when MLIR lowering was paused. The result
+below records checkpoint-specific tokenizer parity only; it is not dense
+retrieval or full encoder parity.
 
 The Rust-native tokenizer loads the pinned 11 MB tokenizer file, rejects a
 digest mismatch, and encodes plain text with special tokens enabled.
