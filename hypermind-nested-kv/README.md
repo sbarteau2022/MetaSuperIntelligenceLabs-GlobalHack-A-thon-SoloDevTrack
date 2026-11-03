@@ -189,3 +189,13 @@ cost gates, tool/MCP/skill/plugin outcomes, recovery, DAG/Obsidian graphs, KV,
 resource attribution and atom/trajectory/novelty lineage. SQL migrations and
 offline admin/tests are built; Rust/harness live telemetry adapters remain
 PROPOSED. Existing map storage and runtime behavior are unchanged.
+
+## Boundary symplectic transducer experiment (2026-11-03)
+
+`src/boundary_symplectic_transducer.rs` implements the frozen `bst-v1`
+component contract in `BOUNDARY-SYMPLECTIC-TRANSDUCER-SPEC.md`. Its typed
+ingress/egress, canonical bytes, Q32.31 boundaries, and phase-augmented
+geometry have unit and round-trip tests; `results/bst-v1-receipt-2026-11-02.txt`
+records the component gate. This is **not** the live model I/O path, does not
+replace the tokenizer, and does not prove semantic understanding or a full
+symplectic model forward. The hackathon runtime keeps MLIR lowering paused.

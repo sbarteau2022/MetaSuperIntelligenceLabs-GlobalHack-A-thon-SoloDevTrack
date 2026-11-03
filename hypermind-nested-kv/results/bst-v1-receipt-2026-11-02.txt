@@ -1,0 +1,39 @@
+Boundary Symplectic Transducer bst-v1 — replay receipt
+Date (UTC): 2026-11-03
+Address revision: 1
+Frozen versions: ingress=1 egress=1 canonicalizer=1 dialect=1 geometry=1 numeric=1 adapter=1
+
+Implementation:
+  hypermind-nested-kv/src/boundary_symplectic_transducer.rs
+  hypermind-nested-kv/tests/boundary_symplectic_roundtrip.rs
+  hypermind-nested-kv/BOUNDARY-SYMPLECTIC-TRANSDUCER-SPEC.md
+
+Adapter base (tested, not vendored):
+  Rust-TS-Tokio-Inference-Engine/src/serving/model_ir.rs
+  - ModelStepIr::compile_with_context: vocab 1..=300000, 1..=8 tokens,
+    pos+len <= max_context(512), decode takes exactly 1 token.
+  - rust-server suite: serving::model_ir 2/2 pass (typed_program_and_steps,
+    core_runtime_has_no_lexical_dependency).
+  - BST conformance test mirrors every bound plus boundary probes
+    (overflow / decode-arity / vocab / 9-token rejection).
+
+Results (measured this pass):
+  cargo test (hypermind-nested-kv, full crate): 120/120 pass
+    - lib boundary_symplectic_transducer: 12 pass
+      (omega nondegenerate, identity canonical, shear rejected,
+       phase-augmented default, Q32.31, UTF-8 rejection, text round-trip,
+       key exclusion, opaque disclosure, unknown-id, bad-UTF-8, tags)
+    - boundary_symplectic_roundtrip: 15 pass
+      (multilingual/code/tool/observation, malformed, egress naming,
+       tamper, symplectic claim, semantic key, passthrough, opaque,
+       model-ir geometry + refused guess)
+    - pre-existing suites unchanged: 82 + 8 pass
+  cargo clippy --lib: clean (-D warnings)
+
+Claims bound by this receipt:
+  - Default geometry label is phase-augmented; symplectic-canonical only
+    after residual <= tol (tol <= 1e-6), identity passes, shear fails.
+  - Model-ir adapter carriers satisfy ModelStepIr geometry but are
+    disclosed NOT trained token IDs; tokenless end-to-end NOT claimed.
+  - Untracked files only; stash@{0,1} belong to other work, untouched.
+  - No shared-atom promotion, no K/V reuse claim, no live-mind write.
