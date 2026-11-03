@@ -74,3 +74,98 @@ From `globalmind-runtime/`: `cargo run --release --bin glimmer_forward_preflight
 - Evaluation lane: preregister carved versus uncarved control and negative cases, retain real receipts. No synthetic percentages or pass markers.
 
 Stop claims at the exact evidence boundary. The current tests prove useful components. The native Glimmer forward, one-buffer live swarm, and two-adapter server remain open.
+
+## Session handoff addendum — 2026-11-03
+
+**Read this first on return.** The canonical git checkout is the path at the
+top of this document, branch `codex/consolidate-n3-globalmind-20261102`.
+Commits `c94debfd` and `20b46190` landed after the earlier evidence list.
+The former makes backend `/api/models` probe the native seat's binary
+`/v1/info` identity instead of hardcoding Qwen and adds a `--native-baseline`
+Glimmer preflight mode. The latter switches the harness live child gate from
+retired numeric-ID `hypermind-mcp` to active `globalmind-mcp` and records the
+universal decoder design. The statement above that `/api/models` still
+hardcodes Qwen is superseded; **execution is still not universal**.
+
+**Verified now:** `cargo test --test globalmind_bridge_live
+bridge_reads_one_real_atom_as_binary_recall -- --ignored --nocapture` passed
+1/1 with a disposable SurrealKV, live `globalmind-mcp` child attestation,
+GMRC atom recall, and exact-model tensor K/V read. Full harness tests and
+Clippy passed; formatting passed after formatting the touched harness files.
+The Glimmer baseline preflight rehashed the frozen checkpoint but exited 1
+because `GLIMMER_NATIVE_FORWARD_BIN` is unset. Receipts are
+`results/forward-smoke/globalmind-mcp-child-bridge-2026-11-03.md` and
+`results/glimmer-forward/native-baseline-preflight-2026-11-03.md`. There is
+still **no full native Glimmer forward, no real worker task, no task-quality
+benchmark, and no second decoder architecture conformance run**.
+
+### Parallel work packets for separate agents
+
+Give each packet to one agent with exclusive file ownership. Agents should
+report changed paths, exact commands and exit codes, real receipts, and the
+next unresolved gate. They should stage only their own paths. Do not edit the
+live `hypermind/core`, frozen checkpoint shards, or another agent's dirty
+files. Keep all implementation and receipts in this canonical repository.
+
+1. **Universal native decoder (critical path):** own
+   `globalmind-runtime/UNIVERSAL-DECODER-DESIGN.md`, a new native executor
+   module/crate inside this repo, and its README. Implement bounded safetensors
+   loading, immutable artifact attestation, typed operator graph compilation,
+   a versioned binary forward ABI, and real CPU/Metal execution of the
+   operators required by the frozen Glimmer graph. The harness must not switch
+   on the name “Glimmer.” A revision of the same supported graph must load
+   without editing Rust source; an unknown operator/layout must reject before
+   execution. Preserve trained RoPE on sliding layers and NoPE on full layers
+   for baseline; TPPE is the separate mind-address path. First deliver a
+   real weight-backed layer receipt, then full-model logits/K/V and parity
+   against an independent frozen reference. Do not copy the discarded,
+   untracked `core_lm/` into production or claim a partial layer as a full
+   decoder. The installed `libmlx.dylib`/`libmlxc.dylib` and older native
+   tensor code may be studied as references; the implementation home is here.
+2. **Model-neutral harness wire:** own the harness model boundary and binary
+   ABI integration, plus README. Connect one attested decoder seat to the
+   existing `GlobalMindBridge::prepare_forward_recall` and automaton, with
+   checkpoint/tokenizer/operator-graph digest in every request and receipt.
+   Prove model switch invalidates old prefix/K/V while shared atom recall
+   remains usable. Do not make `tool:...` text through `/v1/generate` the
+   claimed native model boundary. Gate on a real decoder executable; a mock
+   transport is only a component test.
+3. **MCP/mind and carved scope:** own `globalmind-mcp` and scoped retrieval,
+   not the decoder. Keep one SurrealDB authority; require child
+   `mind.db_status` attestation, non-core DB, governor-issued well scope, and
+   no worker `mind.kv_exact` without explicit tensor entitlement. Replace
+   workspace-wide scan only after preserving exact scoped-result parity and
+   testing traversal time on a real graph. The disposable bridge pass above
+   is the baseline. Do not revive legacy `hypermind-mcp` numeric hydration.
+4. **Carved swarm execution:** own L0 dispatch/merge and its README. Use one
+   resident model weight owner across L0 and two scoped workers, with separate
+   role handles and graph visibility. Require independent judge and
+   adversarial result before merge or atom mint. A carve file on disk or the
+   64-float toy is insufficient. Run a real task with a forced scope escape,
+   invalid receipt, retry, and no-carve control. Record quality, latency,
+   memory, and receipt chain.
+5. **Benchmark/evaluation:** own preregistration and receipts only. Freeze
+   the prompts, reference logits/continuations, quality judge, source corpus,
+   budgets and counters before seeing results. Measure native baseline,
+   baseline+mind recall, exact K/V continuation, and carved swarm under the
+   same checkpoint. Separate cold/warm cache and report failures. Keep Qdrant
+   fact-library retrieval separate from SurrealDB mind recall and HyperDX
+   telemetry; do not feed prior DNHG/ELLE work into competition claims.
+
+### Return-session audit order
+
+Check `git status --short` and each agent's commit/receipt first. Then inspect
+the real decoder binary and its artifact hash, operator graph, native I/O,
+full forward output, and independent parity. Next rerun the disposable
+MCP/bridge gate, then one harness→automaton→MCP→mind→decoder task with exact
+K/V and a no-recall control. Only then run benchmark sweeps. If a lane has
+only a design, compiler pass, synthetic fixture, or component output, label
+that lane incomplete. Do not promote the attention-economics ratio as policy:
+its own correction refutes reward/free-energy equivalence; require measured
+cost, producer validity, quality floor, and exact invalidation first.
+
+**Existing dirty tree at handoff:** frontend files, backend
+`tests/mcp_e2e_live.rs`, N3 tool ports, `hypermind-nested-kv/src/lib.rs`,
+distillation/tensor-K/V reports, and untracked `core_lm/`, transducer and
+preregistration files belong to other work. Inspect their actual diffs before
+editing or committing them. No deletion or cleanup was performed here.
