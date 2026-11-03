@@ -14,6 +14,7 @@ One SurrealDB GlobalMind holds model-neutral knowledge atoms, typed edges, traje
 - `f033dff`: bridge checks declared MCP URL/namespace/database against one mind. Declared parity is weaker than child-attested authority.
 - `5e8bb16`: isolated Surreal scoped read component passes; it filters members and edges with both endpoints visible and fails closed on invalid scope. It remains a trusted-caller API and uses a workspace-wide scan. Governor permit and MCP binding are open.
 - `6b94bf13`: two workers share one `Arc` test weight buffer, isolate in-memory views, fail an L0 test gate on tamper and replay the same merge root. It uses 64 test floats, not Glimmer; the merge gate is test-local, not a production API; no real model task ran. The test labels weight buffer equality as K/V identity, but tensor K/V identity is a separate contract and still needs proof.
+- The backend native MTP executor now pins the first attested model identity for each executor/mission and rejects a subsequent identity change. A fresh executor can bind a different model. This is a mission continuity guard, not a second native model adapter.
 - `f13356db` and `e27cc7fa`: GlobalMind MCP tool path and a child transport route exist. Inspect their receipts before extending them; do not infer production readiness from commit titles.
 
 ## New Glimmer Layer 0 weight carve receipt supplied by Stewart

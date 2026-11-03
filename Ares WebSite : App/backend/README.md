@@ -21,6 +21,16 @@ admitted semantic embedding. The live tokenizer gate is
 The live text route remains BM25 until a Rust-native 28-layer VL executor
 passes the fixture, stored-point, and Qdrant self-retrieval gates.
 
+The native MTP adapter now pins the server-reported 64-hex model identity on
+its first successful generation and rejects an identity change within the
+same executor/mission. An intentional model swap creates a fresh executor and
+must invalidate incompatible prefix and tensor K/V pages. This protects a
+mission from mixed-model receipts; it does not supply a native Glimmer forward
+executor. The current adapter still sends textual tool/args input, and
+`/api/models` still has a hardcoded Qwen display entry. See
+`../../FORWARD-SMOKE-BRIGADE-HANDOFF-2026-11-03.md` for the remaining typed
+model-seat and carved-swarm gates.
+
 Status: LANDED (core skeleton), 2026-11-02. One Rust binary (axum + Tokio),
 loopback `127.0.0.1:4810`. Governance is baked in, not added on: **no
 dispatch, no memory write, no model call, no erasure, and no run ships

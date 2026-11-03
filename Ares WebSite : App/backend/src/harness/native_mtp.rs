@@ -170,6 +170,20 @@ fn is_hex64(s: &str) -> bool {
     s.len() == 64 && s.bytes().all(|c| c.is_ascii_hexdigit())
 }
 
+fn pin_mission_identity(pinned: &mut Option<String>, observed: &str) -> Result<(), String> {
+    if !is_hex64(observed) {
+        return Err("native-mtp invalid model identity".to_string());
+    }
+    if let Some(current) = pinned {
+        if current != observed {
+            return Err("native-mtp model identity changed within mission".to_string());
+        }
+    } else {
+        *pinned = Some(observed.to_string());
+    }
+    Ok(())
+}
+
 /// Parse one size-prefixed AMST frame, with the server's own validation
 /// rules (version, kinds, bounds) enforced, not just the layout.
 pub fn parse_frame(bytes: &[u8]) -> Result<AmstFrame, String> {
@@ -429,7 +443,10 @@ impl NativeMtpExecutor {
             return Err("native-mtp stream ended without finish".to_string());
         }
         let identity = identity.ok_or_else(|| "native-mtp stream without metadata".to_string())?;
-        self.last_identity = Some(identity.clone());
+        // A fresh executor is a new mission seat. Once a mission has received
+        // one frame, its model cannot silently change under its prefix/K/V and
+        // receipt chain. Construct a new executor for an intentional swap.
+        pin_mission_identity(&mut self.last_identity, &identity)?;
         Ok((output, identity))
     }
 }
@@ -470,6 +487,18 @@ impl Executor for NativeMtpExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mission_identity_cannot_change_midstream() {
+        let mut pinned = None;
+        let a = "a".repeat(64);
+        let b = "b".repeat(64);
+        assert!(pin_mission_identity(&mut pinned, &a).is_ok());
+        assert!(pin_mission_identity(&mut pinned, &a).is_ok());
+        assert!(pin_mission_identity(&mut pinned, &b).is_err());
+        assert_eq!(pinned.as_deref(), Some(a.as_str()));
+        assert!(pin_mission_identity(&mut None, &b).is_ok());
+    }
 
     // Manual FlatBuffers builder for the parser tests. It lays out one
     // frame by hand (vtable, table, strings) following the same schema
