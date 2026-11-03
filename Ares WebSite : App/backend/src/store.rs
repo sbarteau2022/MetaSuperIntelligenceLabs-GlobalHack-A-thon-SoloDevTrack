@@ -176,6 +176,36 @@ impl SiloView {
     }
 }
 
+/// A worker-facing borrowed read capability. Its private map reference must
+/// never be handed to the worker directly; every read checks carved membership.
+pub struct ScopedGraphRead<'a> {
+    map: &'a CarvedSwarmMap,
+    silo: &'a SiloView,
+}
+
+impl ScopedGraphRead<'_> {
+    pub fn role(&self) -> RoleId {
+        self.silo.role
+    }
+
+    pub fn atom(&self, id: AtomId) -> Option<&Atom> {
+        self.silo
+            .contains_atom(id)
+            .then(|| self.map.global_atom(id))
+            .flatten()
+    }
+
+    /// A graph edge may be traversed only if both endpoints are in the same
+    /// worker view. The authoritative edge existence check belongs to SurrealDB.
+    pub fn permits_endpoints(&self, from: AtomId, to: AtomId) -> bool {
+        self.atom(from).is_some() && self.atom(to).is_some()
+    }
+
+    pub fn weights(&self) -> &Arc<FrozenBaseWeights> {
+        &self.silo.weight_view.base
+    }
+}
+
 /// Loss reports (Gate 4 / Gate 6 shapes, backend-native field names).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProjectionLossReport {
@@ -262,6 +292,14 @@ impl CarvedSwarmMap {
 
     pub fn silo(&self, role: RoleId) -> Option<&SiloView> {
         self.silos.get(&role)
+    }
+
+    /// L0 retains its separate governor authority; workers get only this
+    /// carved reader, not a reference to the global map.
+    pub fn scoped_read(&self, role: RoleId) -> Option<ScopedGraphRead<'_>> {
+        self.silos
+            .get(&role)
+            .map(|silo| ScopedGraphRead { map: self, silo })
     }
 
     pub fn global_atom(&self, id: AtomId) -> Option<&Atom> {

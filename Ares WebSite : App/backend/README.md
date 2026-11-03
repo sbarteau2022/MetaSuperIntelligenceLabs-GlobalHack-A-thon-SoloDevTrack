@@ -59,6 +59,10 @@ with provenance, :6333), HyperDX (telemetry, :8080).
   return it; Ω = 0 pairs have no handoff path (not a runtime denial).
   Default Ω = 0.08 between workflow-adjacent lanes; expansion needs a
   written justification or `UnjustifiedOverlapExpansion`; negative Ω fails.
+  `ScopedGraphRead` now lends a worker only its carved atom reads and checks
+  both endpoints of a proposed transition. It borrows the same frozen-weight
+  `Arc` without copying it. See `CARVED-GRAPH-READ-DESIGN.md`; SurrealDB/MCP
+  enforcement, real Glimmer execution, and L0 quality merge remain open.
 - **The 12 gates** (G1 weights, G2 spawn, G3 handoff, G4 loss accounting,
   G5 kill criteria `0x94ce_0283_17e0_ecac`, G6 forward pass, G7 supervision,
   G8 deposit, G9 hot swap, G10 cross-epoch, G11 MLIR SSA, **G12 human

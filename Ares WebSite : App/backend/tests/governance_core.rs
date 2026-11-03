@@ -80,8 +80,23 @@ fn planted_out_of_view_row_returns_zero_hits() {
         RoleId::MissionIntake,
         &policy,
     );
+    let remote = map.keep_and_carve(
+        LorentzCoord::origin(),
+        b"remote".to_vec(),
+        RoleId::GateKeeper,
+        &policy,
+    );
     // Antipodal view (GateKeeper L12, non-adjacent, Omega = 0) must not see it.
     assert!(!map.silo(RoleId::GateKeeper).unwrap().contains_atom(atom));
+    let l1 = map.scoped_read(RoleId::MissionIntake).unwrap();
+    let l12 = map.scoped_read(RoleId::GateKeeper).unwrap();
+    assert_eq!(l1.atom(atom).unwrap().payload, b"secret");
+    assert!(l12.atom(atom).is_none());
+    assert!(!l12.permits_endpoints(atom, atom));
+    assert!(l1.permits_endpoints(atom, atom));
+    assert!(!l1.permits_endpoints(atom, remote));
+    assert!(std::sync::Arc::ptr_eq(l1.weights(), l12.weights()));
+    assert!(map.scoped_read(RoleId::Coordinator).is_none());
     // And a handoff L1 -> L12 carrying it must fail: the path does not exist.
     let mut sys = immune(fp);
     let err = sys
