@@ -27,6 +27,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/compliance/controls", get(compliance_controls))
         .route("/api/compliance/erasure", post(compliance_erasure))
         .route("/api/compliance/vault/{root}", get(compliance_vault))
+        .route("/api/compliance/core-scope", post(core_scope_change))
         .route("/api/govern/dispatch", post(govern_dispatch))
         .route("/api/harness/status", get(harness_status))
         .route(
