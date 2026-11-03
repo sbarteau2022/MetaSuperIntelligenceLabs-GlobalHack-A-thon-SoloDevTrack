@@ -1,5 +1,12 @@
 # Ares Backend — Phase 0 Core Governance
 
+The isolated `hypermind-toy` crate rehearses the forward-pass scheduler. Its
+`backend_receipt_parity` integration test feeds receipts minted by this backend
+into the toy's independent chain verifier; scheduler tests remain rehearsal
+evidence, not a live model forward-pass qualification. Run it with an external
+target directory because this checkout path contains a colon:
+`CARGO_TARGET_DIR=/tmp/hypermind-toy-target cargo test --manifest-path 'hypermind-toy/Cargo.toml'`.
+
 Status: LANDED (core skeleton), 2026-11-02. One Rust binary (axum + Tokio),
 loopback `127.0.0.1:4810`. Governance is baked in, not added on: **no
 dispatch, no memory write, no model call, no erasure, and no run ships

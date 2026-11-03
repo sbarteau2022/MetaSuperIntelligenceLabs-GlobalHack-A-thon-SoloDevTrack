@@ -49,8 +49,8 @@ and port to the backend later by diffing, not rewriting.
 3. Capability routing by problem-text geometry + gate admit/deny split.
 4. Recall-vs-recompute: depth-k argmin, exact-vs-brute parity, tight-cluster
    narrow-k behavior, invalidation exactness, scan-parity counterexample.
-5. `verify_external_chain`: the port gate — backend receipt rows re-verified
-   here with independent arithmetic.
+5. `verify_external_chain`: the port gate — backend-minted receipt rows are
+   re-verified here with independent arithmetic in `backend_receipt_parity.rs`.
 
 ## 5. Port checklist (when the backend is ready)
 
