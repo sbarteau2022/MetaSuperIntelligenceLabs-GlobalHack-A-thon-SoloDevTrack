@@ -205,4 +205,6 @@ backend-owned, never linked against the `rgah` crate. Framework: the Rust
   telemetry in HyperDX are unaffected by its outcome.
 - UI wiring (status pill in `AtomaCloudApp` footer) — UI untouched so far.
 
-Research vector route: `POST /api/rag/query` accepts a normalized 1024D `rank0` array from the pinned Qwen encoder, searches both named Qdrant ranks, and fuses hits by reciprocal rank. Text-only queries fail closed until a Rust-native Qwen query encoder matches the ingest recipe. Omit both `rank0` and `query` for payload scroll.
+Research vector route: `POST /api/rag/query` accepts a normalized 1024D `rank0` array from the pinned Qwen encoder, searches both named Qdrant ranks, and fuses hits by reciprocal rank. Text-only queries use the separate Qdrant BM25 lane; dense text queries still require a Rust-native Qwen encoder matching the ingest recipe. Omit both `rank0` and `query` for payload scroll.
+
+Qdrant `research_library_v1` now has a scored full-text payload index on `text`, built from the 48,422 stored points without changing their IDs or two Qwen vector ranks. `/api/rag/query` routes a nonempty `query` to Qdrant BM25 and labels it `qdrant-bm25-text`; a supplied normalized `rank0` still takes the dual-rank Qwen vector path. BM25 is a lexical retrieval lane, not the Rust-native Qwen VL query encoder or full PAMI. Startup verifies the scored index as well as the vector schema. The official index/query contract is documented at https://qdrant.tech/documentation/search/text-search/full-text-search/.

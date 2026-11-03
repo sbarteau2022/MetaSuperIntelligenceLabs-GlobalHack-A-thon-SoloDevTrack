@@ -948,14 +948,26 @@ async fn rag_query(
         .into_response();
     };
     let limit = req.limit.unwrap_or(8).clamp(1, 50);
+    if req.rank0.is_none()
+        && req
+            .query
+            .as_ref()
+            .is_some_and(|query| query.trim().is_empty() || query.len() > 1024)
+    {
+        return err_json(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            WhyReceipt::internal("/api/rag/query", "text query must contain 1..=1024 bytes"),
+        )
+        .into_response();
+    }
     let hits = if let Some(rank0) = req.rank0.as_deref() {
         memory
             .query_research_rank0(rank0, limit, req.silo.as_deref())
             .await
-    } else if req.query.is_some() {
-        return err_json(StatusCode::UNPROCESSABLE_ENTITY,
-            WhyReceipt::internal("/api/rag/query", "text query requires the pinned Qwen encoder; provide a normalized 1024D rank0 vector"))
-            .into_response();
+    } else if let Some(query) = req.query.as_deref() {
+        memory
+            .query_research_text(query, limit, req.silo.as_deref())
+            .await
     } else {
         memory
             .query_research_points(limit, req.silo.as_deref())
@@ -964,7 +976,7 @@ async fn rag_query(
     match hits {
         Ok(hits) => Json(serde_json::json!({
             "collection": crate::harness::qdrant_memory::RESEARCH_COLLECTION,
-            "query_mode": if req.rank0.is_some() { "qwen-rank0+rotated-rank1-rrf" } else { "scroll+payload-filter" },
+            "query_mode": if req.rank0.is_some() { "qwen-rank0+rotated-rank1-rrf" } else if req.query.is_some() { "qdrant-bm25-text" } else { "scroll+payload-filter" },
             "query": req.query,
             "hits": hits.iter().map(|h| serde_json::json!({
                 "id": h.id,

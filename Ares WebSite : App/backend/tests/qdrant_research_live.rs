@@ -55,3 +55,26 @@ async fn stored_qwen_vector_retrieves_its_own_point_on_both_ranks() {
     assert_eq!(hits.first().map(|h| h.id.as_str()), Some(id));
     assert!(hits[0].score.unwrap_or_default() > 0.0);
 }
+
+#[tokio::test]
+#[ignore = "requires live Qdrant scored text index on research_library_v1"]
+async fn bm25_text_retrieves_research_with_silo_and_provenance() {
+    let base = std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://127.0.0.1:6333".into());
+    let memory = QdrantMemory::new(base).unwrap();
+    let before_count = memory.verify_research_collection().await.unwrap();
+    let hits = memory
+        .query_research_text("hyperbolic memory", 5, Some("specops"))
+        .await
+        .unwrap();
+    assert!(!hits.is_empty());
+    assert!(hits.iter().all(|hit| hit.silo.as_deref() == Some("specops")
+        && hit.source_path.is_some()
+        && hit
+            .score
+            .is_some_and(|score| score.is_finite() && score > 0.0)));
+    assert!(memory.query_research_text("  ", 5, None).await.is_err());
+    assert_eq!(
+        memory.verify_research_collection().await.unwrap(),
+        before_count
+    );
+}

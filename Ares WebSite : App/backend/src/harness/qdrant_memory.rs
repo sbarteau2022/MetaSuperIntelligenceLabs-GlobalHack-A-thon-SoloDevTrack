@@ -295,6 +295,12 @@ impl QdrantMemory {
                 return Err(format!("incompatible research vector contract: {name}"));
             }
         }
+        let text_index = &info["result"]["payload_schema"]["text"];
+        if text_index["data_type"].as_str() != Some("text")
+            || text_index["params"]["scoring"]["type"].as_str() != Some("bm25")
+        {
+            return Err("research text field lacks a scored BM25 index".into());
+        }
         info["result"]["points_count"]
             .as_u64()
             .ok_or_else(|| "research point count missing".to_string())
@@ -967,6 +973,80 @@ impl QdrantMemory {
                 })
             })
             .collect())
+    }
+
+    /// Search the existing research payload through Qdrant's scored full-text
+    /// index. This is a lexical BM25 lane, independent of Qwen dense encoding.
+    pub async fn query_research_text(
+        &self,
+        query: &str,
+        limit: usize,
+        silo: Option<&str>,
+    ) -> Result<Vec<ResearchHit>, String> {
+        let query = query.trim();
+        if query.is_empty() || query.len() > 1024 {
+            return Err("research text query must contain 1..=1024 bytes".into());
+        }
+        let bounded = limit.clamp(1, 50);
+        let filter = silo.map(|s| json!({ "must": [{ "key": "silo", "match": { "value": s } }] }));
+        let body = json!({
+            "query": { "text": query },
+            "using": "text",
+            "limit": bounded,
+            "with_payload": true,
+            "with_vector": false,
+            "filter": filter,
+        });
+        let response = self
+            .req_json(
+                reqwest::Method::POST,
+                &format!("/collections/{RESEARCH_COLLECTION}/points/query"),
+                Some(body),
+            )
+            .await?;
+        let points = response["result"]["points"]
+            .as_array()
+            .ok_or_else(|| "Qdrant text query omitted points".to_string())?;
+        points
+            .iter()
+            .map(|point| {
+                let payload = point["payload"]
+                    .as_object()
+                    .ok_or_else(|| "Qdrant text hit omitted payload".to_string())?;
+                let score = point["score"]
+                    .as_f64()
+                    .ok_or_else(|| "Qdrant text hit omitted score".to_string())?;
+                if !score.is_finite() || score < 0.0 {
+                    return Err("Qdrant text hit has invalid BM25 score".into());
+                }
+                Ok(ResearchHit {
+                    id: point["id"]
+                        .as_str()
+                        .ok_or_else(|| "Qdrant text hit omitted ID".to_string())?
+                        .to_owned(),
+                    score: Some(score as f32),
+                    text: payload
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .chars()
+                        .take(500)
+                        .collect(),
+                    source_path: payload
+                        .get("source_path")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                    document_id: payload
+                        .get("document_id")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                    silo: payload
+                        .get("silo")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                })
+            })
+            .collect()
     }
 
     /// Search both recorded Qwen ranks using a typed, already-encoded rank0.

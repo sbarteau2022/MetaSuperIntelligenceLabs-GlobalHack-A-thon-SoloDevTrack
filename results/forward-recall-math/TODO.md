@@ -13,3 +13,8 @@
 ## 2026-11-02 milestone
 - [x] Real Qwen3.6 Layer-3 harness smoke consumed both bridge-fetched K/V heads and matched hidden output and all 248,320 logits bit-exact after isolated SurrealKV restart. Receipt: `results/tensor-kv/tensor-kv-harness-bridge-report.txt`.
 - [ ] Full 40-layer model smoke remains open; the Layer-3 component result must not be promoted to whole-model parity.
+
+## Qdrant milestone
+- [x] Research text retrieval works through Qdrant's scored BM25 index and the Rust backend, preserving 48,422 point IDs and both Qwen vector ranks. Receipt: `results/qdrant/bm25-text-retrieval-2026-11-02.md`.
+- [ ] Audit the 55-point text-index metadata discrepancy (all points have nonempty text by `is_empty` count) before asserting full text-search coverage.
+- [ ] Implement native Qwen VL query embedding and verify parity with the stored 1024D ingest vectors; BM25 does not close this gate.
