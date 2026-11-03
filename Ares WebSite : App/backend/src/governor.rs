@@ -29,6 +29,8 @@ pub struct AppState {
     pub telemetry: Option<crate::harness::telemetry::HyperdxTelemetry>,
     pub memory: Option<crate::harness::qdrant_memory::QdrantMemory>,
     pub capability_gate: Mutex<crate::harness::runtime::CapabilityGate>,
+    /// Ephemeral, role-bound worker read capabilities. Restart revokes all.
+    pub carved_scopes: Mutex<crate::harness::scope::ScopeRegistry>,
     /// O(1) sequence cache: one TppeSequence per session stream per
     /// process. Append advances one step; rehydrate happens once per
     /// (session, process lifetime), never per append (no O(N^2)).
@@ -51,6 +53,7 @@ impl AppState {
             telemetry: None,
             memory: None,
             capability_gate: Mutex::new(crate::harness::runtime::CapabilityGate::default()),
+            carved_scopes: Mutex::new(crate::harness::scope::ScopeRegistry::default()),
             sequences: Mutex::new(std::collections::HashMap::new()),
             run_semaphore: Arc::new(tokio::sync::Semaphore::new(4)),
             surreal,

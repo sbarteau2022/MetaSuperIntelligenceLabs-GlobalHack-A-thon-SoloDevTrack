@@ -41,8 +41,13 @@ backend database. A well-formed MCP response alone is not an independently
 verified task outcome, so this route does not update confidence from that
 response. The request must carry an explicit valid role and exact
 `URL|namespace|database` map identity. Until scoped capability handles are
-bound end to end, only L0 can invoke recall or exact K/V through this route;
-workers can request status only. The full shared-atom recall plus exact model-bound K/V use loop is
+bound end to end, L0 can invoke unscoped recall or exact K/V through this
+route. `/api/harness/swarm/scope` now accepts a configured L0 issuer token,
+mints an ephemeral 256-bit handle bound to role, well IDs, map identity,
+prefix identity and expiry, and records a coordinator permit. A worker's
+`mind.recall` request is rewritten to `mind.recall_scoped` with the handle's
+wells; caller-supplied wells are replaced. Worker exact K/V remains denied
+until a separate tensor entitlement is defined. The full shared-atom recall plus exact model-bound K/V use loop is
 specified in the handoff and still needs a real model task gate.
 
 Status: LANDED (core skeleton), 2026-11-02. One Rust binary (axum + Tokio),

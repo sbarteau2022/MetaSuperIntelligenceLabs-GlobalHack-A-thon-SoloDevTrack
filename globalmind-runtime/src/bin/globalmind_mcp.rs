@@ -7,6 +7,9 @@
 //! - `mind.recall`: typed hyperbolic recall bundle via `retrieval::retrieve`.
 //!   Read-only. Requires GLOBALMIND_SURREAL_USER/PASS; hypermind/core is
 //!   quarantined unless GLOBALMIND_ALLOW_QUARANTINED_CORE=1.
+//! - `mind.recall_scoped`: read-only persisted cognitive-well projection.
+//!   The governor must authorize the well set; this child checks membership
+//!   and edges but does not issue worker capabilities.
 //! - `mind.kv_exact`: fetch a transformer K/V payload by ExactKvIdentity only,
 //!   never by page ID alone. Returns key/value base64 only when the combined
 //!   payload is at most 256 KiB; larger payloads return digests, lengths, and
@@ -23,7 +26,7 @@
 //!   inner content is true (that is the caller's judge step).
 use globalmind_runtime::{
     ExactKvIdentity, GlobalMindStore, RecordId, StoreConfig,
-    retrieval::{RetrievalConfig, RetrievalMetric, retrieve},
+    retrieval::{RetrievalConfig, RetrievalMetric, retrieve, scoped::retrieve_scoped},
 };
 use serde_json::{Value, json};
 use sha2::{Digest as ShaDigest, Sha256};
@@ -64,6 +67,12 @@ fn tools_list() -> Value {
             "query_provenance": {"type": "string"},
             "k": {"type": "integer"}
         }, "required": ["workspace", "query_h3", "query_t2", "query_provenance", "k"]}},
+        {"name": "mind.recall_scoped", "description": "Read-only recall restricted to persisted cognitive-well memberships and internal edges. Caller must hold a governor-issued scope.", "inputSchema": {"type": "object", "properties": {
+            "workspace": {"type": "string"}, "well_ids": {"type": "array", "items": {"type": "string"}},
+            "query_h3": {"type": "array", "items": {"type": "number"}},
+            "query_t2": {"type": "array", "items": {"type": "number"}},
+            "query_provenance": {"type": "string"}, "k": {"type": "integer"}
+        }, "required": ["workspace", "well_ids", "query_h3", "query_t2", "query_provenance", "k"]}},
         {"name": "mind.kv_exact", "description": "Fetch a transformer K/V payload by ExactKvIdentity only, never by page ID alone.", "inputSchema": {"type": "object", "properties": {
             "workspace": {"type": "string"}, "session": {"type": "string"}, "page": {"type": "string"},
             "model_id": {"type": "string"}, "model_revision": {"type": "string"},
@@ -174,6 +183,53 @@ fn recall(args: &Value) -> Result<Value, String> {
             "domain": m.domain,
             "score": m.score,
             "rank": m.rank,
+        })).collect::<Vec<_>>(),
+    }))
+}
+
+fn recall_scoped(args: &Value) -> Result<Value, String> {
+    let workspace = RecordId::parse(get_str(args, "workspace")?)?;
+    let wells = args
+        .get("well_ids")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "missing well_ids array".to_string())?;
+    if wells.is_empty() || wells.len() > 12 {
+        return Err("well_ids must contain 1..=12 entries".into());
+    }
+    let well_ids = wells
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .ok_or_else(|| "well_ids must be strings".to_string())
+                .and_then(RecordId::parse)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let h3v = parse_f64_array(args, "query_h3", 4)?;
+    let t2v = parse_f64_array(args, "query_t2", 2)?;
+    let provenance = get_str(args, "query_provenance")?;
+    let k = u32::try_from(get_u64(args, "k")).map_err(|_| "k out of range".to_string())?;
+    let config = RetrievalConfig::from_env(workspace, RetrievalMetric::Hyperbolic)?;
+    let scoped = retrieve_scoped(
+        &config,
+        &well_ids,
+        [h3v[0], h3v[1], h3v[2], h3v[3]],
+        [t2v[0], t2v[1]],
+        &provenance,
+        k,
+    )?;
+    Ok(json!({
+        "workspace": scoped.bundle.workspace.as_str(),
+        "well_ids": scoped.well_ids.iter().map(RecordId::as_str).collect::<Vec<_>>(),
+        "scope_digest": scoped.scope_digest.as_str(),
+        "query_digest": scoped.bundle.query_digest.as_str(),
+        "ranking_digest": scoped.bundle.ranking_digest.as_str(),
+        "candidates_scanned": scoped.bundle.candidates_scanned,
+        "members": scoped.bundle.members.iter().map(|m| json!({
+            "atom": m.atom.as_str(), "address": m.address.as_str(),
+            "content_digest": m.content_digest.as_str(), "score": m.score, "rank": m.rank,
+        })).collect::<Vec<_>>(),
+        "edges": scoped.edges.iter().map(|e| json!({
+            "id": e.id.as_str(), "from": e.from.as_str(), "to": e.to.as_str(), "kind": e.kind,
         })).collect::<Vec<_>>(),
     }))
 }
@@ -296,6 +352,7 @@ fn handle_request(req: &Value) -> Value {
             let inner = match name {
                 "mind.db_status" => Ok(db_status()),
                 "mind.recall" => recall(&args),
+                "mind.recall_scoped" => recall_scoped(&args),
                 "mind.kv_exact" => kv_exact(&args),
                 "mind.automaton_decide" => automaton_decide(&args),
                 _ => Err(format!("unknown tool: {}", name)),

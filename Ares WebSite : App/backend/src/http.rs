@@ -11,7 +11,7 @@ use crate::roles::RoleId;
 use crate::store::AtomId;
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
@@ -36,6 +36,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         )
         .route("/api/harness/mission/live", post(harness_mission_live))
         .route("/api/harness/mcp/execute", post(harness_mcp_execute))
+        .route("/api/harness/swarm/scope", post(harness_issue_scope))
         .route("/api/harness/dry-run", post(harness_dry_run))
         .route("/api/memory/context", get(memory_context))
         .route("/api/memory", post(memory_append))
@@ -726,6 +727,151 @@ struct McpExecuteRequest {
     confidence_floor: f64,
     tool: String,
     args_json: String,
+    scope_handle: Option<String>,
+}
+
+fn configured_mind_authority() -> Result<crate::harness::mcp::McpAuthority, String> {
+    let base = std::env::var("ARES_MCP_MIND_URL").map_err(|_| "ARES_MCP_MIND_URL required")?;
+    let ns = std::env::var("ARES_MCP_MIND_NS").map_err(|_| "ARES_MCP_MIND_NS required")?;
+    let db = std::env::var("ARES_MCP_MIND_DB").map_err(|_| "ARES_MCP_MIND_DB required")?;
+    if !base.starts_with("http://127.0.0.1:") || ns.is_empty() || db.is_empty() || db == "core" {
+        return Err(
+            "mind MCP target must be explicit loopback and outside quarantined core".into(),
+        );
+    }
+    Ok(crate::harness::mcp::McpAuthority { base, ns, db })
+}
+
+fn mind_identity(authority: &crate::harness::mcp::McpAuthority) -> String {
+    format!("{}|{}|{}", authority.base, authority.ns, authority.db)
+}
+
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+#[derive(Deserialize)]
+struct IssueScopeRequest {
+    role: u8,
+    map_identity: String,
+    prefix_identity: String,
+    well_ids: Vec<String>,
+    expires_ms: u64,
+}
+
+async fn harness_issue_scope(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(req): Json<IssueScopeRequest>,
+) -> impl IntoResponse {
+    if state.surreal.is_none() {
+        return err_json(
+            StatusCode::SERVICE_UNAVAILABLE,
+            WhyReceipt::internal(
+                "/api/harness/swarm/scope",
+                "governance SurrealDB unavailable",
+            ),
+        )
+        .into_response();
+    }
+    let configured_secret = match std::env::var("ARES_L0_SCOPE_ISSUER_TOKEN") {
+        Ok(s) if s.len() >= 32 => s,
+        _ => {
+            return err_json(
+                StatusCode::SERVICE_UNAVAILABLE,
+                WhyReceipt::internal(
+                    "/api/harness/swarm/scope",
+                    "L0 scope issuer token not configured",
+                ),
+            )
+            .into_response()
+        }
+    };
+    let supplied = headers
+        .get("x-ares-l0-scope-token")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    if !constant_time_eq(supplied.as_bytes(), configured_secret.as_bytes()) {
+        return err_json(
+            StatusCode::FORBIDDEN,
+            WhyReceipt::internal("/api/harness/swarm/scope", "L0 scope issuer denied"),
+        )
+        .into_response();
+    }
+    let Some(role) = RoleId::from_level(req.role).filter(|r| *r != RoleId::Coordinator) else {
+        return err_json(
+            StatusCode::BAD_REQUEST,
+            WhyReceipt::internal("/api/harness/swarm/scope", "carved worker role required"),
+        )
+        .into_response();
+    };
+    let authority = match configured_mind_authority() {
+        Ok(a) => a,
+        Err(e) => {
+            return err_json(
+                StatusCode::SERVICE_UNAVAILABLE,
+                WhyReceipt::internal("/api/harness/swarm/scope", &e),
+            )
+            .into_response()
+        }
+    };
+    if req.map_identity != mind_identity(&authority) {
+        return err_json(
+            StatusCode::BAD_REQUEST,
+            WhyReceipt::internal("/api/harness/swarm/scope", "mind identity mismatch"),
+        )
+        .into_response();
+    }
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let scope = crate::harness::scope::CarvedReadScope {
+        role,
+        map_identity: req.map_identity,
+        prefix_identity: req.prefix_identity,
+        well_ids: req.well_ids,
+        expires_ms: req.expires_ms,
+    };
+    if let Err(e) = state.carved_scopes.lock().await.validate(&scope, now_ms) {
+        return err_json(
+            StatusCode::BAD_REQUEST,
+            WhyReceipt::internal("/api/harness/swarm/scope", &e),
+        )
+        .into_response();
+    }
+    // A scope is governance state. Mint a coordinator permit before insertion.
+    let permit = match dispatch_spawn(&state, RoleId::Coordinator).await {
+        Ok(p) => p,
+        Err(e) => {
+            return err_json(
+                StatusCode::FORBIDDEN,
+                WhyReceipt::from_violation("/api/harness/swarm/scope", &e),
+            )
+            .into_response()
+        }
+    };
+    let handle = match state.carved_scopes.lock().await.issue(scope, now_ms) {
+        Ok(h) => h,
+        Err(e) => {
+            return err_json(
+                StatusCode::BAD_REQUEST,
+                WhyReceipt::internal("/api/harness/swarm/scope", &e),
+            )
+            .into_response()
+        }
+    };
+    Json(serde_json::json!({"handle": handle, "role": role.level(),
+        "expires_ms": req.expires_ms, "permit_sequence": permit.sequence(),
+        "permit_digest": permit.chain_digest().to_hex()}))
+    .into_response()
 }
 
 async fn harness_mcp_execute(
@@ -767,7 +913,7 @@ async fn harness_mcp_execute(
             }
         }
     }
-    let envelope = crate::harness::automaton::ProposerEnvelope {
+    let mut envelope = crate::harness::automaton::ProposerEnvelope {
         family: crate::harness::automaton::ProposerFamily::Retrieval,
         strategy_id: req.strategy_id.clone(),
         policy_version: req.policy_version.clone(),
@@ -796,19 +942,7 @@ async fn harness_mcp_execute(
         )
         .into_response();
     };
-    let configured = || -> Result<crate::harness::mcp::McpAuthority, String> {
-        let base = std::env::var("ARES_MCP_MIND_URL").map_err(|_| "ARES_MCP_MIND_URL required")?;
-        let ns = std::env::var("ARES_MCP_MIND_NS").map_err(|_| "ARES_MCP_MIND_NS required")?;
-        let db = std::env::var("ARES_MCP_MIND_DB").map_err(|_| "ARES_MCP_MIND_DB required")?;
-        if !base.starts_with("http://127.0.0.1:") || ns.is_empty() || db.is_empty() || db == "core"
-        {
-            return Err(
-                "mind MCP target must be explicit loopback and outside quarantined core".into(),
-            );
-        }
-        Ok(crate::harness::mcp::McpAuthority { base, ns, db })
-    };
-    let mcp_authority = match configured() {
+    let mcp_authority = match configured_mind_authority() {
         Ok(v) => v,
         Err(e) => {
             return err_json(
@@ -818,10 +952,7 @@ async fn harness_mcp_execute(
             .into_response()
         }
     };
-    let canonical_map_identity = format!(
-        "{}|{}|{}",
-        mcp_authority.base, mcp_authority.ns, mcp_authority.db
-    );
+    let canonical_map_identity = mind_identity(&mcp_authority);
     if req.map_identity != canonical_map_identity {
         return err_json(
             StatusCode::BAD_REQUEST,
@@ -845,16 +976,62 @@ async fn harness_mcp_execute(
         )
         .into_response();
     }
-    if req.tool != "mind.db_status" && role != RoleId::Coordinator {
-        return err_json(
-            StatusCode::FORBIDDEN,
-            WhyReceipt::internal(
-                "/api/harness/mcp/execute",
-                "carved worker recall requires a scoped capability handle",
-            ),
-        )
-        .into_response();
-    }
+    let (effective_tool, effective_args_json) = if role == RoleId::Coordinator
+        || req.tool == "mind.db_status"
+    {
+        (req.tool.clone(), req.args_json.clone())
+    } else {
+        if req.tool != "mind.recall" {
+            return err_json(
+                StatusCode::FORBIDDEN,
+                WhyReceipt::internal(
+                    "/api/harness/mcp/execute",
+                    "worker K/V requires a separate exact tensor entitlement",
+                ),
+            )
+            .into_response();
+        }
+        let Some(handle) = req.scope_handle.as_deref() else {
+            return err_json(
+                StatusCode::FORBIDDEN,
+                WhyReceipt::internal("/api/harness/mcp/execute", "carved scope handle required"),
+            )
+            .into_response();
+        };
+        let scope = match state.carved_scopes.lock().await.resolve(
+            handle,
+            role,
+            &canonical_map_identity,
+            &req.prefix_identity,
+            now_ms,
+        ) {
+            Ok(scope) => scope,
+            Err(e) => {
+                return err_json(
+                    StatusCode::FORBIDDEN,
+                    WhyReceipt::internal("/api/harness/mcp/execute", &e),
+                )
+                .into_response()
+            }
+        };
+        let args =
+            match crate::harness::scope::bind_scoped_recall_args(&req.args_json, &scope.well_ids) {
+                Ok(args) => args,
+                Err(e) => {
+                    return err_json(
+                        StatusCode::BAD_REQUEST,
+                        WhyReceipt::internal("/api/harness/mcp/execute", &e),
+                    )
+                    .into_response()
+                }
+            };
+        ("mind.recall_scoped".to_string(), args)
+    };
+    envelope.payload = format!(
+        "{}|{}",
+        effective_tool,
+        Sha256Digest::compute(effective_args_json.as_bytes()).to_hex()
+    );
     let mcp_bin =
         std::env::var("ARES_MCP_MIND_BIN").unwrap_or_else(|_| "globalmind-mcp".to_string());
     let mcp_root = std::env::var("ARES_MCP_MIND_ROOT").unwrap_or_else(|_| ".".to_string());
@@ -865,8 +1042,8 @@ async fn harness_mcp_execute(
         envelope,
         signals,
         now_ms,
-        &req.tool,
-        &req.args_json,
+        &effective_tool,
+        &effective_args_json,
         &mcp_bin,
         &mcp_root,
         mcp_authority,
@@ -876,7 +1053,7 @@ async fn harness_mcp_execute(
     {
         Ok((permit, execution, strategy)) => Json(serde_json::json!({
             "executor": "mcp-automaton",
-            "tool": req.tool,
+            "tool": effective_tool,
             "permit": {
                 "sequence": permit.sequence(),
                 "action_summary": permit.action_summary(),

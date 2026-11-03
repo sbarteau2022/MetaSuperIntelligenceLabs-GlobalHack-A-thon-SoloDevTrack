@@ -32,20 +32,16 @@
 //! violation, not a feature.
 //!
 //! Persistence: confidence state and transition receipts are written
-//! to the governed SurrealDB substrate (backend authority: base URL,
-//! namespace, database as configured for `SurrealClient`, default
-//! http://127.0.0.1:8000 / ares / ares). HyperDX is observation
-//! only. The MCP target must resolve to exactly that authority —
-//! `verify_mcp_authority` fails closed on any mismatch, so no MCP
-//! path can create a second map. The `map_plugin` path in
-//! research-grade-harness is NOT used here until its target is
-//! verified; this module does not claim it.
+//! to the governed SurrealDB substrate (backend authority configured
+//! for `SurrealClient`, usually ares/ares). HyperDX is observation only.
+//! The mind target is a separate, explicit SurrealDB authority. The
+//! governor checks the live `globalmind-mcp` child against that target
+//! before dispatch. `verify_mcp_authority` compares those two mind
+//! identities; it does not equate mind and governance databases.
 //!
-//! This module does not yet wire into `dispatch_mission_live`: that
-//! wiring is the next Step 3 step, after an MCP client that speaks
-//! this envelope exists. Claiming seam placement from this module
-//! alone would overstate it — the transition core is done, the live
-//! seam wiring is not.
+//! The live `/api/harness/mcp/execute` route calls this transition
+//! through the governor. A well-formed MCP response is not an
+//! independent task judge and cannot raise confidence on its own.
 
 use crate::digest::Sha256Digest;
 use crate::fixed::Q32_31;

@@ -67,6 +67,12 @@ An isolated SurrealKV integration test spawns the real stdio child and checks
 its authority and read contract. The backend's automaton route separately
 attests that child before dispatch; model-facing typed hydration and a full
 Glimmer task with recalled evidence are still open.
+The same child now exposes `mind.recall_scoped`, which projects only persisted
+cognitive-well members and edges internal to the visible atom set. Its
+isolated MCP test includes a hidden atom, a cross-scope edge, missing
+membership, and duplicate-well rejection. The caller must still supply a
+governor-issued scope; the backend does not yet allow a carved worker to call
+this tool. See `CARVED-MCP-RECALL-DESIGN.md`.
 
 Queue 1.2 update (2026-11-02): the current position ablation uses a sequential,
 token-independent TPPE carry and applies each arm at the same Layer-3 Q/K

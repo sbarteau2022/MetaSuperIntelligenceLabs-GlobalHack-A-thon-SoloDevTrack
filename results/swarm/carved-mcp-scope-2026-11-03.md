@@ -1,0 +1,7 @@
+# Carved MCP read seam — 2026-11-03
+
+The one GlobalMind child now exposes `mind.recall_scoped` using persisted `address_well_membership` rows and internal `atom_edge` projection. An isolated SurrealKV child round-trip returned only `hub` and `near` with the `inside` edge; `far` and the `outside` edge were absent. A well with no membership and a duplicated well failed as MCP errors. No live `hypermind/core` write occurred.
+
+The backend now keeps 256-bit random scope handles in process memory. A handle binds a carved role, the exact MCP mind identity, prefix identity, 1..12 unique well IDs and expiry of at most 10 minutes. Scope issue requires an explicit L0 issuer token and a coordinator compliance permit. On worker recall, the backend resolves the handle and replaces caller-supplied wells with the stored wells before sending `mind.recall_scoped` through the attested child and automaton. Wrong role, target, prefix, expiry, or handle fail closed. Worker `mind.kv_exact` remains unavailable until tensor entitlements exist.
+
+The live L0→worker→MCP route has not yet been exercised with a real Glimmer worker. The issuer token is a trusted harness-process secret; this is a local capability path, not an internet-facing authentication system. The prefix is bound to the issuer's claim and not yet attested from the Glimmer serving process. A coordinator permit is recorded, but the scope issuance itself has no separate typed audit-chain action. These are promotion gates, not hidden passes.

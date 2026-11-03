@@ -203,6 +203,25 @@ fn isolated_mcp_child_attests_recall_and_exact_kv_contract() {
     apply_schema(&db);
     let store = GlobalMindStore::connect(db.config()).unwrap();
     store.verify_recall_kv_contract().unwrap();
+    let digest = Digest::sha256(b"mcp-scope-fixture");
+    let setup = format!(
+        "CREATE atom:hub SET workspace = workspace:globalmind, external_id = 'hub', content_kind = 'code', content_digest = '{d}', domain = 'scope', rank = 0, salience = 0.9, provenance = 'test', taint = 'clean';
+         CREATE atom:near SET workspace = workspace:globalmind, external_id = 'near', content_kind = 'code', content_digest = '{d}', domain = 'scope', rank = 0, salience = 0.9, provenance = 'test', taint = 'clean';
+         CREATE atom:far SET workspace = workspace:globalmind, external_id = 'far', content_kind = 'code', content_digest = '{d}', domain = 'scope', rank = 0, salience = 0.9, provenance = 'test', taint = 'clean';
+         CREATE atom_address:addr_hub SET workspace = workspace:globalmind, atom = atom:hub, h3_lorentz = [1.0,0.0,0.0,0.0], t2_phase = [0.0,0.0], geometry_model = 'lorentz', geometry_version = 'v1', revision = 1;
+         CREATE atom_address:addr_near SET workspace = workspace:globalmind, atom = atom:near, h3_lorentz = [1.127625965,0.521095305,0.0,0.0], t2_phase = [0.0,0.0], geometry_model = 'lorentz', geometry_version = 'v1', revision = 1;
+         CREATE atom_address:addr_far SET workspace = workspace:globalmind, atom = atom:far, h3_lorentz = [3.762195691,3.626860408,0.0,0.0], t2_phase = [0.0,0.0], geometry_model = 'lorentz', geometry_version = 'v1', revision = 1;
+         CREATE address_well_membership:m_hub SET workspace = workspace:globalmind, address = atom_address:addr_hub, well = cognitive_well:well0, classifier_version = 'test', classifier_digest = '{d}', boundary_receipt_digest = '{d}';
+         CREATE address_well_membership:m_near SET workspace = workspace:globalmind, address = atom_address:addr_near, well = cognitive_well:well0, classifier_version = 'test', classifier_digest = '{d}', boundary_receipt_digest = '{d}';
+         RELATE atom:hub->atom_edge:inside->atom:near SET workspace = workspace:globalmind, kind = 'semantic', weight = 0.8, confidence = 0.9, evidence_digest = '{d}', producer = 'test', revision = 1;
+         RELATE atom:hub->atom_edge:outside->atom:far SET workspace = workspace:globalmind, kind = 'semantic', weight = 0.8, confidence = 0.9, evidence_digest = '{d}', producer = 'test', revision = 1;",
+        d = digest.as_str(),
+    );
+    let seeded = db.sql(&setup);
+    assert!(
+        !seeded.contains("\"status\":\"ERR\""),
+        "scope fixture: {seeded:.700}"
+    );
     let mut child = Command::new(env!("CARGO_BIN_EXE_globalmind-mcp"))
         .env(
             "GLOBALMIND_SURREAL_URL",
@@ -230,6 +249,48 @@ fn isolated_mcp_child_attests_recall_and_exact_kv_contract() {
     assert_eq!(inner["namespace"], "gmtest5");
     assert_eq!(inner["database"], "gmdev");
     assert_eq!(inner["receipt_sha256"].as_str().map(str::len), Some(64));
+    let request = serde_json::json!({
+        "jsonrpc":"2.0", "id":2, "method":"tools/call",
+        "params":{"name":"mind.recall_scoped","arguments":{
+            "workspace":"globalmind","well_ids":["well0"],
+            "query_h3":[1.0,0.0,0.0,0.0],"query_t2":[0.0,0.0],
+            "query_provenance":"mcp-scope-test","k":5
+        }}
+    });
+    input.write_all(format!("{request}\n").as_bytes()).unwrap();
+    input.flush().unwrap();
+    line.clear();
+    output.read_line(&mut line).unwrap();
+    let outer: serde_json::Value = serde_json::from_str(&line).unwrap();
+    let scoped: serde_json::Value =
+        serde_json::from_str(outer["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    let atoms = scoped["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["atom"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(atoms, ["hub", "near"]);
+    assert_eq!(scoped["edges"].as_array().unwrap().len(), 1);
+    assert_eq!(scoped["edges"][0]["id"], "inside");
+    assert_eq!(scoped["scope_digest"], scoped["ranking_digest"]);
+    for (id, wells) in [
+        (3, serde_json::json!(["well11"])),
+        (4, serde_json::json!(["well0", "well0"])),
+    ] {
+        let mut denied = request.clone();
+        denied["id"] = id.into();
+        denied["params"]["arguments"]["well_ids"] = wells;
+        input.write_all(format!("{denied}\n").as_bytes()).unwrap();
+        input.flush().unwrap();
+        line.clear();
+        output.read_line(&mut line).unwrap();
+        let response: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert!(
+            response.get("error").is_some(),
+            "invalid scope admitted: {response}"
+        );
+    }
     drop(input);
     let _ = child.wait();
 

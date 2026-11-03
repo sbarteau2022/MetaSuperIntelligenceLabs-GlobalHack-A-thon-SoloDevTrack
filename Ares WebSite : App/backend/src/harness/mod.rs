@@ -29,6 +29,7 @@ pub mod native_mtp;
 pub mod qdrant_memory;
 pub mod qwen_vl_native;
 pub mod runtime;
+pub mod scope;
 pub mod telemetry;
 pub mod tppe;
 pub mod tppe_memory;
