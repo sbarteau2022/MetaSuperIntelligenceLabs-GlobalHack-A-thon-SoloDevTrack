@@ -51,3 +51,17 @@ Build outputs are never staged: target/, node_modules/, dist/, *.log.
 
 Before reporting anything done, run `git status` in this repo and
 show it. No git status proof, no "done."
+
+## Cursor Cloud specific instructions
+
+A Cloud Agent checkout of this git repository is the tree to edit. The Mac path at the top of this file is the maintainer's local clone.
+
+- Crates use Rust edition 2024. The image's rustc 1.83 rejects that edition. This environment pins rustc 1.99.1 (`rustup default 1.99.1`), the same release line as the 2026-10-29 smoke receipt.
+- `research-grade-harness/build.rs` compiles `cpp-bridge/hotloop.cpp` with the `c++` on PATH. Point that alternative at g++ (`sudo update-alternatives --set c++ /usr/bin/g++` and `--set cc /usr/bin/gcc`). Clang 18, the image default, does not find `<cmath>`.
+- `hypermind-nested-kv/observability/store/` is gitignored. Pytest scratch directories are created inside it, so `mkdir -p hypermind-nested-kv/observability/store` before `python3 -m pytest`. `python3 observability/store.py init` creates that parent when it initializes `traceability.sqlite3`.
+- Offline checks:
+  - `cargo test --locked --offline --all-targets` in `research-grade-harness`
+  - `cargo test --locked --offline --all-targets` in `hypermind-nested-kv`
+  - `python3 -m pytest -q` in `hypermind-nested-kv/observability`
+- After `cargo build --locked --offline --bins`, the CLIs are `research-grade-harness/target/debug/rgah` (`dry-run`, `fpk-check`, `registry`) and `hypermind-nested-kv/target/debug/hypermind-mcp` (stdio JSON-RPC). `hypermind-nested-kv/pressure_test.py` ingests, queries, snapshots, and recovers through that binary. Point `wire_proof.py --db` and `--receipt` at scratch paths.
+- Apple Silicon, Metal, CUDA, and the omlx model server are outside this VM. `hardware_ppc` and the ignored `live_*` tests need that hardware gate. The sibling repo `hyperbolic-map-nested-kv-plugin` is not checked out.
