@@ -45,7 +45,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
-const USAGE: &str = "usage: globalmind-distill verify <manifest> | globalmind-distill trace <manifest> <token-tape.bin> <trace.gmtrace> | globalmind-distill extract <trace.gmtrace> <candidates.gmcandidate> | globalmind-distill judge <candidates.gmcandidate> <verdicts.gmverdict> | globalmind-distill open <admitted-manifest> | globalmind-distill replay <trace.gmtrace> <verdicts.gmverdict> <walk.gmwalk> | globalmind-distill crystallize <walk.gmwalk> | globalmind-distill audit <run-id>";
+const USAGE: &str = "usage: globalmind-distill verify <manifest> | globalmind-distill trace <manifest> <token-tape.bin> <trace.gmtrace> | globalmind-distill extract <trace.gmtrace> <candidates.gmcandidate> | globalmind-distill judge <candidates.gmcandidate> <verdicts.gmverdict> | globalmind-distill open <admitted-manifest> | globalmind-distill source <manifest> <token-tape.bin> <source.gmsrc> | globalmind-distill replay <trace.gmtrace> <verdicts.gmverdict> <walk.gmwalk> | globalmind-distill replay-source <trace.gmtrace> <verdicts.gmverdict> <source.gmsrc> <walk.gmwalk> | globalmind-distill crystallize <walk.gmwalk> | globalmind-distill audit <run-id>";
 
 fn main() {
     if let Err(error) = run() {
@@ -89,7 +89,11 @@ fn run() -> Result<(), String> {
         "extract" if args.len() == 3 => cmd_extract(&args[1], &args[2]),
         "judge" if args.len() == 3 => cmd_judge_stage(&args[1], &args[2]),
         "judge" if args.len() == 4 => cmd_judge_legacy(&args[1], &args[2], &args[3]),
-        "replay" if args.len() == 4 => cmd_replay_stage(&args[1], &args[2], &args[3]),
+        "replay" if args.len() == 4 => cmd_replay_stage(&args[1], &args[2], &args[3], None),
+        "replay-source" if args.len() == 5 => {
+            cmd_replay_stage(&args[1], &args[2], &args[4], Some(&args[3]))
+        }
+        "source" if args.len() == 4 => cmd_source(&args[1], &args[2], &args[3]),
         "replay" if args.len() == 5 => cmd_replay(&args[1], &args[2], &args[3], &args[4]),
         "crystallize" if args.len() == 2 => cmd_crystallize_stage(&args[1]),
         "crystallize" if args.len() == 3 => cmd_crystallize(&args[1], &args[2]),
@@ -1109,6 +1113,45 @@ fn single_model(verified: &VerifiedManifest) -> Result<&globalmind_runtime::Veri
     Ok(&verified.models[0])
 }
 
+/// `source`: decode the GMTT token tape with the rostered tokenizer (hash
+/// verified by the manifest) into the text atoms will carry. Writes no
+/// database state and runs no model.
+#[cfg(not(feature = "source-stage"))]
+fn cmd_source(_manifest: &str, _tape: &str, _out: &str) -> Result<(), String> {
+    Err("the source stage needs the model tokenizer: rebuild with --features source-stage".into())
+}
+
+#[cfg(feature = "source-stage")]
+fn cmd_source(manifest_path: &str, tape_path: &str, out_path: &str) -> Result<(), String> {
+    use globalmind_runtime::replay::source::SourceText;
+    use globalmind_runtime::trace::qwen36::decode_token_tape;
+    let verified = load_and_verify(manifest_path)?;
+    let model = single_model(&verified)?;
+    let tokenizer_art = model
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.role == "tokenizer")
+        .ok_or("manifest has no tokenizer artifact")?;
+    let tokenizer =
+        core_lm::tokenizer::BpeTokenizer::from_json_file(std::path::Path::new(&tokenizer_art.path))
+            .map_err(|error| error.to_string())?;
+    let tape_bytes =
+        std::fs::read(tape_path).map_err(|error| format!("read token tape: {error}"))?;
+    let (tokens, tape_digest) = decode_token_tape(&tape_bytes)?;
+    let source = SourceText::from_tokens(tape_digest.clone(), &tokens, &|ids| {
+        tokenizer.decode(ids)
+    })?;
+    ensure_parent_dir(out_path)?;
+    std::fs::write(out_path, source.to_bytes())
+        .map_err(|error| format!("write source file: {error}"))?;
+    println!("source_tape_digest={tape_digest}");
+    println!("source_tokens={}", source.token_count());
+    println!("source_bytes={}", source.full_text().len());
+    println!("source_digest={}", source.digest());
+    println!("database_writes=0");
+    Ok(())
+}
+
 /// Stage 1 `trace`: rehash the roster, decode the immutable GMTT token
 /// tape, and run the real frozen model twice (control vs observer) via
 /// Agent Trace's producer. Emits the native `.gmtrace` stream. Writes no
@@ -1671,6 +1714,7 @@ fn cmd_replay(
         .filter(|(candidate, _)| !benched_charts.contains(&candidate.candidate_digest))
         .collect();
     let walk = replay(&ReplayInput {
+        source: None,
         context: &context,
         envelopes: &envelopes,
         judged: &judged,
@@ -1697,6 +1741,7 @@ fn cmd_replay(
         &walk.candidate_bundle_digest,
         &walk.verdict_bundle_digest,
         &walk.replay_receipt_digest,
+        None,
     )?;
     std::fs::write(walk_out, &bytes).map_err(|error| format!("write walk file: {error}"))?;
     println!("walk_atoms={}", walk.atoms.len());
@@ -1709,7 +1754,22 @@ fn cmd_replay(
     Ok(())
 }
 
-fn cmd_replay_stage(trace_path: &str, verdicts_path: &str, walk_out: &str) -> Result<(), String> {
+fn cmd_replay_stage(
+    trace_path: &str,
+    verdicts_path: &str,
+    walk_out: &str,
+    source_path: Option<&str>,
+) -> Result<(), String> {
+    let source = match source_path {
+        Some(path) => {
+            let raw = std::fs::read(path).map_err(|error| format!("read source file: {error}"))?;
+            let source = globalmind_runtime::replay::source::SourceText::from_bytes(&raw)?;
+            println!("source_digest={}", source.digest());
+            println!("source_tape_digest={}", source.tape_digest);
+            Some(source)
+        }
+        None => None,
+    };
     let trace_raw =
         std::fs::read(trace_path).map_err(|error| format!("read trace file: {error}"))?;
     let envelopes = decode_trace_stream(&trace_raw)?;
@@ -1744,6 +1804,7 @@ fn cmd_replay_stage(trace_path: &str, verdicts_path: &str, walk_out: &str) -> Re
     };
 
     let walk = replay(&ReplayInput {
+        source: source.as_ref(),
         context: &context,
         envelopes: &envelopes,
         judged: &verdicts.judged,
@@ -1772,6 +1833,7 @@ fn cmd_replay_stage(trace_path: &str, verdicts_path: &str, walk_out: &str) -> Re
         &walk.candidate_bundle_digest,
         &walk.verdict_bundle_digest,
         &walk.replay_receipt_digest,
+        source.as_ref(),
     )?;
 
     ensure_parent_dir(walk_out)?;
@@ -1995,6 +2057,7 @@ fn verify_walk_against_manifest(
     }
     let envelopes = load_or_reconstruct_envelopes(walk_path, verified.run_id.as_str(), &file)?;
     let rerun = replay(&ReplayInput {
+        source: file.source.as_ref(),
         context,
         envelopes: &envelopes,
         judged: &file.judged,
@@ -2315,6 +2378,7 @@ fn cmd_crystallize_stage(walk_path: &str) -> Result<(), String> {
     let envelopes = load_or_reconstruct_envelopes(walk_path, file.context.run.as_str(), &file)?;
 
     let walk = replay(&ReplayInput {
+        source: file.source.as_ref(),
         context: &file.context,
         envelopes: &envelopes,
         judged: &file.judged,

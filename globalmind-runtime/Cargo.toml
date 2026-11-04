@@ -9,9 +9,13 @@ license = "UNLICENSED"
 serde_json = "1"
 sha2 = "0.10"
 safetensors = "0.5"
+# Only for the `source` stage, which decodes a token tape with the model's
+# own tokenizer. Off by default; the runtime links no tokenizer otherwise.
+core_lm = { path = "../core_lm", optional = true }
 
 [features]
 live-forward-model = []
+source-stage = ["dep:core_lm"]
 
 [dev-dependencies]
 rgah = { path = "../research-grade-harness" }

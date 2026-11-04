@@ -215,7 +215,7 @@ pub fn extract(envelopes: &[TraceEnvelope]) -> Result<Vec<ExtractedCandidate>, S
 
 /// Teacher-neutral atom identity for one envelope: payload content only.
 /// Token position and all teacher digests are provenance, never identity.
-fn atom_key(envelope: &TraceEnvelope) -> Digest {
+pub(crate) fn atom_key(envelope: &TraceEnvelope) -> Digest {
     let mut fields: Vec<String> = vec![
         envelope.kind.code().to_string(),
         envelope.dtype.code().to_string(),

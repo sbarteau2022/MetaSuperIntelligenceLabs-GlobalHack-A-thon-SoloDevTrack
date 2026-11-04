@@ -299,7 +299,22 @@ fn distillation_pipeline_survives_restart_and_reconciles_exactly() {
         runtime_digest: ReplayContext::runtime_digest_for(),
     };
     let chart_receipts = BTreeMap::new();
+    // Real language through the frozen Glimmer tokenizer: each atom must carry
+    // the exact source prefix at its token position, hash-bound end to end.
+    let tokenizer = core_lm::tokenizer::BpeTokenizer::from_json_file(std::path::Path::new(
+        "/Users/stewartbarteau/models/Muse-Glimmer-q4km-gs128-MLX/tokenizer.json",
+    ))
+    .unwrap();
+    let source_ids = tokenizer.encode("The capital of France is").unwrap();
+    assert!(source_ids.len() >= 3, "source must cover envelope positions 0..=2");
+    let source = globalmind_runtime::replay::source::SourceText::from_tokens(
+        Digest::sha256(b"distill-test-tape"),
+        &source_ids,
+        &|ids| tokenizer.decode(ids),
+    )
+    .unwrap();
     let walk = replay(&ReplayInput {
+        source: Some(&source),
         context: &context,
         envelopes: &decoded,
         judged: &judged,
@@ -333,10 +348,13 @@ fn distillation_pipeline_survives_restart_and_reconciles_exactly() {
         &walk.candidate_bundle_digest,
         &walk.verdict_bundle_digest,
         &walk.replay_receipt_digest,
+        Some(&source),
     )
     .unwrap();
     let file = decode_walk(&walk_bytes).unwrap();
+    assert_eq!(file.source.as_ref(), Some(&source));
     let rerun = replay(&ReplayInput {
+        source: file.source.as_ref(),
         context: &file.context,
         envelopes: &decoded,
         judged: &file.judged,
@@ -447,6 +465,18 @@ fn distillation_pipeline_survives_restart_and_reconciles_exactly() {
     let db = db.restart();
     let store = GlobalMindStore::connect(db.config()).unwrap();
     store.verify_contract().unwrap();
+    // Persisted atoms hydrate to their exact source text after the restart.
+    assert!(!walk.atoms.is_empty());
+    for atom in &walk.atoms {
+        let text = store
+            .fetch_atom_content_exact(&atom.workspace, &atom.id, &atom.content_digest)
+            .unwrap()
+            .expect("atom must hydrate inline source text");
+        assert_eq!(Some(&text), atom.content_text.as_ref());
+        assert_eq!(Digest::sha256(text.as_bytes()), atom.content_digest);
+        assert!(source.full_text().starts_with(&text));
+        println!("hydrated atom text: {text:?}");
+    }
     let header = db.sql(&format!(
         "SELECT state, trajectory_digest, replay_receipt_digest, step_count FROM distilled_trajectory:`{}`;",
         trajectory.id.as_str()

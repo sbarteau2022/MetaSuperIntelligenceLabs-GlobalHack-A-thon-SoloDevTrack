@@ -16,6 +16,7 @@
 //! receipt preimage, not silently assumed.
 
 pub mod artifact;
+pub mod source;
 
 use crate::extract::{ExtractedCandidate, candidate_digest_for, extract};
 use crate::judge::{IndependentJudge, JudgeEvidence, JudgePolicy, JudgeReceipt, JudgeVerdict};
@@ -119,6 +120,10 @@ pub struct ChartReceipts {
 /// matching + audit), judged candidates, and chart receipts keyed by
 /// candidate digest.
 pub struct ReplayInput<'a> {
+    /// Source language the atoms were produced from. When present, each atom
+    /// carries its exact source prefix as inline text; when absent, atoms are
+    /// metadata-only tensor references and never carry invented text.
+    pub source: Option<&'a source::SourceText>,
     pub context: &'a ReplayContext,
     pub envelopes: &'a [TraceEnvelope],
     pub judged: &'a [(ExtractedCandidate, JudgeReceipt)],
@@ -156,7 +161,7 @@ pub fn replay(input: &ReplayInput) -> Result<ReplayedWalk, String> {
     }
     verify_candidates(input.judged)?;
     let packets = build_packets(input.context, input.judged);
-    let atoms = build_atoms(input.context, input.judged)?;
+    let atoms = build_atoms(input.context, input.judged, input.envelopes, input.source)?;
     let atom_ids: BTreeSet<RecordId> = atoms.iter().map(|atom| atom.id.clone()).collect();
     let (steps, atom_walk) = walk_transitions(input.context, input.judged, &atom_ids)?;
     let loops = verify_loops(input.context, input.judged, &atom_walk)?;
@@ -279,18 +284,33 @@ pub fn replay(input: &ReplayInput) -> Result<ReplayedWalk, String> {
             .collect::<Vec<_>>(),
     );
     let context_digest = input.context.context_digest();
-    let replay_receipt_digest = digest_fields(
-        b"globalmind-replay-receipt-v1",
-        &[
-            context_digest.as_str(),
-            candidate_bundle_digest.as_str(),
-            verdict_bundle_digest.as_str(),
-            trajectory_digest.as_str(),
-            &trajectory.steps.len().to_string(),
-            &trajectory.loops.len().to_string(),
-            &charts.len().to_string(),
-        ],
-    );
+    let steps_len = trajectory.steps.len().to_string();
+    let loops_len = trajectory.loops.len().to_string();
+    let charts_len = charts.len().to_string();
+    let source_digest = input.source.map(|source| source.digest());
+    let atom_content_bundle = source_digest.as_ref().map(|_| {
+        digest_fields(
+            b"globalmind-replay-atom-content-v1",
+            &atoms
+                .iter()
+                .map(|atom| atom.content_digest.as_str())
+                .collect::<Vec<_>>(),
+        )
+    });
+    let mut receipt_fields: Vec<&str> = vec![
+        context_digest.as_str(),
+        candidate_bundle_digest.as_str(),
+        verdict_bundle_digest.as_str(),
+        trajectory_digest.as_str(),
+        &steps_len,
+        &loops_len,
+        &charts_len,
+    ];
+    if let (Some(source), Some(bundle)) = (&source_digest, &atom_content_bundle) {
+        receipt_fields.push(source.as_str());
+        receipt_fields.push(bundle.as_str());
+    }
+    let replay_receipt_digest = digest_fields(b"globalmind-replay-receipt-v1", &receipt_fields);
     let mut trajectory = trajectory;
     trajectory.replay_receipt_digest = replay_receipt_digest.clone();
     for step in &mut trajectory.steps {
@@ -440,6 +460,8 @@ fn build_packets(
 fn build_atoms(
     context: &ReplayContext,
     judged: &[(ExtractedCandidate, JudgeReceipt)],
+    envelopes: &[TraceEnvelope],
+    source: Option<&source::SourceText>,
 ) -> Result<Vec<CrystallizedAtom>, String> {
     let mut atoms = Vec::new();
     for (candidate, receipt) in judged {
@@ -456,6 +478,37 @@ fn build_atoms(
         if !h3.iter().chain(&t2).all(|v| v.is_finite()) || h3[0] <= 0.0 {
             return Err("rank-0 candidate coordinates are invalid".into());
         }
+        let (content_kind, content_text, content_uri, content_digest) = match source {
+            Some(source) => {
+                let position = envelopes
+                    .iter()
+                    .filter(|e| {
+                        e.kind != TraceKind::KeyValue
+                            && crate::extract::atom_key(e) == candidate.source_fragment_digest
+                    })
+                    .map(|e| e.token_position)
+                    .min()
+                    .ok_or_else(|| "rank-0 atom has no source trace envelope".to_string())?;
+                let span = source.span(position)?;
+                (
+                    ContentKind::Text,
+                    Some(span.to_string()),
+                    None,
+                    Digest::sha256(span.as_bytes()),
+                )
+            }
+            None => (
+                // No source language supplied: a tensor-fragment reference
+                // only. Recall returns metadata, never invented text.
+                ContentKind::Code,
+                None,
+                Some(format!(
+                    "gmtrace:{}",
+                    candidate.teacher_neutral_input_digest.as_str()
+                )),
+                candidate.teacher_neutral_input_digest.clone(),
+            ),
+        };
         let atom = CrystallizedAtom {
             id: scoped_id("atom", &context.run, slice)?,
             address_id: scoped_id("address", &context.run, slice)?,
@@ -469,10 +522,10 @@ fn build_atoms(
             geometry_space: RecordId::parse("h3t2")?,
             well: RecordId::parse(format!("well{}", candidate.well_ordinal.unwrap_or(0)))?,
             external_id: format!("replay-{}-{slice}", run_tag(&context.run)),
-            content_kind: ContentKind::Code,
-            content_text: Some(format!("replayed atom {slice}")),
-            content_uri: None,
-            content_digest: candidate.teacher_neutral_input_digest.clone(),
+            content_kind,
+            content_text,
+            content_uri,
+            content_digest,
             domain: "replay".into(),
             salience: 0.5,
             provenance: REPLAY_VERSION.into(),
@@ -1099,6 +1152,116 @@ mod tests {
         ]
     }
 
+    fn ascii_source(text: &str) -> source::SourceText {
+        let tokens: Vec<u32> = text.chars().map(|c| c as u32).collect();
+        source::SourceText::from_tokens(Digest::sha256(b"tape"), &tokens, &|ids: &[u32]| {
+            ids.iter().filter_map(|i| char::from_u32(*i)).collect()
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn atoms_carry_their_exact_source_prefix_and_digest() {
+        let envelopes = walk_envelopes();
+        let judged = extract_and_judge(&envelopes, policy()).unwrap();
+        let context = context();
+        let receipts = BTreeMap::new();
+        let source = ascii_source("The");
+        let with = replay(&ReplayInput {
+            source: Some(&source),
+            context: &context,
+            envelopes: &envelopes,
+            judged: &judged,
+            chart_receipts: &receipts,
+        })
+        .unwrap();
+        let mut texts: Vec<_> = with
+            .atoms
+            .iter()
+            .map(|a| (a.content_text.clone().unwrap(), a.content_digest.clone()))
+            .collect();
+        texts.sort();
+        // Same payload at positions 0 and 2 is one atom at its earliest position.
+        assert_eq!(texts[0].0, "T");
+        assert_eq!(texts[1].0, "Th");
+        for (text, digest) in &texts {
+            assert_eq!(*digest, Digest::sha256(text.as_bytes()));
+        }
+        assert!(with.atoms.iter().all(|a| a.content_uri.is_none()));
+        let without = replay(&ReplayInput {
+            source: None,
+            context: &context,
+            envelopes: &envelopes,
+            judged: &judged,
+            chart_receipts: &receipts,
+        })
+        .unwrap();
+        // No source: metadata-only reference, never invented text.
+        assert!(without.atoms.iter().all(|a| a.content_text.is_none()
+            && a.content_uri.as_deref().is_some_and(|u| u.starts_with("gmtrace:"))));
+        assert_ne!(with.replay_receipt_digest, without.replay_receipt_digest);
+        // A source that does not reach an atom's position fails closed.
+        let short = ascii_source("T");
+        assert!(replay(&ReplayInput {
+            source: Some(&short),
+            context: &context,
+            envelopes: &envelopes,
+            judged: &judged,
+            chart_receipts: &receipts,
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn source_survives_artifact_restart_and_replays_identically() {
+        let envelopes = walk_envelopes();
+        let judged = extract_and_judge(&envelopes, policy()).unwrap();
+        let context = context();
+        let receipts = BTreeMap::new();
+        let source = ascii_source("The");
+        let walk = replay(&ReplayInput {
+            source: Some(&source),
+            context: &context,
+            envelopes: &envelopes,
+            judged: &judged,
+            chart_receipts: &receipts,
+        })
+        .unwrap();
+        let bytes = encode_walk(
+            &context,
+            &judged,
+            &descriptors(&envelopes),
+            &receipts,
+            &walk.trajectory_digest,
+            &walk.candidate_bundle_digest,
+            &walk.verdict_bundle_digest,
+            &walk.replay_receipt_digest,
+            Some(&source),
+        )
+        .unwrap();
+        let file = decode_walk(&bytes).unwrap();
+        assert_eq!(file.source.as_ref(), Some(&source));
+        let rerun = replay(&ReplayInput {
+            source: file.source.as_ref(),
+            context: &file.context,
+            envelopes: &envelopes,
+            judged: &file.judged,
+            chart_receipts: &file.chart_receipts,
+        })
+        .unwrap();
+        assert_eq!(rerun.replay_receipt_digest, walk.replay_receipt_digest);
+        // Dropping the source on restart changes the receipt: it is bound.
+        let dropped = replay(&ReplayInput {
+            source: None,
+            context: &file.context,
+            envelopes: &envelopes,
+            judged: &file.judged,
+            chart_receipts: &file.chart_receipts,
+        })
+        .unwrap();
+        assert_ne!(dropped.replay_receipt_digest, walk.replay_receipt_digest);
+    }
+
     #[test]
     fn replay_verifies_walk_loop_and_tppe_continuity() {
         let envelopes = walk_envelopes();
@@ -1107,6 +1270,7 @@ mod tests {
         let context = context();
         let receipts = BTreeMap::new();
         let walk = replay(&ReplayInput {
+            source: None,
             context: &context,
             envelopes: &envelopes,
             judged: &judged,
@@ -1151,6 +1315,7 @@ mod tests {
         second.run = RecordId::parse("replay_run_two").unwrap();
         let receipts = BTreeMap::new();
         let first = replay(&ReplayInput {
+            source: None,
             context: &context(),
             envelopes: &envelopes,
             judged: &judged,
@@ -1158,6 +1323,7 @@ mod tests {
         })
         .unwrap();
         let rerun = replay(&ReplayInput {
+            source: None,
             context: &second,
             envelopes: &envelopes,
             judged: &judged,
@@ -1193,6 +1359,7 @@ mod tests {
         let context = context();
         let receipts = BTreeMap::new();
         let walk = replay(&ReplayInput {
+            source: None,
             context: &context,
             envelopes: &envelopes,
             judged: &judged,
@@ -1244,6 +1411,7 @@ mod tests {
             .expect("two transitions");
         second.0.from_atom = Some(first_from);
         let error = replay(&ReplayInput {
+            source: None,
             context: &context,
             envelopes: &envelopes,
             judged: &broken,
@@ -1265,6 +1433,7 @@ mod tests {
         );
         assert!(
             replay(&ReplayInput {
+                source: None,
                 context: &context,
                 envelopes: &degenerate,
                 judged: &judged,
@@ -1298,6 +1467,7 @@ mod tests {
         let context = context();
         let receipts = BTreeMap::new();
         let walk = replay(&ReplayInput {
+            source: None,
             context: &context,
             envelopes: &envelopes,
             judged: &judged,
@@ -1360,6 +1530,7 @@ mod tests {
         // Missing receipts fail closed.
         assert!(
             replay(&ReplayInput {
+                source: None,
                 context: &context,
                 envelopes: &envelopes,
                 judged: &judged,
@@ -1369,6 +1540,7 @@ mod tests {
         );
         let receipts = chart_receipt_map(&judged);
         let walk = replay(&ReplayInput {
+            source: None,
             context: &context,
             envelopes: &envelopes,
             judged: &judged,
@@ -1384,6 +1556,7 @@ mod tests {
             .collect();
         assert!(
             replay(&ReplayInput {
+                source: None,
                 context: &context,
                 envelopes: &no_weight,
                 judged: &judged,
@@ -1428,6 +1601,7 @@ mod tests {
         let context = context();
         let receipts = chart_receipt_map(&forced);
         let error = replay(&ReplayInput {
+            source: None,
             context: &context,
             envelopes: &envelopes,
             judged: &forced,
@@ -1447,6 +1621,7 @@ mod tests {
         tampered[0].0.candidate_digest = Digest::sha256(b"forged");
         assert!(
             replay(&ReplayInput {
+                source: None,
                 context: &context,
                 envelopes: &envelopes,
                 judged: &tampered,
@@ -1458,6 +1633,7 @@ mod tests {
         drifted[1].1.policy_digest = Digest::sha256(b"other-policy");
         assert!(
             replay(&ReplayInput {
+                source: None,
                 context: &context,
                 envelopes: &envelopes,
                 judged: &drifted,
@@ -1536,6 +1712,7 @@ mod tests {
         let context = context();
         let receipts = chart_receipt_map(&judged);
         let walk = replay(&ReplayInput {
+            source: None,
             context: &context,
             envelopes: &envelopes,
             judged: &judged,
@@ -1551,6 +1728,7 @@ mod tests {
             &walk.candidate_bundle_digest,
             &walk.verdict_bundle_digest,
             &walk.replay_receipt_digest,
+        None,
         )
         .unwrap();
         // Restart: decode the artifact and re-run replay from decoded inputs.
@@ -1559,6 +1737,7 @@ mod tests {
         assert_eq!(file.envelopes.len(), envelopes.len());
         verify_bindings(&context, &walk).unwrap();
         let rerun = replay(&ReplayInput {
+            source: None,
             context: &file.context,
             envelopes: &envelopes,
             judged: &file.judged,

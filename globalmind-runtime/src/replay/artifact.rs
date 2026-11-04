@@ -67,6 +67,8 @@ pub struct WalkFile {
     pub judged: Vec<(ExtractedCandidate, JudgeReceipt)>,
     pub envelopes: Vec<EnvelopeDescriptor>,
     pub chart_receipts: BTreeMap<Digest, ChartReceipts>,
+    /// Source language the atoms carry, when the walk was built with one.
+    pub source: Option<crate::replay::source::SourceText>,
     pub trajectory_digest: Digest,
     pub candidate_bundle_digest: Digest,
     pub verdict_bundle_digest: Digest,
@@ -549,6 +551,7 @@ pub fn encode(
     candidate_bundle_digest: &Digest,
     verdict_bundle_digest: &Digest,
     replay_receipt_digest: &Digest,
+    source: Option<&crate::replay::source::SourceText>,
 ) -> Result<Vec<u8>, String> {
     if judged.is_empty() {
         return Err("walk artifact requires at least one judged candidate".into());
@@ -599,6 +602,9 @@ pub fn encode(
     digest_bytes_out.digest(verdict_bundle_digest);
     digest_bytes_out.digest(replay_receipt_digest);
     sections.push((6, digest_bytes_out.buf));
+    if let Some(source) = source {
+        sections.push((7, source.to_bytes()));
+    }
 
     let mut out = Vec::new();
     out.extend_from_slice(&WALK_MAGIC);
@@ -722,11 +728,19 @@ pub fn decode(bytes: &[u8]) -> Result<WalkFile, String> {
     let replay_receipt_digest = digest_reader.digest("replay receipt")?;
     digest_reader.finish()?;
 
+    let source = match sections.get(&7) {
+        Some(raw) => Some(crate::replay::source::SourceText::from_bytes(raw)?),
+        None => None,
+    };
+    if sections.keys().any(|tag| !(1..=7).contains(tag)) {
+        return Err("walk artifact has an unknown section".into());
+    }
     Ok(WalkFile {
         context,
         judged,
         envelopes,
         chart_receipts,
+        source,
         trajectory_digest,
         candidate_bundle_digest,
         verdict_bundle_digest,
