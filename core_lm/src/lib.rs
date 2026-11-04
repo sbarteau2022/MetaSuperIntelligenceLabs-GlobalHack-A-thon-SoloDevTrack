@@ -8,6 +8,7 @@ pub mod attention_backend;
 pub mod artifact_digest;
 pub mod exact_kv;
 pub mod native_exact_wire;
+pub mod native_pages_wire;
 pub mod native_token_wire;
 pub mod sha256;
 pub mod backend;

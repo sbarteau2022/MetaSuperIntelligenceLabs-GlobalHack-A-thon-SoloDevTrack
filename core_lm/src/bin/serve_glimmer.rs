@@ -21,6 +21,9 @@
 //! - POST /v1/tokenize-native, binary GTK2 body -> GTO2 token IDs plus the
 //!   pinned tokenizer digest and a request-bound receipt. Model-owned
 //!   tokenizer only; add_bos prepends config.bos_token_id.
+//! - POST /v1/prefill-exact, binary GPF2 -> GPO2 with every exact K/V page of a
+//!   short prefix; POST /v1/continue-exact, binary GCX2 (pages + continuation
+//!   ids) -> GFO2. Shape mismatch is refused; the prefix is never recomputed.
 //! - POST /v1/forward, JSON {"token_ids": [...], "max_tokens": N}
 //!   (also accepts "input_ids" for the token list) -> JSON
 //!   {"output_token_ids": [...], "logits_digest": "...", "receipt_sha256": "..."}
@@ -56,6 +59,9 @@ use core_lm::glimmer_forward::GlimmerModel;
 use core_lm::exact_kv::ExactKvCache;
 use core_lm::artifact_digest::ArtifactDigest;
 use core_lm::native_exact_wire::{decode_request, encode_response, exact_kv_digest};
+use core_lm::native_pages_wire::{
+    decode_continue_request, decode_prefill_request, encode_prefill_response, Shape,
+};
 use core_lm::native_token_wire::{
     decode_request as decode_token_request, encode_response as encode_token_response,
 };
@@ -229,6 +235,101 @@ fn handle_exact(body: &[u8], model: &mut GlimmerModel, artifact: ArtifactDigest)
     }
 }
 
+fn handle_prefill(body: &[u8], model: &mut GlimmerModel, artifact: ArtifactDigest) -> Vec<u8> {
+    let result = (|| -> Result<Vec<u8>, String> {
+        let ids = decode_prefill_request(body)?;
+        let c = &model.config;
+        let (layers, kv_heads, head_dim) =
+            (c.num_hidden_layers, c.num_key_value_heads, c.head_dim);
+        let mut cache = ExactKvCache::new(layers, c.num_attention_heads, kv_heads, head_dim)?;
+        model.reset_memory();
+        for (position, &id) in ids.iter().enumerate() {
+            model
+                .forward_with_backend(id, position, &mut cache)
+                .map_err(|e| e.to_string())?;
+        }
+        cache.verify_complete_prefix(ids.len())?;
+        let mut pages = Vec::with_capacity(layers * kv_heads);
+        for layer in 0..layers {
+            for head in 0..kv_heads {
+                let (k, v) = cache.head_page(layer, head).ok_or("missing K/V page")?;
+                pages.push((k.to_vec(), v.to_vec()));
+            }
+        }
+        let kv_digest = exact_kv_digest(&cache, layers, kv_heads, ids.len())?;
+        let shape = Shape {
+            layers,
+            kv_heads,
+            head_dim,
+            tokens: ids.len(),
+        };
+        encode_prefill_response(body, &shape, &pages, kv_digest, artifact)
+    })();
+    match result {
+        Ok(bytes) => http_response("200 OK", "application/vnd.glimmer.prefill-v1", &bytes),
+        Err(error) => http_response("400 Bad Request", "text/plain", error.as_bytes()),
+    }
+}
+
+/// Continue from caller-supplied exact pages. The shape must equal the
+/// loaded model's shape; there is no fallback to recomputing the prefix.
+fn handle_continue(body: &[u8], model: &mut GlimmerModel, artifact: ArtifactDigest) -> Vec<u8> {
+    let result = (|| -> Result<Vec<u8>, String> {
+        let request = decode_continue_request(body)?;
+        let c = &model.config;
+        let (layers, kv_heads, head_dim) =
+            (c.num_hidden_layers, c.num_key_value_heads, c.head_dim);
+        if (request.shape.layers, request.shape.kv_heads, request.shape.head_dim)
+            != (layers, kv_heads, head_dim)
+        {
+            return Err("page shape differs from loaded model".into());
+        }
+        let prefix = request.shape.tokens;
+        let mut cache = ExactKvCache::from_head_pages(
+            layers,
+            c.num_attention_heads,
+            kv_heads,
+            head_dim,
+            prefix,
+            request.pages,
+        )?;
+        model.reset_memory();
+        let mut logits = Vec::new();
+        for (offset, &id) in request.continuation_ids.iter().enumerate() {
+            logits = model
+                .forward_with_backend(id, prefix + offset, &mut cache)
+                .map_err(|e| e.to_string())?;
+        }
+        let input_len = prefix + request.continuation_ids.len();
+        let mut output = Vec::new();
+        loop {
+            let next = argmax(&logits).map_err(|e| e.to_string())? as u32;
+            output.push(next);
+            if output.len() >= request.max_tokens || model.config.eos_token_ids.contains(&next) {
+                break;
+            }
+            logits = model
+                .forward_with_backend(next, input_len + output.len() - 1, &mut cache)
+                .map_err(|e| e.to_string())?;
+        }
+        let mut logits_bytes = Vec::with_capacity(logits.len() * 4);
+        for value in logits {
+            logits_bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let kv_digest = exact_kv_digest(
+            &cache,
+            model.config.num_hidden_layers,
+            model.config.num_key_value_heads,
+            input_len + output.len() - 1,
+        )?;
+        encode_response(body, &output, sha256::sha256(&logits_bytes), kv_digest, artifact)
+    })();
+    match result {
+        Ok(bytes) => http_response("200 OK", "application/vnd.glimmer.exact-v1", &bytes),
+        Err(error) => http_response("400 Bad Request", "text/plain", error.as_bytes()),
+    }
+}
+
 fn http_response(status: &str, content_type: &str, body: &[u8]) -> Vec<u8> {
     let mut out = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -346,7 +447,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 max_new_tokens = v.trim().parse().ok();
             }
         }
-        if content_length > 2 * 1024 * 1024 {
+        if content_length > 8 * 1024 * 1024 {
             let resp = http_response("413 Payload Too Large", "text/plain", b"request too large");
             let _ = stream.write_all(&resp);
             continue;
@@ -361,6 +462,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let body = &buf[hend..std::cmp::min(buf.len(), hend + content_length)];
         let resp = if method == "POST" && path == "/v1/forward-exact" {
             handle_exact(body, &mut model, artifact)
+        } else if method == "POST" && path == "/v1/prefill-exact" {
+            handle_prefill(body, &mut model, artifact)
+        } else if method == "POST" && path == "/v1/continue-exact" {
+            handle_continue(body, &mut model, artifact)
         } else if method == "POST" && path == "/v1/tokenize-native" {
             handle_tokenize_native(body, &tok, model.config.bos_token_id, artifact.tokenizer)
         } else {
