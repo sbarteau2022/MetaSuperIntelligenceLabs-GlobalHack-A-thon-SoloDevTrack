@@ -10,6 +10,10 @@
 //! request bytes before it is accepted.
 
 use crate::harness::mind_recall_executor::MindRecallExecutor;
+use crate::harness::native_pages_client::{
+    decode_prefill_response, encode_continue_request, encode_prefill_request, Pages, Shape,
+    MAX_PAGE_TOKENS,
+};
 use crate::harness::output_receipt::{
     BoundCallOutcome, BoundOutputReceipt, ModelArtifactDigest, ModelInputBytes, ToolResultDigest,
 };
@@ -238,12 +242,46 @@ pub fn verified_recall_text(recall_json: &str) -> Result<String, String> {
     Ok(joined)
 }
 
+/// Identity of a persisted prefix: the pinned model composite plus the exact
+/// prefix token IDs. A store maps it to its own full exact-K/V identities.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KvKey {
+    pub artifact_composite: [u8; 32],
+    pub prefix_ids: Vec<u32>,
+}
+
+/// Exact K/V page persistence. `fetch` must return pages only when every
+/// layer/head page matches the stored identity (model, shape, TPPE and address
+/// contract, page digest); otherwise `None` or an error — never a partial set.
+pub trait KvPageStore: Send {
+    fn fetch(&mut self, key: &KvKey) -> Result<Option<(Shape, Pages)>, String>;
+    fn store(&mut self, key: &KvKey, shape: &Shape, pages: &Pages) -> Result<(), String>;
+}
+
+fn pages_digest(pages: &Pages) -> [u8; 32] {
+    let mut h = Sha256::new();
+    for (k, v) in pages {
+        for x in k.iter().chain(v) {
+            h.update(x.to_le_bytes());
+        }
+    }
+    h.finalize().into()
+}
+
 pub struct NativeGlimmerExecutor {
+    kv: Option<Box<dyn KvPageStore>>,
     mind: MindRecallExecutor,
     base_url: String,
     pin: ArtifactPin,
     max_tokens: usize,
     client: reqwest::blocking::Client,
+}
+
+fn check_hit_shape(shape: &Shape, prefix_len: usize) -> Result<(), String> {
+    if shape.tokens != prefix_len {
+        return Err("stored K/V pages cover a different prefix length".into());
+    }
+    Ok(())
 }
 
 fn is_loopback(url: &str) -> bool {
@@ -264,6 +302,7 @@ impl NativeGlimmerExecutor {
             return Err("max_tokens out of range".into());
         }
         Ok(Self {
+            kv: None,
             mind,
             base_url: base_url.trim_end_matches('/').to_string(),
             pin,
@@ -297,6 +336,14 @@ impl NativeGlimmerExecutor {
             ArtifactPin::from_hex(&weights, &tokenizer, &config)?,
             max_tokens,
         )
+    }
+
+    /// Route prefix-eligible calls through exact K/V persistence: a hit
+    /// hydrates stored pages and continues; a miss prefills, persists, then
+    /// continues from the exported pages.
+    pub fn with_kv_store(mut self, store: Box<dyn KvPageStore>) -> Self {
+        self.kv = Some(store);
+        self
     }
 
     pub fn seat_identity(&self) -> String {
@@ -334,13 +381,94 @@ impl NativeGlimmerExecutor {
             return Err("tokenizer digest differs from pinned artifact".into());
         }
 
-        let fwd_req = encode_forward_request(&tokens.token_ids, self.max_tokens)?;
-        let fwd_bytes = self.post(
-            "/v1/forward-exact",
-            &fwd_req,
-            "application/vnd.glimmer.forward-exact-v1",
-        )?;
-        let fwd = decode_forward_response(&fwd_req, &fwd_bytes)?;
+        let ids = &tokens.token_ids;
+        let mut tool_results = vec![
+            ToolResultDigest {
+                tool: tool.to_string(),
+                args_sha256: hex(&sha(args_json.as_bytes())),
+                result_sha256: hex(&sha(mcp.inner_text.as_bytes())),
+                receipt_sha256: mcp.receipt_sha256.clone(),
+            },
+            ToolResultDigest {
+                tool: "native.tokenize".into(),
+                args_sha256: hex(&sha(&token_req)),
+                result_sha256: hex(&sha(&ids_le(ids))),
+                receipt_sha256: hex(&tokens.receipt),
+            },
+        ];
+        let kv_eligible = self.kv.is_some() && ids.len() >= 2 && ids.len() - 1 <= MAX_PAGE_TOKENS;
+        let (fwd_req, fwd_name, fwd) = if kv_eligible {
+            let (prefix, rest) = ids.split_at(ids.len() - 1);
+            let key = KvKey {
+                artifact_composite: self.pin.composite,
+                prefix_ids: prefix.to_vec(),
+            };
+            let key_digest = hex(&sha(
+                &[&key.artifact_composite[..], &ids_le(prefix)].concat()
+            ));
+            let cached = self.kv.as_mut().unwrap().fetch(&key)?;
+            let (shape, pages) = match cached {
+                Some(hit) => {
+                    check_hit_shape(&hit.0, prefix.len())?;
+                    let pd = hex(&pages_digest(&hit.1));
+                    tool_results.push(ToolResultDigest {
+                        tool: "native.kv-hit".into(),
+                        args_sha256: key_digest.clone(),
+                        result_sha256: pd.clone(),
+                        receipt_sha256: hex(&sha(format!("{key_digest}{pd}").as_bytes())),
+                    });
+                    hit
+                }
+                None => {
+                    let preq = encode_prefill_request(prefix)?;
+                    let pbytes = self.post(
+                        "/v1/prefill-exact",
+                        &preq,
+                        "application/vnd.glimmer.prefill-v1",
+                    )?;
+                    let pre = decode_prefill_response(&preq, &pbytes)?;
+                    if (pre.weights, pre.tokenizer, pre.config, pre.composite)
+                        != (
+                            self.pin.weights,
+                            self.pin.tokenizer,
+                            self.pin.config,
+                            self.pin.composite,
+                        )
+                    {
+                        return Err("prefill artifact digests differ from pinned artifact".into());
+                    }
+                    check_hit_shape(&pre.shape, prefix.len())?;
+                    self.kv
+                        .as_mut()
+                        .unwrap()
+                        .store(&key, &pre.shape, &pre.pages)?;
+                    tool_results.push(ToolResultDigest {
+                        tool: "native.kv-prefill".into(),
+                        args_sha256: hex(&sha(&preq)),
+                        result_sha256: hex(&pages_digest(&pre.pages)),
+                        receipt_sha256: hex(&pre.receipt),
+                    });
+                    (pre.shape, pre.pages)
+                }
+            };
+            let creq = encode_continue_request(&shape, &pages, rest, self.max_tokens)?;
+            let cbytes = self.post(
+                "/v1/continue-exact",
+                &creq,
+                "application/vnd.glimmer.continue-v1",
+            )?;
+            let fwd = decode_forward_response(&creq, &cbytes)?;
+            (creq, "native.continue-exact", fwd)
+        } else {
+            let freq = encode_forward_request(ids, self.max_tokens)?;
+            let fbytes = self.post(
+                "/v1/forward-exact",
+                &freq,
+                "application/vnd.glimmer.forward-exact-v1",
+            )?;
+            let fwd = decode_forward_response(&freq, &fbytes)?;
+            (freq, "native.forward-exact", fwd)
+        };
         if (fwd.weights, fwd.tokenizer, fwd.config, fwd.composite)
             != (
                 self.pin.weights,
@@ -351,27 +479,12 @@ impl NativeGlimmerExecutor {
         {
             return Err("forward artifact digests differ from pinned artifact".into());
         }
-
-        let tool_results = vec![
-            ToolResultDigest {
-                tool: tool.to_string(),
-                args_sha256: hex(&sha(args_json.as_bytes())),
-                result_sha256: hex(&sha(mcp.inner_text.as_bytes())),
-                receipt_sha256: mcp.receipt_sha256.clone(),
-            },
-            ToolResultDigest {
-                tool: "native.tokenize".into(),
-                args_sha256: hex(&sha(&token_req)),
-                result_sha256: hex(&sha(&ids_le(&tokens.token_ids))),
-                receipt_sha256: hex(&tokens.receipt),
-            },
-            ToolResultDigest {
-                tool: "native.forward-exact".into(),
-                args_sha256: hex(&sha(&fwd_req)),
-                result_sha256: hex(&sha(&ids_le(&fwd.output_ids))),
-                receipt_sha256: hex(&fwd.receipt),
-            },
-        ];
+        tool_results.push(ToolResultDigest {
+            tool: fwd_name.into(),
+            args_sha256: hex(&sha(&fwd_req)),
+            result_sha256: hex(&sha(&ids_le(&fwd.output_ids))),
+            receipt_sha256: hex(&fwd.receipt),
+        });
         let mut receipt = BoundOutputReceipt {
             generated_token_ids: fwd.output_ids,
             logits_digest: hex(&fwd.logits),

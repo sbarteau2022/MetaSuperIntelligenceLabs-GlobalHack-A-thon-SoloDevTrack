@@ -1,0 +1,578 @@
+//! Hardware gate for the executor's exact-K/V path: call 1 misses (prefill ->
+//! persist to disposable SurrealKV -> continue), Surreal restarts, call 2 hits
+//! (hydrate by exact identity -> continue). Both must equal a plain forward-exact
+//! executor bit for bit. Needs ARES_GLIMMER_NATIVE_URL (isolated server),
+//! ARES_GLIMMER_WEIGHTS_SHA256, ARES_MCP_MIND_BIN, GLOBALMIND_SCHEMA_DIR.
+//! Run: cargo test --test native_glimmer_kv_live -- --ignored --nocapture
+
+use ares_backend::harness::mcp::McpAuthority;
+use ares_backend::harness::mind_recall_executor::MindRecallExecutor;
+use ares_backend::harness::native_glimmer_executor::{KvKey, KvPageStore, NativeGlimmerExecutor};
+use ares_backend::harness::native_pages_client::{Pages, Shape};
+use ares_backend::harness::runtime::Executor;
+use globalmind_runtime::{
+    Digest, ExactKvIdentity, GlobalMindStore, RadialLaw, RecordId, StoreConfig, TensorDtype,
+    TensorLayout, TensorPage, TensorSession, TppeConfig, TppeState,
+};
+use sha2::{Digest as ShaDigest, Sha256};
+use std::collections::HashMap;
+use std::fs;
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::path::PathBuf;
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+const MODEL_ID: &str = "Muse-Glimmer-q4km-gs128-MLX";
+const MODEL_REVISION: &str = "local-frozen-2026-11-04";
+const TPPE_VERSION: &str = "tppe-glimmer-memory-address-candidate-v1";
+const SCHEMAS: &[&str] = &[
+    "0001_hypermind_graph.surql",
+    "0003_nested_hyperbolic_kv.surql",
+    "0004_transformer_kv_tensor_pages.surql",
+    "0005_universal_atom_lineage.surql",
+    "0006_immutable_atom_address.surql",
+    "0007_globalmind_distillation_trajectories.surql",
+    "0008_superposition_holding.surql",
+    "0009_immutable_tensor_kv.surql",
+    "0010_native_distillation_ingress.surql",
+    "0011_atomic_trajectory_cells.surql",
+];
+
+struct IsolatedSurreal {
+    child: Option<Child>,
+    port: u16,
+    dir: PathBuf,
+    pass: String,
+}
+
+impl IsolatedSurreal {
+    fn start() -> Result<Self, String> {
+        let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
+        let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+        drop(listener);
+        if port == 8000 {
+            return Err("live Surreal port selected; refuse".into());
+        }
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("glimmer-exec-kv-{}-{nonce}", std::process::id()));
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let mut db = Self {
+            child: None,
+            port,
+            dir,
+            pass: format!("ephemeral_{nonce}"),
+        };
+        db.spawn()?;
+        Ok(db)
+    }
+
+    fn spawn(&mut self) -> Result<(), String> {
+        let bind = format!("127.0.0.1:{}", self.port);
+        let uri = format!("surrealkv://{}", self.dir.display());
+        self.child = Some(
+            Command::new("/opt/homebrew/bin/surreal")
+                .args([
+                    "start",
+                    "--no-banner",
+                    "--log",
+                    "none",
+                    "--bind",
+                    &bind,
+                    "--user",
+                    "root",
+                    "--pass",
+                    &self.pass,
+                    &uri,
+                ])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|e| e.to_string())?,
+        );
+        for _ in 0..300 {
+            if TcpStream::connect(&bind).is_ok() {
+                return Ok(());
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        Err("isolated Surreal did not open".into())
+    }
+
+    fn restart(&mut self) -> Result<(), String> {
+        if let Some(mut child) = self.child.take() {
+            child.kill().map_err(|e| e.to_string())?;
+            child.wait().map_err(|e| e.to_string())?;
+        }
+        if TcpStream::connect(format!("127.0.0.1:{}", self.port)).is_ok() {
+            return Err("isolated Surreal did not stop".into());
+        }
+        self.spawn()
+    }
+
+    fn endpoint(&self) -> String {
+        format!("http://127.0.0.1:{}", self.port)
+    }
+    fn config(&self) -> StoreConfig {
+        StoreConfig {
+            endpoint: self.endpoint(),
+            namespace: "globalmind_glimmer_iso".into(),
+            database: "glimmer_kv_qual".into(),
+            username: Some("root".into()),
+            password: Some(self.pass.clone()),
+            allow_quarantined_core: false,
+        }
+    }
+    fn store(&self) -> Result<GlobalMindStore, String> {
+        GlobalMindStore::connect(self.config())
+    }
+
+    fn sql(&self, sql: &str) -> Result<(), String> {
+        let signin = serde_json::json!({"user": "root", "pass": self.pass});
+        let signin_resp = http_post(
+            self.port,
+            "/signin",
+            "application/json",
+            &signin.to_string(),
+            None,
+        )?;
+        let signin_json: serde_json::Value =
+            serde_json::from_str(&signin_resp).map_err(|e| e.to_string())?;
+        let token = signin_json["token"]
+            .as_str()
+            .ok_or("missing Surreal signin token")?;
+        let full_sql = format!("USE NS globalmind_glimmer_iso DB glimmer_kv_qual; {sql}");
+        let response = http_post(self.port, "/sql", "text/plain", &full_sql, Some(token))?;
+        let statements: serde_json::Value =
+            serde_json::from_str(&response).map_err(|e| e.to_string())?;
+        let rows = statements
+            .as_array()
+            .ok_or("Surreal SQL result is not an array")?;
+        for (index, row) in rows.iter().enumerate().skip(1) {
+            if row["status"].as_str() == Some("ERR") {
+                return Err(format!(
+                    "isolated Surreal statement {index} failed: {}",
+                    row["result"]
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+fn http_post(
+    port: u16,
+    path: &str,
+    content_type: &str,
+    body: &str,
+    token: Option<&str>,
+) -> Result<String, String> {
+    let addr = format!("127.0.0.1:{port}");
+    let mut stream = TcpStream::connect(&addr).map_err(|e| e.to_string())?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(15)))
+        .map_err(|e| e.to_string())?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(15)))
+        .map_err(|e| e.to_string())?;
+    let auth = token
+        .map(|value| format!("\r\nAuthorization: Bearer {value}"))
+        .unwrap_or_default();
+    let request = format!(
+        "POST {path} HTTP/1.1\r\nHost: {addr}\r\nContent-Type: {content_type}\r\nAccept: application/json\r\nContent-Length: {}{auth}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|e| e.to_string())?;
+    let mut response = Vec::new();
+    stream
+        .read_to_end(&mut response)
+        .map_err(|e| e.to_string())?;
+    let text = String::from_utf8(response).map_err(|e| e.to_string())?;
+    if !text.starts_with("HTTP/1.1 200") {
+        return Err(format!(
+            "Surreal HTTP error: {}",
+            text.lines().next().unwrap_or("unknown")
+        ));
+    }
+    let split = text.find("\r\n\r\n").ok_or("missing HTTP body separator")?;
+    Ok(text[split + 4..].to_string())
+}
+
+impl Drop for IsolatedSurreal {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        let _ = fs::remove_dir_all(&self.dir);
+    }
+}
+
+fn f32_bytes(values: &[f32]) -> Box<[u8]> {
+    values
+        .iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect::<Vec<_>>()
+        .into_boxed_slice()
+}
+
+fn decode_f32(bytes: &[u8]) -> Result<Vec<f32>, String> {
+    if !bytes.len().is_multiple_of(4) {
+        return Err("K/V byte length is not f32 aligned".into());
+    }
+    Ok((0..bytes.len() / 4)
+        .map(|i| f32::from_le_bytes(bytes[4 * i..4 * i + 4].try_into().unwrap()))
+        .collect())
+}
+
+const NS: &str = "globalmind_glimmer_iso";
+const DB: &str = "glimmer_kv_qual";
+const ATOM_TEXT: &str = "The capital of France is";
+
+type Roster = Arc<Mutex<HashMap<(Vec<u8>, Vec<u32>), Vec<ExactKvIdentity>>>>;
+
+/// Real globalmind store adapter. The page-digest roster (what an ExactKvIdentity
+/// needs) is carried by the caller across restarts, as a receipt store would.
+struct StoreKv {
+    store: GlobalMindStore,
+    roster: Roster,
+    schema_dir: PathBuf,
+    tppe_variant: &'static str,
+}
+
+fn digest_ids(ids: &[u32]) -> Digest {
+    Digest::sha256(&ids.iter().flat_map(|i| i.to_le_bytes()).collect::<Vec<_>>())
+}
+
+impl StoreKv {
+    fn contracts(&self, prefix_len: usize) -> Result<(Digest, Digest, Digest, Digest), String> {
+        let cfg = TppeConfig {
+            law: RadialLaw::LinearLogV1,
+            radial_start: 0.05,
+            radial_span: 0.12,
+            omega_fast: 0.19,
+            omega_slow: 0.07,
+            coupling_fast: 0.08,
+            coupling_slow: 0.04,
+        }
+        .validate()?;
+        let mut ch = Sha256::new();
+        ch.update(b"tppe-glimmer-memory-address-candidate-v1\0");
+        ch.update(self.tppe_variant.as_bytes());
+        ch.update(cfg.law.as_str().as_bytes());
+        for v in [
+            cfg.radial_start,
+            cfg.radial_span,
+            cfg.omega_fast,
+            cfg.omega_slow,
+            cfg.coupling_fast,
+            cfg.coupling_slow,
+        ] {
+            ch.update(v.to_le_bytes());
+        }
+        let tppe = Digest::parse(format!("{:x}", ch.finalize()))?;
+        let mut phase = TppeState::origin(cfg)?;
+        for position in 0..prefix_len {
+            let step = (position + 1) as f64;
+            phase = phase.step(cfg, step * 0.017, step * 0.009)?;
+        }
+        phase.validate()?;
+        let mut ph = Sha256::new();
+        ph.update(b"tppe-glimmer-prefix-state-v1\0");
+        for v in [
+            phase.theta_fast_unwrapped,
+            phase.theta_slow_unwrapped,
+            phase.cumulative_revolutions,
+            phase.hyperbolic_radius,
+            phase.poincare_radius,
+            phase.boundary_margin,
+            phase.hyperboloid_time,
+            phase.hyperboloid_spatial_norm,
+        ] {
+            ph.update(v.to_le_bytes());
+        }
+        let phase_digest = Digest::parse(format!("{:x}", ph.finalize()))?;
+        let addr = Digest::sha256(
+            &fs::read(self.schema_dir.join("0006_immutable_atom_address.surql"))
+                .map_err(|e| e.to_string())?,
+        );
+        let mut tc = fs::read(
+            self.schema_dir
+                .join("0004_transformer_kv_tensor_pages.surql"),
+        )
+        .map_err(|e| e.to_string())?;
+        tc.extend(
+            fs::read(self.schema_dir.join("0009_immutable_tensor_kv.surql"))
+                .map_err(|e| e.to_string())?,
+        );
+        Ok((tppe, phase_digest, addr, Digest::sha256(&tc)))
+    }
+
+    fn identity(
+        &self,
+        key: &KvKey,
+        shape: &Shape,
+        layer: usize,
+        head: usize,
+        digests: (Digest, Digest),
+    ) -> Result<ExactKvIdentity, String> {
+        let (tppe, phase, addr, tensor) = self.contracts(key.prefix_ids.len())?;
+        let model = Digest::parse(
+            key.artifact_composite
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>(),
+        )?;
+        let prefix = digest_ids(&key.prefix_ids);
+        let tag = &prefix.as_str()[..16];
+        Ok(ExactKvIdentity {
+            workspace: RecordId::parse("globalmind")?,
+            session: RecordId::parse(format!("exec_{tag}"))?,
+            page: RecordId::parse(format!("exec_{tag}_l{layer}_h{head}"))?,
+            model_id: MODEL_ID.into(),
+            model_revision: MODEL_REVISION.into(),
+            model_digest: model,
+            request_digest: prefix.clone(),
+            prefix_digest: prefix,
+            tppe_version: TPPE_VERSION.into(),
+            tppe_configuration_digest: tppe,
+            address_contract_digest: addr,
+            tensor_contract_digest: tensor,
+            geometry_space: RecordId::parse("h3_t2_r12_v1")?,
+            dtype: TensorDtype::F32,
+            layer_count: shape.layers as u32,
+            kv_head_count: shape.kv_heads as u32,
+            head_dim: shape.head_dim as u32,
+            layer: layer as u32,
+            kv_head: head as u32,
+            token_start: 0,
+            token_end: key.prefix_ids.len() as u64,
+            tensor_shape: [key.prefix_ids.len() as u32, shape.head_dim as u32],
+            layout: TensorLayout::TokenMajor,
+            address: RecordId::parse("smoke_addr")?,
+            phase_state_digest: phase,
+            revision: 1,
+            key_digest: digests.0,
+            value_digest: digests.1,
+        })
+    }
+
+    fn roster_key(key: &KvKey) -> (Vec<u8>, Vec<u32>) {
+        (key.artifact_composite.to_vec(), key.prefix_ids.clone())
+    }
+}
+
+impl KvPageStore for StoreKv {
+    fn fetch(&mut self, key: &KvKey) -> Result<Option<(Shape, Pages)>, String> {
+        let Some(known) = self
+            .roster
+            .lock()
+            .unwrap()
+            .get(&Self::roster_key(key))
+            .cloned()
+        else {
+            return Ok(None);
+        };
+        // Rebuild every identity under THIS adapter's contracts; a changed
+        // model/shape/TPPE/address contract or page digest must error.
+        let first = &known[0];
+        let shape = Shape {
+            layers: first.layer_count as usize,
+            kv_heads: first.kv_head_count as usize,
+            head_dim: first.head_dim as usize,
+            tokens: key.prefix_ids.len(),
+        };
+        let mut identities = Vec::new();
+        for old in &known {
+            identities.push(self.identity(
+                key,
+                &shape,
+                old.layer as usize,
+                old.kv_head as usize,
+                (old.key_digest.clone(), old.value_digest.clone()),
+            )?);
+        }
+        let mut pages = Vec::new();
+        for layer in 0..shape.layers {
+            let start = layer * shape.kv_heads;
+            for payload in self.store.fetch_complete_tensor_layer_exact(
+                &identities[start..start + shape.kv_heads],
+                layer as u32,
+                0,
+                key.prefix_ids.len() as u64,
+            )? {
+                pages.push((decode_f32(&payload.key)?, decode_f32(&payload.value)?));
+            }
+        }
+        Ok(Some((shape, pages)))
+    }
+
+    fn store(&mut self, key: &KvKey, shape: &Shape, pages: &Pages) -> Result<(), String> {
+        let zero = Digest::sha256(b"");
+        let proto = self.identity(key, shape, 0, 0, (zero.clone(), zero))?;
+        let (tppe, _, addr, tensor) = self.contracts(key.prefix_ids.len())?;
+        let model = proto.model_digest.clone();
+        self.store.create_tensor_session(&TensorSession {
+            id: proto.session.clone(),
+            workspace: proto.workspace.clone(),
+            model_id: MODEL_ID.into(),
+            model_revision: MODEL_REVISION.into(),
+            model_digest: model,
+            request_digest: proto.request_digest.clone(),
+            prefix_digest: proto.prefix_digest.clone(),
+            dtype: TensorDtype::F32,
+            layer_count: shape.layers as u32,
+            kv_head_count: shape.kv_heads as u32,
+            head_dim: shape.head_dim as u32,
+            geometry_space: proto.geometry_space.clone(),
+            tppe_version: TPPE_VERSION.into(),
+            tppe_configuration_digest: tppe,
+            address_contract_digest: addr,
+            tensor_contract_digest: tensor,
+        })?;
+        let mut identities = Vec::new();
+        for (index, (keys, values)) in pages.iter().enumerate() {
+            let (layer, head) = (index / shape.kv_heads, index % shape.kv_heads);
+            let (kb, vb) = (f32_bytes(keys), f32_bytes(values));
+            let (kd, vd) = (Digest::sha256(&kb), Digest::sha256(&vb));
+            let id = self.identity(key, shape, layer, head, (kd.clone(), vd.clone()))?;
+            let receipt_digest =
+                Digest::sha256(format!("{}:{}:{}:{}", id.session, id.page, kd, vd).as_bytes());
+            self.store.put_tensor_page(&TensorPage {
+                id: id.page.clone(),
+                workspace: id.workspace.clone(),
+                session: id.session.clone(),
+                layer: layer as u32,
+                kv_head: head as u32,
+                token_start: 0,
+                token_end: id.token_end,
+                tensor_shape: id.tensor_shape,
+                dtype: TensorDtype::F32,
+                layout: TensorLayout::TokenMajor,
+                key_tensor: kb,
+                value_tensor: vb,
+                key_digest: kd,
+                value_digest: vd,
+                address: id.address.clone(),
+                trajectory_atoms: vec![RecordId::parse("smoke_atom")?],
+                well: None,
+                trajectory: None,
+                phase_state_digest: id.phase_state_digest.clone(),
+                receipt_digest,
+                revision: 1,
+            })?;
+            identities.push(id);
+        }
+        self.roster
+            .lock()
+            .unwrap()
+            .insert(Self::roster_key(key), identities);
+        Ok(())
+    }
+}
+
+fn executor(db: &IsolatedSurreal, kv: Option<StoreKv>) -> Result<NativeGlimmerExecutor, String> {
+    let authority = McpAuthority {
+        base: db.endpoint(),
+        ns: NS.into(),
+        db: DB.into(),
+    };
+    let mind = MindRecallExecutor::from_state(authority, ("root".into(), db.pass.clone()))?;
+    let exec = NativeGlimmerExecutor::from_env(mind)?;
+    Ok(match kv {
+        Some(kv) => exec.with_kv_store(Box::new(kv)),
+        None => exec,
+    })
+}
+
+#[test]
+#[ignore = "isolated frozen-Glimmer server, real MCP child, disposable SurrealKV restart"]
+fn executor_kv_miss_then_restart_hit_equals_plain_forward() -> Result<(), String> {
+    let schema_dir = PathBuf::from(
+        std::env::var("GLOBALMIND_SCHEMA_DIR").map_err(|_| "GLOBALMIND_SCHEMA_DIR required")?,
+    );
+    let url = std::env::var("ARES_GLIMMER_NATIVE_URL").map_err(|_| "ARES_GLIMMER_NATIVE_URL")?;
+    if url.contains(":8000") || url.contains(":8011") {
+        return Err("use an isolated Glimmer server".into());
+    }
+    let mut db = IsolatedSurreal::start()?;
+    for name in SCHEMAS {
+        db.sql(&fs::read_to_string(schema_dir.join(name)).map_err(|e| e.to_string())?)?;
+    }
+    db.sql("UPSERT workspace:globalmind CONTENT { slug: 'globalmind', created_at: time::now() } RETURN NONE;")?;
+    let digest = format!("{:x}", Sha256::digest(ATOM_TEXT.as_bytes()));
+    let (t, x) = (0.5f64.cosh(), 0.5f64.sinh());
+    db.sql(&format!(
+        "CREATE atom:`smoke_atom` CONTENT {{ workspace: workspace:`globalmind`, external_id: 'smoke_atom', content_kind: 'text', content_text: '{ATOM_TEXT}', content_uri: NONE, content_digest: '{digest}', domain: 'forward-smoke', rank: 0, salience: 1.0, provenance: 'smoke-witness', taint: 'none', pinned: false, current_address: NONE }} RETURN NONE; CREATE atom_address:`smoke_addr` CONTENT {{ workspace: workspace:`globalmind`, atom: atom:`smoke_atom`, h3_lorentz: [{t:.17}, {x:.17}, 0.0, 0.0], t2_phase: [0.1, 0.2], geometry_model: 'lorentz-t2', geometry_version: 'v1', revision: 1, active: true }} RETURN NONE;"
+    ))?;
+    let args = serde_json::json!({"workspace":"globalmind","query_h3":[t,x,0.0,0.0],
+        "query_t2":[0.1,0.2],"query_provenance":"smoke-query","k":1})
+    .to_string();
+    let new_kv = |db: &IsolatedSurreal, roster: &Roster, variant| -> Result<StoreKv, String> {
+        Ok(StoreKv {
+            store: db.store()?,
+            roster: roster.clone(),
+            schema_dir: schema_dir.clone(),
+            tppe_variant: variant,
+        })
+    };
+    let roster: Roster = Arc::new(Mutex::new(HashMap::new()));
+    let names = |r: &ares_backend::harness::output_receipt::BoundOutputReceipt| {
+        r.tool_results
+            .iter()
+            .map(|t| t.tool.clone())
+            .collect::<Vec<_>>()
+    };
+
+    let plain = executor(&db, None)?
+        .call_bound("mind.recall", &args)?
+        .bound_receipt;
+    let miss = executor(&db, Some(new_kv(&db, &roster, "v1")?))?
+        .call_bound("mind.recall", &args)?
+        .bound_receipt;
+    assert!(
+        names(&miss).contains(&"native.kv-prefill".to_string()),
+        "{:?}",
+        names(&miss)
+    );
+
+    db.restart()?;
+    let hit = executor(&db, Some(new_kv(&db, &roster, "v1")?))?
+        .call_bound("mind.recall", &args)?
+        .bound_receipt;
+    let hit_names = names(&hit);
+    assert!(
+        hit_names.contains(&"native.kv-hit".to_string()),
+        "{hit_names:?}"
+    );
+    assert!(!hit_names.contains(&"native.kv-prefill".to_string()));
+    for r in [&miss, &hit] {
+        assert_eq!(r.generated_token_ids, plain.generated_token_ids);
+        assert_eq!(r.logits_digest, plain.logits_digest);
+        assert_eq!(r.kv_digest, plain.kv_digest);
+        assert_eq!(r.model_artifact, plain.model_artifact);
+        r.validate()?;
+    }
+
+    // A changed TPPE contract must fail closed, not fall back to a recompute.
+    let wrong =
+        executor(&db, Some(new_kv(&db, &roster, "v2-changed")?))?.call_bound("mind.recall", &args);
+    assert!(wrong.is_err(), "changed TPPE contract must refuse");
+    println!(
+        "PASS executor kv: ids={:?} logits={} kv={} miss={:?} hit={:?}",
+        hit.generated_token_ids,
+        hit.logits_digest,
+        hit.kv_digest,
+        names(&miss),
+        hit_names
+    );
+    Ok(())
+}

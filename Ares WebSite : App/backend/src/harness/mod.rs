@@ -29,6 +29,7 @@ pub mod mission;
 pub mod model_seat;
 pub mod native_glimmer_executor;
 pub mod native_mtp;
+pub mod native_pages_client;
 pub mod output_receipt;
 pub mod qdrant_memory;
 pub mod qwen_vl_native;
