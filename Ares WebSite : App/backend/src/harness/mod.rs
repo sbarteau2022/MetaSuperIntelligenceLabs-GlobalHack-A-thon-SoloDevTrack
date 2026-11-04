@@ -27,6 +27,7 @@ pub mod mcp_server;
 pub mod mind_recall_executor;
 pub mod mission;
 pub mod model_seat;
+pub mod native_glimmer_executor;
 pub mod native_mtp;
 pub mod output_receipt;
 pub mod qdrant_memory;

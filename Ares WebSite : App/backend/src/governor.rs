@@ -166,8 +166,20 @@ pub async fn dispatch_mission_live(
             .map_err(|_| "ARES_MCP_MIND_DB required".to_string())?,
     };
     let creds = surreal.credentials();
-    let mut executor =
+    let mind =
         crate::harness::mind_recall_executor::MindRecallExecutor::from_state(authority, creds)?;
+    // ARES_GLIMMER_NATIVE_URL selects the native Glimmer executor (bound
+    // receipts); otherwise the MCP-only executor runs and bound calls refuse.
+    let (mut executor, seat): (Box<dyn crate::harness::runtime::Executor>, String) =
+        if std::env::var("ARES_GLIMMER_NATIVE_URL").is_ok() {
+            let native =
+                crate::harness::native_glimmer_executor::NativeGlimmerExecutor::from_env(mind)?;
+            let seat = native.seat_identity();
+            (Box::new(native), seat)
+        } else {
+            let seat = mind.seat_identity();
+            (Box::new(mind), seat)
+        };
     let mut engine = crate::harness::runtime::Engine::new();
     for judge in input.judges {
         engine.register_judge(judge);
@@ -179,12 +191,11 @@ pub async fn dispatch_mission_live(
             &mut input.plan,
             &mut receipts,
             &mut budget,
-            &mut executor,
+            &mut *executor,
             telemetry,
             &gate,
         )
         .await;
-    let seat = executor.seat_identity();
     let receipt = crate::harness::mission::MissionReceipt {
         mission_id: input.plan.id.clone(),
         passed: report.passed,
