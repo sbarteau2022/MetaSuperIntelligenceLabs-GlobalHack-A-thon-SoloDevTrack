@@ -62,6 +62,11 @@ not Glimmer execution.
 The optional `--native-baseline` preflight mode preserves Glimmer's trained
 RoPE/NoPE layers and skips only the mind-address TPPE admission check; it
 still requires a pinned Rust-native executable and performs no inference.
+The 2026-11-03 follow-up pinned the existing local Glimmer executable,
+passed that preflight, and ran one separate Metal-backed prompt to a
+`Paris` prefill argmax. The exact executable hash, command, and limits are
+recorded in `../results/glimmer-forward/native-baseline-preflight-2026-11-03.md`.
+That local baseline does not connect the model to the mind or expose tensor K/V.
 TPPE at the Q/K boundary is an unpromoted ablation, while TPPE memory
 addressing remains a separate integration gate.
 The Qwen Layer-3 smoke now checks MCP boundary authority through the typed

@@ -190,3 +190,19 @@ the failed test passed when rerun alone. Do not turn that into a full-suite
 pass. Other agents' new backend seat and untracked `core_lm/` work appeared
 after the earlier cleanup; inspect before committing. The old core_lm design
 is still not an approved universal decoder or exact Surreal nested K/V path.
+
+## Clean-tree follow-up, 2026-11-03
+
+The unverified backend/UI/N3/CoreLM set was preserved in named stash
+`quarantine-unverified-live-work-2026-11-03` (`stash@{0}` when created). The
+working tree was clean after quarantine; inspect stash identity before applying
+because indices can shift. No live listener was present on port 8011 at this
+follow-up. The ignored, pre-existing `generate_glimmer` release executable
+was independently hashed, admitted by frozen-manifest native-baseline
+preflight, then produced a real Metal prefill argmax of `Paris` for one prompt.
+See `results/glimmer-forward/native-baseline-preflight-2026-11-03.md` for the
+exact hash and receipt. This is one local baseline forward, not a model-neutral
+operator executor or harness→mind→nested-K/V pass. Do not apply the stash as a
+single production change: its model seat uses JSON at the model boundary, its
+Glimmer K/V page is refused, and its draft forward report has a truncated
+binary hash.
