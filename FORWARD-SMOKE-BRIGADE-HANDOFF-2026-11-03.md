@@ -168,4 +168,25 @@ cost, producer validity, quality floor, and exact invalidation first.
 `tests/mcp_e2e_live.rs`, N3 tool ports, `hypermind-nested-kv/src/lib.rs`,
 distillation/tensor-K/V reports, and untracked `core_lm/`, transducer and
 preregistration files belong to other work. Inspect their actual diffs before
-editing or committing them. No deletion or cleanup was performed here.
+editing or committing them. The later cleanup deleted the then-untracked
+discarded `core_lm/` and duplicate `ares-app/` starter, then preserved
+uncertain changes in stash commit `e8e52ba51590d1f4547555b1f745d46d9408eb56`.
+Other agents subsequently recreated `core_lm/`; treat that new tree as
+unreviewed work.
+
+## Independent pass audit update, 2026-11-03
+
+See `results/glimmer-forward/universal-pass-audit/report.tex` and its
+`TODO.md` plus committed falsifier script. A live HTTP Glimmer seat returned
+`Paris` as first token through `model_seat_mission` (one prompt), but this is
+not the requested harness/mind/K/V pass. The present server seat hash omits
+weight shards, request handlers do not reset local geometric attention state,
+the model-facing forward request is JSON, and Glimmer `kv_page` is refused.
+The live server remains running on 127.0.0.1:8011; it was not restarted.
+The graph digest's ambiguous shape encoding was fixed in `2a809fdb`, with
+focused tests, all-target Clippy, and formatting correction `5343fbfe`.
+An all-target GlobalMind test run had one disposable Surreal startup timeout;
+the failed test passed when rerun alone. Do not turn that into a full-suite
+pass. Other agents' new backend seat and untracked `core_lm/` work appeared
+after the earlier cleanup; inspect before committing. The old core_lm design
+is still not an approved universal decoder or exact Surreal nested K/V path.
