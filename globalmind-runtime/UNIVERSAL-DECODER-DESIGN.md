@@ -20,6 +20,11 @@ checkpoint, tensor, position, address, and payload identity.
    records operator version, input/output shapes, tensor bindings, quantization
    layout, position rule, cache rule, and numerical precision. Reject unknown
    operators and shape mismatches before allocating weights or serving.
+   Graph admission must also reject empty graphs, duplicate node IDs, zero or
+   unbounded dimensions, and empty/duplicate tensor bindings. Canonical graph
+   attestation uses domain-separated, length-delimited fields and explicit
+   vector counts; concatenated dimensions without shape boundaries are
+   ambiguous and are not an acceptable execution identity.
 3. Attest an `execution_contract_digest` over the canonical graph, operator
    versions, numerical profile, and tokenizer contract. The model identity is
    the artifact digest; a new version with compatible operators can use the
