@@ -77,6 +77,38 @@ targeted rerun (7.70 s). This is an intermittent startup gate, not evidence
 that the full suite passed. All-target Clippy passed; formatting required a
 separate export-order correction committed as \texttt{5343fbfe}.
 
+\section*{Geometric-cache counterexample and consequence}
+The checkpoint-identity and request-isolation findings above describe the
+original server snapshot. A later, quarantined \texttt{core\_lm} edit added
+streaming shard/index hashing and request resets; its focused compiler and
+unit gates passed, but that variant was not promoted to the canonical
+decoder or shown in a live repeated-request parity run. It does not change
+the following selection counterexample.
+The quarantined \texttt{core\_lm/src/glimmer\_forward.rs} writes raw per-head
+K/V bytes into a local geometric map, then retrieves at most 512 nearby atoms
+before computing softmax. This is not an exact transformer K/V continuation
+algorithm for an unbounded full-attention layer. Construct a history with
+513 equal-scoring keys. Give one of them value 1 in one output coordinate
+and the other 512 value 0; choose the nonzero item to be the one excluded
+by the map's top-512 tie order. Full attention assigns that item positive
+softmax mass and returns $1/513$ in that coordinate. The retrieved subset
+returns 0. A native AWK check evaluated $1/(512+1)$ as
+\texttt{0.0019493177387914229}, unequal to zero. The example is a
+counterexample to universal parity, not a measurement of Glimmer's actual
+error on natural prompts. It also holds when K/V payload bytes are stored
+losslessly: selection and softmax renormalization discard a contribution.
+
+The same source retrieves top-512 before applying the sliding-window time
+filter. A closer set of stale atoms can exhaust top-512 and then all be
+discarded, despite an eligible recent atom existing outside that set.
+Window eligibility must be imposed before ranking if this approximate
+algorithm remains an experiment. Exact continuation instead needs the
+trained layer's complete applicable K/V state, with token positions and
+the immutable model/prefix/tensor/position contract preserved across restart.
+Thus a local geometric map cannot be relabeled as a Surreal exact K/V page;
+the native decoder must either expose exact tensors or the Glimmer lane must
+remain outside the exact-K/V certification claim.
+
 \section*{Verdict}
 Partial component proof; the requested pass is \textbf{not certified}.
 The exact blockers and one-variable next experiments are in \texttt{TODO.md}.

@@ -10,6 +10,13 @@ is compiled into that ABI. On-disk checkpoint metadata may be JSON;
 model-to-harness I/O is typed binary only. Mind atoms remain teacher-neutral.
 Transformer K/V remains model-bound and is fetched only with the complete
 checkpoint, tensor, position, address, and payload identity.
+Exact continuation also requires the complete trained attention state for the
+applicable causal/window range. A bounded geometric top-k of prior K/V atoms
+changes softmax whenever an omitted atom has nonzero attention mass; storing
+those atoms losslessly does not repair that selection loss. The native decoder
+must export and restore exact per-layer/head K/V tensor pages before this
+contract can claim parity. Geometric top-k belongs to a separately judged
+retrieval ablation, with window eligibility applied before ranking.
 
 ## Admission
 
