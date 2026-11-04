@@ -11,7 +11,10 @@ use ares_backend::harness::mission::{
     EnergyBudget, Judge, JudgeKind, JudgeRef, Packet, PacketStatus, Plan, ReceiptLog, RetryPolicy,
     ToolCall,
 };
-use ares_backend::harness::native_glimmer_executor::{KvKey, KvPageStore, NativeGlimmerExecutor};
+use ares_backend::harness::native_glimmer_executor::{
+    decode_forward_response, decode_token_response, encode_forward_request, encode_token_request,
+    verified_recall_text, KvKey, KvPageStore, NativeGlimmerExecutor,
+};
 use ares_backend::harness::native_pages_client::{Pages, Shape};
 use ares_backend::harness::output_receipt::BoundCallOutcome;
 use ares_backend::harness::runtime::{CapabilityGate, CapabilityNode, Engine, Executor};
@@ -1019,6 +1022,171 @@ async fn governed_run_30_steps_audit() -> Result<(), String> {
     }
     if !audit.is_empty() {
         return Err(format!("audit failed: {audit:?}"));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Quality: the same question with, without, and with a mismatched recalled atom
+// ---------------------------------------------------------------------------
+
+/// Invented facts the frozen model cannot know, so a correct answer must come
+/// from the recalled atom. (atom text, question, expected answer)
+const FACTS: [(&str, &str, &str); 6] = [
+    (
+        "The Zorblax reactor at Quillan Station vents coolant every 47 minutes.",
+        "How often does the Zorblax reactor at Quillan Station vent coolant?",
+        " 47",
+    ),
+    (
+        "Captain Elowen Marsh named her ship the Tern of Halvard.",
+        "What did Captain Elowen Marsh name her ship?",
+        " Tern",
+    ),
+    (
+        "The village of Brindlemoor paints every door violet in the month of March.",
+        "What color are the doors in Brindlemoor?",
+        " violet",
+    ),
+    (
+        "Professor Okonkwo-Reyes discovered the mineral talvorite in the Kesh Mountains.",
+        "Where did Professor Okonkwo-Reyes discover talvorite?",
+        " Kesh",
+    ),
+    (
+        "The annual Gantry Lantern Festival is held on the ninth day of Harvest Moon.",
+        "On which day is the Gantry Lantern Festival held?",
+        " ninth",
+    ),
+    (
+        "Vessel Q-17 carries exactly 312 crates of saffron to Port Alderon.",
+        "How many crates of saffron does Vessel Q-17 carry?",
+        " 312",
+    ),
+];
+
+fn native_tokens(url: &str, text: &str, bos: bool) -> Result<Vec<u32>, String> {
+    let req = encode_token_request(text, bos)?;
+    let resp = reqwest::blocking::Client::new()
+        .post(format!("{url}/v1/tokenize-native"))
+        .body(req.clone())
+        .send()
+        .map_err(|e| e.to_string())?
+        .bytes()
+        .map_err(|e| e.to_string())?;
+    Ok(decode_token_response(&req, &resp)?.token_ids)
+}
+
+fn native_generate(url: &str, prompt: &[u32], max: usize) -> Result<Vec<u32>, String> {
+    let req = encode_forward_request(prompt, max)?;
+    let resp = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(600))
+        .build()
+        .map_err(|e| e.to_string())?
+        .post(format!("{url}/v1/forward-exact"))
+        .body(req.clone())
+        .send()
+        .map_err(|e| e.to_string())?
+        .bytes()
+        .map_err(|e| e.to_string())?;
+    Ok(decode_forward_response(&req, &resp)?.output_ids)
+}
+
+/// Judge independent of the model: the planted answer's token sequence must
+/// appear contiguously in the generated tokens.
+fn answered(generated: &[u32], expected: &[u32]) -> bool {
+    !expected.is_empty() && generated.windows(expected.len()).any(|w| w == expected)
+}
+
+#[test]
+#[ignore = "isolated frozen-Glimmer server, real MCP recall over disposable Surreal"]
+fn recalled_atoms_improve_answers_on_novel_facts() -> Result<(), String> {
+    let schema_dir = PathBuf::from(
+        std::env::var("GLOBALMIND_SCHEMA_DIR").map_err(|_| "GLOBALMIND_SCHEMA_DIR required")?,
+    );
+    let url = std::env::var("ARES_GLIMMER_NATIVE_URL").map_err(|_| "ARES_GLIMMER_NATIVE_URL")?;
+    if url.contains(":8000") || url.contains(":8011") {
+        return Err("use an isolated Glimmer server".into());
+    }
+    let out_path = std::env::var("QUALITY_REPORT").unwrap_or_default();
+    let db = IsolatedSurreal::start()?;
+    for name in SCHEMAS {
+        db.sql(&fs::read_to_string(schema_dir.join(name)).map_err(|e| e.to_string())?)?;
+    }
+    db.sql("UPSERT workspace:globalmind CONTENT { slug: 'globalmind', created_at: time::now() } RETURN NONE;")?;
+    let mut queries = Vec::new();
+    for (k, (text, _, _)) in FACTS.iter().enumerate() {
+        let digest = format!("{:x}", Sha256::digest(text.as_bytes()));
+        let a = 0.2 + 0.35 * k as f64;
+        let (t, x) = (a.cosh(), a.sinh());
+        db.sql(&format!(
+            "CREATE atom:`fact_{k}` CONTENT {{ workspace: workspace:`globalmind`, external_id: 'fact_{k}', content_kind: 'text', content_text: '{text}', content_uri: NONE, content_digest: '{digest}', domain: 'novel-facts', rank: 0, salience: 1.0, provenance: 'novel-fact-witness', taint: 'none', pinned: false, current_address: NONE }} RETURN NONE; CREATE atom_address:`fact_addr_{k}` CONTENT {{ workspace: workspace:`globalmind`, atom: atom:`fact_{k}`, h3_lorentz: [{t:.17}, {x:.17}, 0.0, 0.0], t2_phase: [0.1, 0.2], geometry_model: 'lorentz-t2', geometry_version: 'v1', revision: 1, active: true }} RETURN NONE;"
+        ))?;
+        queries.push(
+            serde_json::json!({"workspace":"globalmind","query_h3":[t,x,0.0,0.0],
+                "query_t2":[0.1,0.2],"query_provenance":"quality-test","k":1})
+            .to_string(),
+        );
+    }
+    let authority = McpAuthority {
+        base: db.endpoint(),
+        ns: NS.into(),
+        db: DB.into(),
+    };
+    let mut mind = MindRecallExecutor::from_state(authority, ("root".into(), db.pass.clone()))?;
+
+    // Real recall through the MCP child; text is digest-verified before use.
+    let mut recalled = Vec::new();
+    for (k, q) in queries.iter().enumerate() {
+        let out = mind.call("mind.recall", q)?;
+        let text = verified_recall_text(&out.inner_text)?;
+        if text != FACTS[k].0 {
+            return Err(format!(
+                "recall for fact {k} returned the wrong atom: {text:?}"
+            ));
+        }
+        recalled.push(text);
+    }
+
+    let mut rows = Vec::new();
+    let (mut with_ok, mut without_ok, mut mismatch_ok) = (0, 0, 0);
+    for (k, (_, question, expected)) in FACTS.iter().enumerate() {
+        let expected_ids = native_tokens(&url, expected, false)?;
+        let arm = |context: Option<&str>| -> Result<(Vec<u32>, bool), String> {
+            let prompt = match context {
+                Some(c) => format!("{c}\nQuestion: {question}\nAnswer:"),
+                None => format!("Question: {question}\nAnswer:"),
+            };
+            let ids = native_tokens(&url, &prompt, true)?;
+            let generated = native_generate(&url, &ids, 6)?;
+            let ok = answered(&generated, &expected_ids);
+            Ok((generated, ok))
+        };
+        let (g_with, ok_with) = arm(Some(&recalled[k]))?;
+        let (g_without, ok_without) = arm(None)?;
+        let (g_mis, ok_mis) = arm(Some(&recalled[(k + 1) % FACTS.len()]))?;
+        with_ok += ok_with as usize;
+        without_ok += ok_without as usize;
+        mismatch_ok += ok_mis as usize;
+        rows.push(format!(
+            "fact {k} expected_ids={expected_ids:?}\n  with_atom    ok={ok_with} generated={g_with:?}\n  without_atom ok={ok_without} generated={g_without:?}\n  wrong_atom   ok={ok_mis} generated={g_mis:?}"
+        ));
+    }
+    let n = FACTS.len();
+    let report = format!(
+        "QUALITY: novel facts, same question with / without / mismatched recalled atom\n\
+         answered with_atom={with_ok}/{n} without_atom={without_ok}/{n} wrong_atom={mismatch_ok}/{n}\n\
+         judge: planted-answer token sequence must appear in the 6 generated tokens (model-independent)\n{}",
+        rows.join("\n")
+    );
+    println!("{report}");
+    if !out_path.is_empty() {
+        fs::write(&out_path, &report).map_err(|e| e.to_string())?;
+    }
+    if with_ok <= without_ok {
+        return Err(format!(
+            "no gain from recalled atoms: with={with_ok} without={without_ok}"
+        ));
     }
     Ok(())
 }
