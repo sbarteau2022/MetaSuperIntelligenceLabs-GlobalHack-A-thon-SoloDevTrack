@@ -65,7 +65,8 @@ use core_lm::native_pages_wire::{
     decode_continue_request, decode_prefill_request, encode_prefill_response, Shape,
 };
 use core_lm::native_token_wire::{
-    decode_request as decode_token_request, encode_response as encode_token_response,
+    decode_detok_request, decode_request as decode_token_request, encode_detok_response,
+    encode_response as encode_token_response,
 };
 use core_lm::ops::argmax;
 use core_lm::tokenizer::BpeTokenizer;
@@ -181,6 +182,17 @@ fn handle_tokenize_native(
     })();
     match result {
         Ok(bytes) => http_response("200 OK", "application/vnd.glimmer.tokenize-v1", &bytes),
+        Err(error) => http_response("400 Bad Request", "text/plain", error.as_bytes()),
+    }
+}
+
+fn handle_detokenize(body: &[u8], tok: &BpeTokenizer) -> Vec<u8> {
+    let result = (|| -> Result<Vec<u8>, String> {
+        let ids = decode_detok_request(body)?;
+        encode_detok_response(body, &tok.decode(&ids))
+    })();
+    match result {
+        Ok(bytes) => http_response("200 OK", "application/vnd.glimmer.detokenize-v1", &bytes),
         Err(error) => http_response("400 Bad Request", "text/plain", error.as_bytes()),
     }
 }
@@ -514,6 +526,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let body = &buf[hend..std::cmp::min(buf.len(), hend + content_length)];
         let resp = if method == "POST" && path == "/v1/forward-exact" {
             handle_exact(body, &mut model, artifact)
+        } else if method == "POST" && path == "/v1/detokenize-native" {
+            handle_detokenize(body, &tok)
         } else if method == "POST" && path == "/v1/verify-exact" {
             handle_verify(body, &mut model, artifact)
         } else if method == "POST" && path == "/v1/prefill-exact" {

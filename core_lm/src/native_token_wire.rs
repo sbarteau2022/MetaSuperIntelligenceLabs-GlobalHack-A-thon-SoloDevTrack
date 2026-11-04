@@ -3,6 +3,8 @@ use crate::sha256::sha256;
 
 pub const TOKEN_REQUEST_MAGIC: &[u8; 4] = b"GTK2";
 pub const TOKEN_RESPONSE_MAGIC: &[u8; 4] = b"GTO2";
+pub const DETOK_REQUEST_MAGIC: &[u8; 4] = b"GDT2";
+pub const DETOK_RESPONSE_MAGIC: &[u8; 4] = b"GDR2";
 pub const MAX_TEXT_BYTES: usize = 16 * 1024;
 pub const MAX_TOKEN_IDS: usize = 4096;
 
@@ -30,6 +32,67 @@ pub fn encode_request(request: &TokenizeRequest) -> Result<Vec<u8>, String> {
     bytes.push(u8::from(request.add_bos));
     bytes.extend_from_slice(text);
     Ok(bytes)
+}
+
+/// Token IDs -> text, for showing generations. Decoding is lossy-free only for
+/// whole-character prefixes; the response carries the model tokenizer's output.
+pub fn encode_detok_request(ids: &[u32]) -> Result<Vec<u8>, String> {
+    if ids.is_empty() || ids.len() > MAX_TOKEN_IDS {
+        return Err("detokenize id count invalid".into());
+    }
+    let mut bytes = Vec::with_capacity(8 + ids.len() * 4);
+    bytes.extend_from_slice(DETOK_REQUEST_MAGIC);
+    bytes.extend_from_slice(&(ids.len() as u32).to_le_bytes());
+    for id in ids {
+        bytes.extend_from_slice(&id.to_le_bytes());
+    }
+    Ok(bytes)
+}
+
+pub fn decode_detok_request(bytes: &[u8]) -> Result<Vec<u32>, String> {
+    if bytes.len() < 12 || &bytes[..4] != DETOK_REQUEST_MAGIC {
+        return Err("detokenize request header invalid".into());
+    }
+    let count = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+    if count == 0 || count > MAX_TOKEN_IDS || bytes.len() != 8 + count * 4 {
+        return Err("detokenize request bounds invalid".into());
+    }
+    Ok((0..count)
+        .map(|i| u32::from_le_bytes(bytes[8 + 4 * i..12 + 4 * i].try_into().unwrap()))
+        .collect())
+}
+
+pub fn encode_detok_response(request: &[u8], text: &str) -> Result<Vec<u8>, String> {
+    if text.len() > MAX_TEXT_BYTES * 4 {
+        return Err("detokenize output too large".into());
+    }
+    let mut bytes = Vec::with_capacity(40 + text.len());
+    bytes.extend_from_slice(DETOK_RESPONSE_MAGIC);
+    bytes.extend_from_slice(&(text.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(text.as_bytes());
+    let mut bound = request.to_vec();
+    bound.extend_from_slice(&bytes);
+    bytes.extend_from_slice(&sha256(&bound));
+    Ok(bytes)
+}
+
+pub fn decode_detok_response(request: &[u8], bytes: &[u8]) -> Result<String, String> {
+    if bytes.len() < 40 || &bytes[..4] != DETOK_RESPONSE_MAGIC {
+        return Err("detokenize response header invalid".into());
+    }
+    let len = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+    if bytes.len() != 40 + len {
+        return Err("detokenize response length invalid".into());
+    }
+    let split = bytes.len() - 32;
+    let mut bound = request.to_vec();
+    bound.extend_from_slice(&bytes[..split]);
+    if sha256(&bound) != bytes[split..] {
+        return Err("detokenize receipt mismatch".into());
+    }
+    std::str::from_utf8(&bytes[8..8 + len])
+        .map(str::to_string)
+        .map_err(|e| e.to_string())
 }
 
 pub fn decode_request(bytes: &[u8]) -> Result<TokenizeRequest, String> {
@@ -102,6 +165,19 @@ pub fn decode_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detokenize_frames_round_trip_and_bind_request() {
+        let req = encode_detok_request(&[5, 6]).unwrap();
+        assert_eq!(decode_detok_request(&req).unwrap(), [5, 6]);
+        let resp = encode_detok_response(&req, "hello").unwrap();
+        assert_eq!(decode_detok_response(&req, &resp).unwrap(), "hello");
+        assert!(decode_detok_response(b"other", &resp).is_err());
+        let mut bad = resp;
+        bad[8] ^= 1;
+        assert!(decode_detok_response(&req, &bad).is_err());
+        assert!(encode_detok_request(&[]).is_err());
+    }
 
     #[test]
     fn native_token_frames_reject_changed_text_and_ids() {

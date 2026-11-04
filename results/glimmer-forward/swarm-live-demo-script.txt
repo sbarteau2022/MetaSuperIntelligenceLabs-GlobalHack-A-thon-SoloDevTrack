@@ -1,0 +1,6 @@
+ask How often does the Zorblax reactor vent coolant?
+ask What color are the doors in Brindlemoor?
+as 0 What did Captain Elowen Marsh name her ship?
+task Where did Professor Okonkwo-Reyes discover talvorite? ; Who invented the pressure loom? ; What does the lighthouse keeper ring?
+status
+quit

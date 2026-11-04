@@ -1394,3 +1394,177 @@ fn proof1_planned_prefill_recall_vs_full_recompute() -> Result<(), String> {
     }
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Carved swarm demo: four scoped workers, one Glimmer server, one set of weights
+// ---------------------------------------------------------------------------
+
+fn detokenize(url: &str, ids: &[u32]) -> Result<String, String> {
+    let mut req = b"GDT2".to_vec();
+    req.extend_from_slice(&(ids.len() as u32).to_le_bytes());
+    for id in ids {
+        req.extend_from_slice(&id.to_le_bytes());
+    }
+    let resp = reqwest::blocking::Client::new()
+        .post(format!("{url}/v1/detokenize-native"))
+        .body(req.clone())
+        .send()
+        .map_err(|e| e.to_string())?
+        .bytes()
+        .map_err(|e| e.to_string())?;
+    if resp.len() < 40 || &resp[..4] != b"GDR2" {
+        return Err("detokenize response header invalid".into());
+    }
+    let len = u32::from_le_bytes(resp[4..8].try_into().unwrap()) as usize;
+    if resp.len() != 40 + len {
+        return Err("detokenize response length invalid".into());
+    }
+    let mut bound = req;
+    bound.extend_from_slice(&resp[..resp.len() - 32]);
+    if Sha256::digest(&bound)[..] != resp[resp.len() - 32..] {
+        return Err("detokenize receipt mismatch".into());
+    }
+    Ok(String::from_utf8_lossy(&resp[8..8 + len]).to_string())
+}
+
+/// (worker name, well ordinal, fact indices carved into that worker's well)
+const SWARM: [(&str, usize, &[usize]); 4] = [
+    ("reactor-ops", 0, &[0, 5]),
+    ("fleet-nav", 1, &[1, 4]),
+    ("village-lore", 2, &[2]),
+    ("geology", 3, &[3]),
+];
+
+#[test]
+#[ignore = "isolated frozen-Glimmer server, real MCP recall_scoped over disposable Surreal"]
+fn carved_swarm_four_workers_one_weight_set() -> Result<(), String> {
+    let schema_dir = PathBuf::from(
+        std::env::var("GLOBALMIND_SCHEMA_DIR").map_err(|_| "GLOBALMIND_SCHEMA_DIR required")?,
+    );
+    let url = std::env::var("ARES_GLIMMER_NATIVE_URL").map_err(|_| "ARES_GLIMMER_NATIVE_URL")?;
+    if url.contains(":8000") || url.contains(":8011") {
+        return Err("use an isolated Glimmer server".into());
+    }
+    let out_path = std::env::var("SWARM_REPORT").unwrap_or_default();
+    let db = IsolatedSurreal::start()?;
+    for name in SCHEMAS {
+        db.sql(&fs::read_to_string(schema_dir.join(name)).map_err(|e| e.to_string())?)?;
+    }
+    db.sql("UPSERT workspace:globalmind CONTENT { slug: 'globalmind', created_at: time::now() } RETURN NONE;")?;
+    db.sql("UPSERT geometry_space:`h3_t2_r12_v1` CONTENT { workspace: workspace:`globalmind` } RETURN NONE;")
+        .ok();
+    let well_digest = format!("{:x}", Sha256::digest(b"swarm-well-contract"));
+    let addr_of = |k: usize| 0.2 + 0.35 * k as f64;
+    // Carve: atoms, addresses, wells, memberships.
+    for (k, (text, _, _)) in FACTS.iter().enumerate() {
+        let digest = format!("{:x}", Sha256::digest(text.as_bytes()));
+        let a = addr_of(k);
+        db.sql(&format!(
+            "CREATE atom:`swarm_atom_{k}` CONTENT {{ workspace: workspace:`globalmind`, external_id: 'swarm_atom_{k}', content_kind: 'text', content_text: '{text}', content_uri: NONE, content_digest: '{digest}', domain: 'swarm', rank: 0, salience: 1.0, provenance: 'swarm-demo-witness', taint: 'none', pinned: false, current_address: NONE }} RETURN NONE; CREATE atom_address:`swarm_addr_{k}` CONTENT {{ workspace: workspace:`globalmind`, atom: atom:`swarm_atom_{k}`, h3_lorentz: [{:.17}, {:.17}, 0.0, 0.0], t2_phase: [0.1, 0.2], geometry_model: 'lorentz-t2', geometry_version: 'v1', revision: 1, active: true }} RETURN NONE;",
+            a.cosh(), a.sinh()
+        ))?;
+    }
+    for (name, ordinal, facts) in SWARM {
+        let a = 0.3 + 0.4 * ordinal as f64;
+        db.sql(&format!(
+            "CREATE cognitive_well:`swarm_well_{ordinal}` CONTENT {{ workspace: workspace:`globalmind`, geometry_space: geometry_space:`h3_t2_r12_v1`, ordinal: {ordinal}, label: '{name}', h3_center_lorentz: [{:.17}, {:.17}, 0.0, 0.0], t2_sector: {ordinal}, boundary_contract_digest: '{well_digest}', status: 'specified' }} RETURN NONE;",
+            a.cosh(), a.sinh()
+        ))?;
+        for f in facts {
+            let cd = format!(
+                "{:x}",
+                Sha256::digest(format!("cls-{ordinal}-{f}").as_bytes())
+            );
+            db.sql(&format!(
+                "CREATE address_well_membership CONTENT {{ workspace: workspace:`globalmind`, address: atom_address:`swarm_addr_{f}`, well: cognitive_well:`swarm_well_{ordinal}`, classifier_version: 'swarm-demo-v1', classifier_digest: '{cd}', boundary_receipt_digest: '{well_digest}' }} RETURN NONE;"
+            ))?;
+        }
+    }
+    let authority = McpAuthority {
+        base: db.endpoint(),
+        ns: NS.into(),
+        db: DB.into(),
+    };
+    let mut mind = MindRecallExecutor::from_state(authority, ("root".into(), db.pass.clone()))?;
+
+    let mut lines = vec![
+        "CARVED SWARM DEMO: 4 scoped workers + 1 lead, ONE frozen Muse Glimmer server (one weight set)".to_string(),
+        "Each worker may recall only atoms in its own well (mind.recall_scoped); every answer is generated by the same weights.".to_string(),
+    ];
+    let mut composites = std::collections::HashSet::new();
+    let mut score = (0usize, 0usize, 0usize, 0usize); // own ok, own n, cross-blocked ok, cross n
+    let mut ask = |who: &str, wells: &[usize], target: usize, kind: &str| -> Result<bool, String> {
+        let a = addr_of(target);
+        let args = serde_json::json!({
+            "workspace": "globalmind",
+            "well_ids": wells.iter().map(|w| format!("swarm_well_{w}")).collect::<Vec<_>>(),
+            "query_h3": [a.cosh(), a.sinh(), 0.0, 0.0], "query_t2": [0.1, 0.2],
+            "query_provenance": "swarm-demo", "k": 1
+        })
+        .to_string();
+        let out = mind.call("mind.recall_scoped", &args)?;
+        let atom_text = verified_recall_text(&out.inner_text)?;
+        let atom_id = serde_json::from_str::<serde_json::Value>(&out.inner_text)
+            .ok()
+            .and_then(|v| v["members"][0]["atom"].as_str().map(str::to_string))
+            .unwrap_or_default();
+        let (_, question, expected) = FACTS[target];
+        let prompt = format!("{atom_text}\nQuestion: {question}\nAnswer:");
+        let ids = native_tokens(&url, &prompt, true)?;
+        let req = encode_forward_request(&ids, 5)?;
+        let started = std::time::Instant::now();
+        let resp = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(900))
+            .build()
+            .map_err(|e| e.to_string())?
+            .post(format!("{url}/v1/forward-exact"))
+            .body(req.clone())
+            .send()
+            .map_err(|e| e.to_string())?
+            .bytes()
+            .map_err(|e| e.to_string())?;
+        let r = decode_forward_response(&req, &resp)?;
+        let wall = started.elapsed();
+        composites.insert(r.composite);
+        let answer = detokenize(&url, &r.output_ids)?;
+        let expected_ids = native_tokens(&url, expected, false)?;
+        let ok = answered(&r.output_ids, &expected_ids);
+        lines.push(format!(
+            "[{who:<12}] {kind:<9} Q: {question}\n               recalled {atom_id} (scope wells {wells:?}): \"{atom_text}\"\n               answer: {:?}  -> {}   ({:.1}s)",
+            answer.trim(),
+            if ok { "CORRECT" } else { "not answerable from this view" },
+            wall.as_secs_f64()
+        ));
+        Ok(ok)
+    };
+    for (i, (name, ordinal, facts)) in SWARM.iter().enumerate() {
+        let own = facts[0];
+        let other = SWARM[(i + 1) % SWARM.len()].2[0];
+        score.1 += 1;
+        score.0 += ask(name, &[*ordinal], own, "own-view")? as usize;
+        score.3 += 1;
+        score.2 += (!ask(name, &[*ordinal], other, "cross-view")?) as usize;
+    }
+    // The lead holds all four wells: the union view answers the cross questions.
+    let mut lead_ok = 0;
+    for (i, _) in SWARM.iter().enumerate() {
+        let other = SWARM[(i + 1) % SWARM.len()].2[0];
+        lead_ok += ask("lead(all)", &[0, 1, 2, 3], other, "union")? as usize;
+    }
+    lines.push(format!(
+        "SUMMARY: workers answered own-view {}/{}; cross-view blocked (not answerable) {}/{}; lead (union of wells) answered {}/4.\n\
+         ONE WEIGHT SET: {} distinct artifact composite across all {} generations ({}).",
+        score.0, score.1, score.2, score.3, lead_ok,
+        composites.len(), score.1 + score.3 + 4,
+        composites.iter().next().map(|c| c.iter().map(|b| format!("{b:02x}")).collect::<String>()).unwrap_or_default()
+    ));
+    let report = lines.join("\n");
+    println!("{report}");
+    if !out_path.is_empty() {
+        fs::write(&out_path, &report).map_err(|e| e.to_string())?;
+    }
+    if composites.len() != 1 {
+        return Err("more than one weight identity in the swarm".into());
+    }
+    Ok(())
+}
