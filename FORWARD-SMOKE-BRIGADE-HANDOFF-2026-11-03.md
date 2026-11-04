@@ -240,3 +240,94 @@ The MCP child now also returned the real Layer-3 page's exact K/V digest
 receipt; the same live run rejected an oversized layer count and fractional
 tensor shape before lookup. This verifies the MCP transport parser and
 store read, while model-facing bytes still travel through the typed bridge.
+
+## Shift handoff — 2026-11-03 23:19 CST
+
+**Read this section first.** Canonical repository is the path named at the
+top of this file, branch `codex/consolidate-n3-globalmind-20261102`. The
+implementation HEAD before this handoff update was `98a65509`, and
+`git status --porcelain=v1` was empty. No code or receipt
+was placed in another repository. Live `hypermind/core` was not modified.
+Two preserved stashes, named `quarantine-unverified-live-work-2026-11-03`
+and `quarantine-unverified-agent-work-2026-11-03`, hold unpromoted agent work.
+Find them by name rather than assuming stash indices remain stable. The
+ignored local `core_lm/target/release/generate_glimmer` executable remains
+available as a **reference only**; its SHA-256 was
+`ada4357a801161d54efebf6196aab9aec326fc9d7a55e7553fd79fd22a85dfbe`.
+
+### What is actually proven
+
+1. **Glimmer local model:** frozen roster and executable preflight passed;
+   its Metal binary generated four tokens through all 52 layers for one
+   prompt. It did not read GlobalMind, export exact tensor K/V, restore
+   continuation, or enter the harness. Receipt:
+   `results/glimmer-forward/native-baseline-preflight-2026-11-03.md`.
+2. **Qwen Layer 3 integrated component:** real frozen weights produced K/V,
+   persisted in disposable SurrealKV, survived restart, and returned through
+   complete-identity reads. Split pages reassembled in both dense layouts;
+   both heads of the layer were required. Injected hidden state and all
+   248320 logits were bit-exact against uninterrupted execution. A live
+   `globalmind-mcp` child attested the same Surreal authority, recalled the
+   prefix atom, and fetched a digest receipt for the real page before the
+   typed bridge supplied bytes to the model. Oversized and fractional MCP
+   tensor identity arguments, missing head, gap, overlap, mixed model and
+   mixed layout all failed closed. Receipt:
+   `results/tensor-kv/tensor-kv-harness-bridge-report.txt`.
+3. **Not proven:** coherent Glimmer use of distilled atoms, full Glimmer
+   exact-K/V continuation, model-neutral operator execution, automaton
+   decision and outcome update in this same route, end-to-end task-quality
+   gain, or a full-model benchmark. Do not call the Layer-3 gate the full
+   forward smoke.
+
+### Implementation homes and exact next work
+
+1. **Native decoder and exact Glimmer K/V:** implement in this repo under
+   `globalmind-runtime/` according to `UNIVERSAL-DECODER-DESIGN.md`; do not
+   promote the quarantined `core_lm/` tree as production. The reference
+   `GlimmerModel::forward_with_backend` and `AttentionBackend` seam in that
+   stash shows where post-QK-norm, post-RoPE K/V is visible. Use it to locate
+   the real tensor boundary, then build a bounded native exact-cache backend
+   for the trained RoPE sliding layers and NoPE full layers. Export one
+   per-layer/head token-major page per applicable interval, with complete
+   checkpoint, tokenizer, TPPE-memory-address, tensor shape/layout, prefix,
+   request, position/phase, and payload digests. No geometric top-k selection
+   may enter the exact path: its 513-key counterexample is in
+   `results/glimmer-forward/universal-pass-audit/report.tex`.
+   Reuse the proven store and read contracts in
+   `globalmind-runtime/src/model.rs`, `src/store.rs`, and
+   `src/kv_identity.rs`; the active MCP parser is
+   `src/bin/globalmind_mcp.rs`. The real integration test is
+   `tests/tensor_kv_qualification.rs`.
+2. **Restore proof:** run the same frozen Glimmer prompt uninterrupted and
+   with cache export → disposable SurrealKV → process restart → complete
+   per-layer/head hydration → continuation. Require exact token IDs and
+   logits against an independent frozen reference, or record the numerical
+   tolerance and why bits differ. Force one-field identity drift, missing
+   head, missing interval, and changed checkpoint to miss and recompute.
+   Independent requests must reset attention state. This is the first gate
+   that can qualify *nested K/V for Glimmer*.
+3. **Model-facing boundary:** use a versioned typed binary request/response
+   ABI. MCP JSON-RPC may attest the child and carry metadata; model I/O must
+   contain no JSON or Python. The backend model-seat work in the quarantine
+   stash compiles but uses JSON forward/tokenize and hardcoded identity; use
+   it only to inspect intent. Bind the actual weight-byte roster, tokenizer,
+   graph/operator contract and executable digest to every request/receipt.
+4. **Coherent mind use:** after K/V parity, run one harness task through
+   automaton admission, the live `globalmind-mcp` child, Surreal atom recall,
+   typed model hydration and full Glimmer forward. Compare the same task
+   without recall. Require a source-grounded judge, trajectory receipt, and
+   no atom mint or confidence increase from model self-report alone.
+   Qdrant remains the separate fact library; it is not a second mind map.
+
+### Reproduction commands and stop rules
+
+From `globalmind-runtime/`, build `cargo build --bin globalmind-mcp`, then
+run `cargo test --release --features live-forward-model --test
+tensor_kv_qualification tensor_kv_qualification_end_to_end -- --ignored`.
+The latest live run passed 1/1 in 43.44 s. `cargo clippy --all-targets
+--features live-forward-model -- -D warnings` and `cargo fmt --check` passed.
+The test creates a disposable SurrealKV instance; port 8000 is reserved for
+the quarantined live mind and must not be touched. Check the canonical git
+status before staging. If Glimmer's exact K/V cannot be captured and restored
+with parity, report the failure and bench that approach separately; never
+substitute the approximate geometric cache or a correct-looking answer.
