@@ -296,6 +296,52 @@ pub fn update_from_outcome(
     })
 }
 
+/// Confidence update from a VERIFIED prediction error in [0, 1]: the share of a
+/// proposal the model's own forward rejected. Confidence moves a tenth of the
+/// way toward `1 - error`, in Q32.31 only. An unverified outcome is refused, and
+/// the proposer can never supply the error it is judged by.
+pub fn update_from_prediction_error(
+    state: &mut StrategyState,
+    verified: bool,
+    error: Q32_31,
+) -> Result<AutomatonTransition, String> {
+    if !verified {
+        return Err("unverified outcome cannot update confidence".to_string());
+    }
+    if error < Q32_31::ZERO || error > Q32_31::ONE {
+        return Err("prediction error outside [0, 1]".to_string());
+    }
+    let prior = state.digest();
+    let step = Q32_31::from_f64(0.1);
+    let target = Q32_31::ONE - error;
+    state.confidence = state.confidence + (target - state.confidence) * step;
+    state.calibration_count += 1;
+    state.outcome_history_digest = Sha256Digest::compute(
+        format!(
+            "{}\nerror:{}\n{}",
+            state.outcome_history_digest, error.0, state.calibration_count,
+        )
+        .as_bytes(),
+    )
+    .to_hex();
+    let receipt = transition_receipt(
+        &prior,
+        "prediction-error",
+        Verdict::Admit,
+        state.confidence,
+        &state.outcome_history_digest,
+    );
+    Ok(AutomatonTransition {
+        prior_state_digest: prior,
+        proposal_digest: "prediction-error".to_string(),
+        verdict: Verdict::Admit,
+        updated_confidence: state.confidence,
+        updated_history_digest: state.outcome_history_digest.clone(),
+        committed: true,
+        receipt_digest: receipt,
+    })
+}
+
 /// Fail-closed MCP authority check. The MCP target must resolve to
 /// exactly the harness GlobalMind authority (base, namespace,
 /// database). Any mismatch is an error, never a second map.

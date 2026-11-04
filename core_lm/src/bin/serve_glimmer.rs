@@ -58,7 +58,9 @@ mod amst;
 use core_lm::glimmer_forward::GlimmerModel;
 use core_lm::exact_kv::ExactKvCache;
 use core_lm::artifact_digest::ArtifactDigest;
-use core_lm::native_exact_wire::{decode_request, encode_response, exact_kv_digest};
+use core_lm::native_exact_wire::{
+    decode_request, decode_verify_request, encode_response, exact_kv_digest,
+};
 use core_lm::native_pages_wire::{
     decode_continue_request, decode_prefill_request, encode_prefill_response, Shape,
 };
@@ -330,6 +332,56 @@ fn handle_continue(body: &[u8], model: &mut GlimmerModel, artifact: ArtifactDige
     }
 }
 
+/// Speculative verify: predict after the context, then after each draft
+/// prefix, stopping at the first disagreement (that prediction is the
+/// correction token). With no draft this is one plain greedy step.
+fn handle_verify(body: &[u8], model: &mut GlimmerModel, artifact: ArtifactDigest) -> Vec<u8> {
+    let result = (|| -> Result<Vec<u8>, String> {
+        let request = decode_verify_request(body)?;
+        let mut cache = ExactKvCache::new(
+            model.config.num_hidden_layers,
+            model.config.num_attention_heads,
+            model.config.num_key_value_heads,
+            model.config.head_dim,
+        )?;
+        model.reset_memory();
+        let mut logits = Vec::new();
+        for (position, &id) in request.context_ids.iter().enumerate() {
+            logits = model
+                .forward_with_backend(id, position, &mut cache)
+                .map_err(|e| e.to_string())?;
+        }
+        let mut consumed = request.context_ids.len();
+        let mut preds = Vec::new();
+        for step in 0..=request.draft_ids.len() {
+            let predicted = argmax(&logits).map_err(|e| e.to_string())? as u32;
+            preds.push(predicted);
+            if step == request.draft_ids.len() || predicted != request.draft_ids[step] {
+                break;
+            }
+            logits = model
+                .forward_with_backend(request.draft_ids[step], consumed, &mut cache)
+                .map_err(|e| e.to_string())?;
+            consumed += 1;
+        }
+        let mut logits_bytes = Vec::with_capacity(logits.len() * 4);
+        for value in logits {
+            logits_bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let kv_digest = exact_kv_digest(
+            &cache,
+            model.config.num_hidden_layers,
+            model.config.num_key_value_heads,
+            consumed,
+        )?;
+        encode_response(body, &preds, sha256::sha256(&logits_bytes), kv_digest, artifact)
+    })();
+    match result {
+        Ok(bytes) => http_response("200 OK", "application/vnd.glimmer.exact-v1", &bytes),
+        Err(error) => http_response("400 Bad Request", "text/plain", error.as_bytes()),
+    }
+}
+
 fn http_response(status: &str, content_type: &str, body: &[u8]) -> Vec<u8> {
     let mut out = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -462,6 +514,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let body = &buf[hend..std::cmp::min(buf.len(), hend + content_length)];
         let resp = if method == "POST" && path == "/v1/forward-exact" {
             handle_exact(body, &mut model, artifact)
+        } else if method == "POST" && path == "/v1/verify-exact" {
+            handle_verify(body, &mut model, artifact)
         } else if method == "POST" && path == "/v1/prefill-exact" {
             handle_prefill(body, &mut model, artifact)
         } else if method == "POST" && path == "/v1/continue-exact" {

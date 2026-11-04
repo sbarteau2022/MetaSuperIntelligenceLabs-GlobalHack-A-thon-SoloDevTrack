@@ -7,6 +7,8 @@ use crate::sha256::sha256;
 
 pub const REQUEST_MAGIC: &[u8; 4] = b"GFX2";
 pub const RESPONSE_MAGIC: &[u8; 4] = b"GFO2";
+pub const VERIFY_REQUEST_MAGIC: &[u8; 4] = b"GVX2";
+pub const MAX_DRAFT_TOKENS: usize = 16;
 pub const MAX_INPUT_TOKENS: usize = 4096;
 pub const MAX_OUTPUT_TOKENS: usize = 128;
 
@@ -74,6 +76,53 @@ pub fn decode_response(
         kv_digest,
         artifact,
         receipt_digest,
+    })
+}
+
+/// Speculative-verify request: the model predicts after `context`, then after
+/// each draft prefix, stopping at the first draft token it disagrees with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifyRequest {
+    pub context_ids: Vec<u32>,
+    pub draft_ids: Vec<u32>,
+}
+
+pub fn encode_verify_request(req: &VerifyRequest) -> Result<Vec<u8>, String> {
+    if req.context_ids.is_empty()
+        || req.context_ids.len() + req.draft_ids.len() > MAX_INPUT_TOKENS
+        || req.draft_ids.len() > MAX_DRAFT_TOKENS
+    {
+        return Err("verify request bounds violated".into());
+    }
+    let mut bytes = Vec::with_capacity(12 + (req.context_ids.len() + req.draft_ids.len()) * 4);
+    bytes.extend_from_slice(VERIFY_REQUEST_MAGIC);
+    bytes.extend_from_slice(&(req.context_ids.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&(req.draft_ids.len() as u32).to_le_bytes());
+    for id in req.context_ids.iter().chain(&req.draft_ids) {
+        bytes.extend_from_slice(&id.to_le_bytes());
+    }
+    Ok(bytes)
+}
+
+pub fn decode_verify_request(bytes: &[u8]) -> Result<VerifyRequest, String> {
+    if bytes.len() < 16 || &bytes[..4] != VERIFY_REQUEST_MAGIC {
+        return Err("invalid verify request header".into());
+    }
+    let ctx = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+    let draft = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+    if ctx == 0
+        || draft > MAX_DRAFT_TOKENS
+        || ctx + draft > MAX_INPUT_TOKENS
+        || bytes.len() != 12 + (ctx + draft) * 4
+    {
+        return Err("verify request bounds violated".into());
+    }
+    let ids: Vec<u32> = (0..ctx + draft)
+        .map(|i| u32::from_le_bytes(bytes[12 + 4 * i..16 + 4 * i].try_into().unwrap()))
+        .collect();
+    Ok(VerifyRequest {
+        context_ids: ids[..ctx].to_vec(),
+        draft_ids: ids[ctx..].to_vec(),
     })
 }
 
@@ -192,6 +241,30 @@ mod tests {
         let mut unknown = bytes;
         unknown[3] = b'3';
         assert!(decode_request(&unknown).is_err());
+    }
+
+    #[test]
+    fn verify_request_round_trips_and_rejects_bad_frames() {
+        let req = VerifyRequest {
+            context_ids: vec![1, 2, 3],
+            draft_ids: vec![4, 5],
+        };
+        let bytes = encode_verify_request(&req).unwrap();
+        assert_eq!(decode_verify_request(&bytes).unwrap(), req);
+        assert!(decode_verify_request(&bytes[..bytes.len() - 1]).is_err());
+        assert!(encode_verify_request(&VerifyRequest {
+            context_ids: vec![],
+            draft_ids: vec![1],
+        })
+        .is_err());
+        assert!(encode_verify_request(&VerifyRequest {
+            context_ids: vec![1],
+            draft_ids: vec![0; MAX_DRAFT_TOKENS + 1],
+        })
+        .is_err());
+        let mut wrong = bytes;
+        wrong[3] = b'9';
+        assert!(decode_verify_request(&wrong).is_err());
     }
 
     #[test]
