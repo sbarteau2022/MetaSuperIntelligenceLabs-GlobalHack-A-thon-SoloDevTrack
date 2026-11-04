@@ -26,14 +26,14 @@ pub use holding::{
     BranchUpdate, HoldingController, HoldingDecision, HoldingPolicy, HoldingSnapshot,
 };
 pub use holding_session::{
-    branch, classify_trigger, controller_digest, BridgeRoute, HoldingSession, RecallSignals,
-    SessionOutcome, CONTROLLER_VERSION,
+    BridgeRoute, CONTROLLER_VERSION, HoldingSession, RecallSignals, SessionOutcome, branch,
+    classify_trigger, controller_digest,
 };
 pub use identity::{Digest, RecordId};
 pub use kv_identity::ExactKvIdentity;
 pub use manifest::{
-    ArtifactEntry, Manifest, ModelEntry, VerifiedArtifact, VerifiedManifest, VerifiedModel,
-    PROJECTOR_VERSION,
+    ArtifactEntry, Manifest, ModelEntry, PROJECTOR_VERSION, VerifiedArtifact, VerifiedManifest,
+    VerifiedModel,
 };
 pub use model::{
     BranchSource, CellKind, ChartDtype, ContentKind, CrystallizedAtom, DistillationPacket,
@@ -46,13 +46,12 @@ pub use model::{
 pub use store::{GlobalMindStore, StoreConfig};
 pub use tppe::{RadialLaw, TppeConfig, TppeState};
 pub use whitehead::{
-    canonicalize, gamma12_generators, hyperbolic_distance, joint_well_cost, kuramoto_psi,
-    lorentz_inner, lorentz_to_poincare, lorentz_to_uhs, poincare_to_lorentz, torus_distance_sq,
-    uhs_to_lorentz, validate_lorentz_point, validate_t2_phase, CanonicalRepresentative,
-    CognitiveHubSpec, CognitiveWellSpec, DualityPole, GaussianInt, NamedGamma12Generator,
-    ProjectivePointMod2Plus2i, Psl2Zi, TopologyStatus, UhsCoord, WellClassification,
-    WhiteheadTopology, BOUNDARY_TIE_EPSILON, DEFAULT_HUB_HORIZON_RADIUS,
-    DEFAULT_ICOSAHEDRAL_OVERLAP_MARGIN, WHITEHEAD_CLASSIFIER_VERSION, WHITEHEAD_CONTRACT_VERSION,
-    WHITEHEAD_COORDINATE_MODEL, WHITEHEAD_MANIFOLD, WHITEHEAD_QUOTIENT_SYMBOL,
-    WHITEHEAD_SPACE_NAME,
+    BOUNDARY_TIE_EPSILON, CanonicalRepresentative, CognitiveHubSpec, CognitiveWellSpec,
+    DEFAULT_HUB_HORIZON_RADIUS, DEFAULT_ICOSAHEDRAL_OVERLAP_MARGIN, DualityPole, GaussianInt,
+    NamedGamma12Generator, ProjectivePointMod2Plus2i, Psl2Zi, TopologyStatus, UhsCoord,
+    WHITEHEAD_CLASSIFIER_VERSION, WHITEHEAD_CONTRACT_VERSION, WHITEHEAD_COORDINATE_MODEL,
+    WHITEHEAD_MANIFOLD, WHITEHEAD_QUOTIENT_SYMBOL, WHITEHEAD_SPACE_NAME, WellClassification,
+    WhiteheadTopology, canonicalize, gamma12_generators, hyperbolic_distance, joint_well_cost,
+    kuramoto_psi, lorentz_inner, lorentz_to_poincare, lorentz_to_uhs, poincare_to_lorentz,
+    torus_distance_sq, uhs_to_lorentz, validate_lorentz_point, validate_t2_phase,
 };
