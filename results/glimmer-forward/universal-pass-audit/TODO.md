@@ -6,5 +6,6 @@
 4. Choose and implement exact Glimmer tensor K/V export/inject with the full identity, or explicitly exclude Glimmer from nested K/V claims. The user-defined system requires nested tensor K/V; exclusion cannot certify that system. Test uninterrupted versus persisted/restarted continuation on real weights.
 5. Compile and execute a validated operator graph. The current universal decoder is admission scaffolding only. Prove a changed compatible checkpoint runs without source edits and a second architecture uses the same binary ABI.
 6. Run the independent full-model logit oracle, then one harness→automaton→active `globalmind-mcp`→Surreal recall→model forward with a no-recall control, answer judge, and trajectory receipt. Record every failed gate; no task-quality or speed claim before this.
+7. Stabilize the disposable SurrealDB readiness gate: capture child stderr and exit status on timeout, then rerun startup at 1, 3, 10, and 100 sequential instances. A single targeted retry passed, but the full suite did not.
 
 No GPU sweep or long autonomous run was launched. The already-running Glimmer server was left untouched.

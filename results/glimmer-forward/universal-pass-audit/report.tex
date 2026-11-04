@@ -70,6 +70,12 @@ script SHA-256 \texttt{d1221efe65a1a61220814d8ca359e90e98e5a8c57b5aee09e142d9e24
 \texttt{globalmind-runtime}. The live \texttt{model\_seat\_mission} test
 passed (one prompt) against the already-running local server. No independent
 full-model reference, restart parity, or harness/MCP/model chain ran.
+The wider \texttt{globalmind-runtime} test run passed 86 library tests and
+several live integrations, then one disposable SurrealDB startup timed out
+at 20 seconds while another integration passed. The failed test passed in a
+targeted rerun (7.70 s). This is an intermittent startup gate, not evidence
+that the full suite passed. All-target Clippy passed; formatting required a
+separate export-order correction committed as \texttt{5343fbfe}.
 
 \section*{Verdict}
 Partial component proof; the requested pass is \textbf{not certified}.
