@@ -15,7 +15,9 @@ use ares_backend::harness::native_glimmer_executor::{
     decode_forward_response, decode_token_response, encode_forward_request, encode_token_request,
     verified_recall_text, KvKey, KvPageStore, NativeGlimmerExecutor,
 };
-use ares_backend::harness::native_pages_client::{Pages, Shape};
+use ares_backend::harness::native_pages_client::{
+    decode_prefill_response, encode_continue_request, encode_prefill_request, Pages, Shape,
+};
 use ares_backend::harness::output_receipt::BoundCallOutcome;
 use ares_backend::harness::runtime::{CapabilityGate, CapabilityNode, Engine, Executor};
 use ares_backend::harness::telemetry::{HyperdxConfig, HyperdxTelemetry};
@@ -1187,6 +1189,208 @@ fn recalled_atoms_improve_answers_on_novel_facts() -> Result<(), String> {
         return Err(format!(
             "no gain from recalled atoms: with={with_ok} without={without_ok}"
         ));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Proof 1: planned-prefill recall vs full recompute (same seat, same inputs)
+// ---------------------------------------------------------------------------
+
+fn timed_post(url: &str, path: &str, body: Vec<u8>) -> Result<(Vec<u8>, Duration), String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(900))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let started = std::time::Instant::now();
+    let resp = client
+        .post(format!("{url}{path}"))
+        .body(body)
+        .send()
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("{path}: {}", resp.status()));
+    }
+    let bytes = resp.bytes().map_err(|e| e.to_string())?.to_vec();
+    Ok((bytes, started.elapsed()))
+}
+
+/// Full-recompute reference: output ids, logits/kv digests, expected ids, last prompt token.
+type FullRef = (Vec<u32>, [u8; 32], [u8; 32], Vec<u32>, u32);
+
+#[derive(Default, Clone)]
+struct Proof1Row {
+    prompt_tokens: usize,
+    full: Duration,
+    prefill: Duration,
+    store: Duration,
+    fetch: Duration,
+    cont: Duration,
+    same_output: bool,
+    full_ok: bool,
+    recall_ok: bool,
+}
+
+#[test]
+#[ignore = "isolated frozen-Glimmer server (all routes), disposable SurrealKV restart"]
+fn proof1_planned_prefill_recall_vs_full_recompute() -> Result<(), String> {
+    let schema_dir = PathBuf::from(
+        std::env::var("GLOBALMIND_SCHEMA_DIR").map_err(|_| "GLOBALMIND_SCHEMA_DIR required")?,
+    );
+    let url = std::env::var("ARES_GLIMMER_NATIVE_URL").map_err(|_| "ARES_GLIMMER_NATIVE_URL")?;
+    if url.contains(":8000") || url.contains(":8011") {
+        return Err("use an isolated Glimmer server".into());
+    }
+    let out_path = std::env::var("PROOF1_REPORT").unwrap_or_default();
+    let mut db = IsolatedSurreal::start()?;
+    for name in SCHEMAS {
+        db.sql(&fs::read_to_string(schema_dir.join(name)).map_err(|e| e.to_string())?)?;
+    }
+    db.sql("UPSERT workspace:globalmind CONTENT { slug: 'globalmind', created_at: time::now() } RETURN NONE;")?;
+    let digest = format!("{:x}", Sha256::digest(b"proof1"));
+    db.sql(&format!(
+        "CREATE atom:`smoke_atom` CONTENT {{ workspace: workspace:`globalmind`, external_id: 'smoke_atom', content_kind: 'text', content_text: 'proof1', content_uri: NONE, content_digest: '{digest}', domain: 'proof1', rank: 0, salience: 1.0, provenance: 'proof1', taint: 'none', pinned: false, current_address: NONE }} RETURN NONE; CREATE atom_address:`smoke_addr` CONTENT {{ workspace: workspace:`globalmind`, atom: atom:`smoke_atom`, h3_lorentz: [{:.17}, {:.17}, 0.0, 0.0], t2_phase: [0.1, 0.2], geometry_model: 'lorentz-t2', geometry_version: 'v1', revision: 1, active: true }} RETURN NONE;",
+        0.5f64.cosh(),
+        0.5f64.sinh()
+    ))?;
+    let roster: Roster = Arc::new(Mutex::new(HashMap::new()));
+    let mut kv = StoreKv {
+        store: db.store()?,
+        roster: roster.clone(),
+        schema_dir: schema_dir.clone(),
+        tppe_variant: "v1",
+    };
+    const GEN: usize = 6;
+    let mut rows: Vec<Proof1Row> = vec![Proof1Row::default(); FACTS.len()];
+    let mut keys = Vec::new();
+    let mut shapes = Vec::new();
+    let mut refs: Vec<FullRef> = Vec::new();
+
+    // Phase 1: full recompute (control), then the planned prefill + persist.
+    for (k, (atom, question, expected)) in FACTS.iter().enumerate() {
+        let prompt = format!("{atom}\nQuestion: {question}\nAnswer:");
+        let ids = native_tokens(&url, &prompt, true)?;
+        if ids.len() < 2 || ids.len() - 1 > 48 {
+            return Err(format!(
+                "fact {k}: prompt has {} tokens, outside 2..=49",
+                ids.len()
+            ));
+        }
+        let expected_ids = native_tokens(&url, expected, false)?;
+        let (full_bytes, t_full) = timed_post(
+            &url,
+            "/v1/forward-exact",
+            encode_forward_request(&ids, GEN)?,
+        )?;
+        let full = decode_forward_response(&encode_forward_request(&ids, GEN)?, &full_bytes)?;
+        let (prefix, _rest) = ids.split_at(ids.len() - 1);
+        let preq = encode_prefill_request(prefix)?;
+        let (pbytes, t_prefill) = timed_post(&url, "/v1/prefill-exact", preq.clone())?;
+        let pre = decode_prefill_response(&preq, &pbytes)?;
+        let key = KvKey {
+            artifact_composite: pre.composite,
+            prefix_ids: prefix.to_vec(),
+        };
+        let started = std::time::Instant::now();
+        kv.store(&key, &pre.shape, &pre.pages)?;
+        let t_store = started.elapsed();
+        rows[k] = Proof1Row {
+            prompt_tokens: ids.len(),
+            full: t_full,
+            prefill: t_prefill,
+            store: t_store,
+            full_ok: answered(&full.output_ids, &expected_ids),
+            ..Default::default()
+        };
+        keys.push(key);
+        shapes.push(pre.shape.clone());
+        refs.push((
+            full.output_ids.clone(),
+            full.logits,
+            full.kv,
+            expected_ids,
+            ids[ids.len() - 1],
+        ));
+        eprintln!(
+            "phase1 fact {k}: tokens={} full={t_full:?} prefill={t_prefill:?} store={t_store:?}",
+            ids.len()
+        );
+    }
+
+    // The planned work is done. Restart the store, then recall instead of re-prefilling.
+    db.restart()?;
+    let mut kv = StoreKv {
+        store: db.store()?,
+        roster,
+        schema_dir,
+        tppe_variant: "v1",
+    };
+    for (k, key) in keys.iter().enumerate() {
+        let started = std::time::Instant::now();
+        let (shape, pages) = kv
+            .fetch(key)?
+            .ok_or_else(|| format!("fact {k}: planned pages missing after restart"))?;
+        let t_fetch = started.elapsed();
+        if shape != shapes[k] {
+            return Err(format!("fact {k}: shape changed across restart"));
+        }
+        let (full_ids, full_logits, full_kv, expected_ids, last) = &refs[k];
+        let creq = encode_continue_request(&shape, &pages, &[*last], GEN)?;
+        let (cbytes, t_cont) = timed_post(&url, "/v1/continue-exact", creq.clone())?;
+        let cont = decode_forward_response(&creq, &cbytes)?;
+        let same =
+            cont.output_ids == *full_ids && cont.logits == *full_logits && cont.kv == *full_kv;
+        rows[k].fetch = t_fetch;
+        rows[k].cont = t_cont;
+        rows[k].same_output = same;
+        rows[k].recall_ok = answered(&cont.output_ids, expected_ids);
+        eprintln!("phase2 fact {k}: fetch={t_fetch:?} continue={t_cont:?} identical={same}");
+    }
+
+    let secs = |d: Duration| d.as_secs_f64();
+    let mut lines = vec![
+        "PROOF 1: planned-prefill recall vs full recompute (frozen Muse Glimmer, same seat, same inputs)".to_string(),
+        format!("{:<4} {:>6} {:>9} {:>9} {:>8} {:>8} {:>9} {:>9} {:>8} {:>5} {:>5} {:>5}",
+            "fact", "tokens", "full_s", "prefill_s", "store_s", "fetch_s", "cont_s", "recall_s", "speedup", "same", "fOK", "rOK"),
+    ];
+    let (mut tf, mut tr, mut tp, mut ts) = (0.0, 0.0, 0.0, 0.0);
+    for (k, r) in rows.iter().enumerate() {
+        let recall = secs(r.fetch) + secs(r.cont);
+        tf += secs(r.full);
+        tr += recall;
+        tp += secs(r.prefill);
+        ts += secs(r.store);
+        lines.push(format!(
+            "{:<4} {:>6} {:>9.2} {:>9.2} {:>8.3} {:>8.3} {:>9.2} {:>9.2} {:>7.1}x {:>5} {:>5} {:>5}",
+            k, r.prompt_tokens, secs(r.full), secs(r.prefill), secs(r.store), secs(r.fetch),
+            secs(r.cont), recall, secs(r.full) / recall, r.same_output, r.full_ok, r.recall_ok
+        ));
+    }
+    let saved = tf - tr;
+    let reuses = if saved > 0.0 {
+        (tp + ts) / saved
+    } else {
+        f64::INFINITY
+    };
+    lines.push(format!(
+        "TOTAL full={tf:.1}s recall(fetch+continue)={tr:.1}s planned_prefill+persist={:.1}s\nrecall speedup per reuse = {:.2}x; \
+         prefill+persist is repaid after {:.1} reuses (all reuses beyond that are net savings)\n\
+         identical output+logits+kv digests in {}/{} cases; answered full={} recall={}",
+        tp + ts,
+        tf / tr,
+        reuses,
+        rows.iter().filter(|r| r.same_output).count(),
+        rows.len(),
+        rows.iter().filter(|r| r.full_ok).count(),
+        rows.iter().filter(|r| r.recall_ok).count(),
+    ));
+    let report = lines.join("\n");
+    println!("{report}");
+    if !out_path.is_empty() {
+        fs::write(&out_path, &report).map_err(|e| e.to_string())?;
+    }
+    if rows.iter().any(|r| !r.same_output) {
+        return Err("recall diverged from full recompute".into());
     }
     Ok(())
 }

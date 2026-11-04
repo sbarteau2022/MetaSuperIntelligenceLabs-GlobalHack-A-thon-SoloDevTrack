@@ -1,0 +1,22 @@
+PROOF 1: planned-prefill recall vs full recompute (frozen Muse Glimmer, same seat, same inputs)
+fact tokens    full_s prefill_s  store_s  fetch_s    cont_s  recall_s  speedup  same   fOK   rOK
+0        38     39.85     29.79    3.276    3.765      4.68      8.44     4.7x  true  true  true
+1        31     28.32     22.77    3.078    3.782      4.58      8.36     3.4x  true  true  true
+2        33     29.39     24.48    2.837    3.694      4.65      8.34     3.5x  true false false
+3        38     32.49     28.71    3.330    3.736      4.64      8.37     3.9x  true  true  true
+4        34     30.25     25.38    3.008    3.601      4.63      8.23     3.7x  true  true  true
+5        38     33.24     29.12    2.864    3.815      4.69      8.50     3.9x  true  true  true
+TOTAL full=193.5s recall(fetch+continue)=50.2s planned_prefill+persist=178.6s
+recall speedup per reuse = 3.85x; prefill+persist is repaid after 1.2 reuses (all reuses beyond that are net savings)
+identical output+logits+kv digests in 6/6 cases; answered full=5 recall=5
+NOTES
+- Test: `Ares WebSite : App/backend/tests/native_glimmer_kv_live.rs::proof1_planned_prefill_recall_vs_full_recompute` (ignored); isolated Metal
+  serve_glimmer, SurrealKV restarted between the planned prefill and the recall. Page-token cap raised 16 -> 48 for the 31-38 token prompts.
+- Same seat, same inputs: recall output ids, logits digest and K/V digest equal the full recompute in 6/6 cases; answer score equal (5/6 both; the
+  one miss is the same fact in both arms, so recall costs no score).
+- Time: recall (store fetch + continue) is 3.9x faster per reuse than full recompute (50.2 s vs 193.5 s over 6 prompts). The planned prefill +
+  persist (178.6 s) is repaid after ~1.2 reuses.
+- Where recall time goes: ~3.7 s fetching 104 pages from SurrealKV (client-side, mostly serialization of ~MBs of f32) and ~4.6 s for the 6-token
+  continue. The store fetch is now the cheapest optimization target (batch/binary fetch), ahead of the forward itself.
+- Limits: single run per case, wall-clock over loopback HTTP; the store path is the test adapter (roster carried by the test); proof 2
+  (layer truncation) and the router head are not run; these are prompt prefixes of 31-38 tokens, not long contexts.

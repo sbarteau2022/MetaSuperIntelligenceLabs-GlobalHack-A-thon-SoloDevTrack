@@ -4,7 +4,7 @@
 
 use sha2::{Digest, Sha256};
 
-pub const MAX_PAGE_TOKENS: usize = 16;
+pub const MAX_PAGE_TOKENS: usize = 48;
 const MAX_LAYERS: usize = 256;
 const MAX_KV_HEADS: usize = 64;
 const MAX_HEAD_DIM: usize = 1024;

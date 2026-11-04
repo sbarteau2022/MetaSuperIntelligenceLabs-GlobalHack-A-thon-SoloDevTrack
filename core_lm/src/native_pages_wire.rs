@@ -9,7 +9,7 @@ use crate::sha256::sha256;
 pub const PREFILL_REQUEST_MAGIC: &[u8; 4] = b"GPF2";
 pub const PREFILL_RESPONSE_MAGIC: &[u8; 4] = b"GPO2";
 pub const CONTINUE_REQUEST_MAGIC: &[u8; 4] = b"GCX2";
-pub const MAX_PAGE_TOKENS: usize = 16;
+pub const MAX_PAGE_TOKENS: usize = 48;
 pub const MAX_CONTINUE_IDS: usize = 64;
 pub const MAX_MAX_TOKENS: usize = 128;
 const MAX_LAYERS: usize = 256;
