@@ -1,0 +1,77 @@
+\documentclass{article}
+\usepackage[margin=1in]{geometry}
+\begin{document}
+\title{Adversarial audit of the Glimmer forward and universal decoder pass}
+\date{2026-11-03}
+\maketitle
+
+\section*{Question and fixed acceptance bar}
+The pass is a native, model-neutral, checkpoint-attested forward through the
+harness/automaton/MCP/one GlobalMind boundary, with exact model-bound tensor
+K/V reuse and a no-recall control. A correct token from one prompt is a
+component observation, not this pass. Checks were fixed before drawing a
+verdict: artifact identity includes weight bytes; requests are isolated;
+model I/O is typed binary; graph admission rejects ambiguous contracts;
+K/V is preserved as exact tensor state; full-model output is independently
+compared; one live harness round trip is receipted.
+
+\section*{Methods and oracle}
+L0 source audit plus L1 counterexample. The oracle for checkpoint identity is
+an injective encoding of the list of artifact digests before a collision-
+resistant hash. A config/tokenizer-only hash cannot distinguish arbitrary
+weight changes. For graph identity, the oracle is a domain-separated,
+length-delimited encoding of each node, shape partition, and tensor binding.
+No latency/quality optimization was attempted; no GPU sweep ran. The live
+model probe used the already-running \texttt{serve\_glimmer} process on
+127.0.0.1:8011 and the ignored \texttt{model\_seat\_mission} test, with one
+prompt and no changed model weights.
+
+\section*{Findings}
+\begin{enumerate}
+\item \textbf{Real but narrow forward:} the live test passed and emitted token
+13796 (``Paris'') first, with four output token IDs and a logit digest. This
+establishes an HTTP-to-model execution observation on this prompt only. The
+claimed binary SHA in \texttt{native-glimmer-forward-2026-11-03.md} is truncated
+and differs from the actual local \texttt{generate\_glimmer} SHA-256
+\texttt{ada4357a801161d54efebf6196aab9aec326fc9d7a55e7553fd79fd22a85dfbe}.
+The tested server is a different binary. Neither a full-logit oracle nor a
+model-neutral second architecture was checked.
+\item \textbf{Checkpoint identity falsified:} \texttt{seat\_identity} in
+\texttt{core\_lm/src/glimmer\_model.rs} hashes config, a zero byte, and
+tokenizer, omitting shard bytes and the index. The committed L1 verifier
+constructs two different weight files with identical config/tokenizer and
+gets the same seat ID. Therefore using that ID as \texttt{checkpoint\_digest}
+cannot authorize exact tensor K/V reuse.
+\item \textbf{Request isolation unproven and source-violated:}
+\texttt{serve\_glimmer}'s \texttt{generate\_amst} and \texttt{forward\_json}
+start positions at zero on one long-lived model while neither calls the
+available \texttt{reset\_memory}. Old local geometric atoms can enter a
+subsequent request. A fresh-process control and repeated-request parity are
+required before claiming coherent recall.
+\item \textbf{Model boundary and K/V fail:} \texttt{GlimmerHttpSeat::forward}
+sends JSON and accepts empty/missing output fields; \texttt{tokenize} also
+uses JSON. This violates the frozen no-JSON model I/O rule. The Glimmer seat
+refuses \texttt{kv\_page}; the local geometric map stores bytes internally
+but does not expose an exact Surreal tensor K/V page. The pass through
+\texttt{mind.kv\_exact} has not occurred.
+\item \textbf{Graph identity defect fixed:} the former
+\texttt{attest\_graph} concatenated dimensions without shape boundaries, so
+\([1,2]\) and \([1],[2]\) had the same prehash byte stream. Commit
+\texttt{2a809fd} adds domain separation, counts, length prefixes, bounded
+admission, and a regression test. This is graph-admission code, not an
+execution engine; no operator topology or numerical kernel is certified.
+\end{enumerate}
+
+\section*{Verification record}
+\texttt{sh scripts/verify.sh}: same seat, different weight digests, PASS;
+script SHA-256 \texttt{d1221efe65a1a61220814d8ca359e90e98e5a8c57b5aee09e142d9e24d2e4e1e}.
+\texttt{cargo check --tests}, \texttt{cargo test --lib universal\_decoder}
+(6 passed), and \texttt{cargo clippy --lib -- -D warnings} passed in
+\texttt{globalmind-runtime}. The live \texttt{model\_seat\_mission} test
+passed (one prompt) against the already-running local server. No independent
+full-model reference, restart parity, or harness/MCP/model chain ran.
+
+\section*{Verdict}
+Partial component proof; the requested pass is \textbf{not certified}.
+The exact blockers and one-variable next experiments are in \texttt{TODO.md}.
+\end{document}
