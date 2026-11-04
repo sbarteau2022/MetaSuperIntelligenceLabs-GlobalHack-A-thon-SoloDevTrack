@@ -1100,6 +1100,42 @@ impl GlobalMindStore {
         })
     }
 
+    /// Hydrate one ranked inline atom only when workspace and content digest
+    /// match the retrieval witness. URI-only atoms need a separate source gate.
+    pub fn fetch_atom_content_exact(
+        &self,
+        workspace: &RecordId,
+        atom: &RecordId,
+        expected_digest: &Digest,
+    ) -> Result<Option<String>, String> {
+        let rows = self.one(&format!(
+            "SELECT content_text, content_digest FROM {} WHERE workspace = {} LIMIT 1;",
+            record("atom", atom),
+            record("workspace", workspace),
+        ))?;
+        let row = rows
+            .as_array()
+            .and_then(|rows| rows.first())
+            .ok_or_else(|| "ranked atom does not exist in expected workspace".to_string())?;
+        let stored_digest = row
+            .get("content_digest")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "ranked atom has no content digest".to_string())?;
+        if stored_digest != expected_digest.as_str() {
+            return Err("ranked atom content digest changed".into());
+        }
+        let Some(text) = row.get("content_text").and_then(Value::as_str) else {
+            return Ok(None);
+        };
+        if text.is_empty() || text.len() > 16 * 1024 {
+            return Err("ranked atom inline content is empty or over the 16 KiB bound".into());
+        }
+        if Digest::sha256(text.as_bytes()) != *expected_digest {
+            return Err("ranked atom inline content fails SHA-256 verification".into());
+        }
+        Ok(Some(text.to_string()))
+    }
+
     /// Persists the executable Whitehead 12-around-1 topology (`geometry_space`,
     /// `cognitive_hub`, 12 `cognitive_well` records, and 12 `hub_has_well`
     /// relation edges) in one atomic SurrealDB transaction.

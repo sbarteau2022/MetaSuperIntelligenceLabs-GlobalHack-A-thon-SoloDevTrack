@@ -59,6 +59,13 @@ The graph expresses ordering and dimensions. The engine owns memory, dispatch,
 cache invalidation, and receipts. Glimmer is a graph profile using these
 operators, not a special branch in the harness. TPPE addressing is a separate
 GlobalMind transform; replacing trained Q/K position behavior is an ablation.
+The exact attention operator consumes post-position-transform query/key and
+value tensors in causal token order. It applies the trained window before
+softmax, attends to every eligible key, uses finite checked f32 arithmetic,
+and returns the per-head vector before any model-owned gate or output
+projection. A real frozen-weight Qwen layer must match its independent
+reference attention calculation bit for bit before the kernel is considered
+eligible for a Glimmer adapter.
 
 ## Falsifiers and promotion gates
 

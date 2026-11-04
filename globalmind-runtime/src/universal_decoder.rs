@@ -128,6 +128,163 @@ pub fn attest_graph(nodes: &[GraphNode]) -> String {
     format!("{:x}", h.finalize())
 }
 
+/// A claimed execution-contract digest is 64 lowercase hex chars.
+fn is_lower_hex64(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// Admit a full operator graph, including its claimed digest.
+/// This closes the last gap in `admit_graph` alone: a graph whose
+/// `execution_contract_digest` field is forged, empty, or non-hex
+/// must fail here, even if every node individually admits.
+pub fn admit_operator_graph(graph: &OperatorGraph) -> Result<(), AdmissionError> {
+    admit_graph(&graph.nodes)?;
+    if !is_lower_hex64(&graph.execution_contract_digest) {
+        return Err(AdmissionError(
+            "execution-contract digest is not 64 lowercase hex".into(),
+        ));
+    }
+    if attest_graph(&graph.nodes) != graph.execution_contract_digest {
+        return Err(AdmissionError(
+            "execution-contract digest mismatch".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Build the Glimmer layer-sequence operator graph as an admission
+/// profile, not an execution schedule. One node per operator family
+/// per layer, with real shapes (hidden 6656, vocab 202048, batch 1)
+/// and real safetensors tensor bindings taken from
+/// model.safetensors.index.json. Ops with no dedicated weight in
+/// the index (qk_normalization, position_transform, residual,
+/// logit_cap) carry no bindings rather than an invented one.
+/// Layer attention type comes from the config `layer_types` entry:
+/// "sliding_attention" or "full_attention", 52 entries, in order.
+/// Returns Err on any other layer type or on a length other than 52.
+pub fn glimmer_layer_graph(layer_types: &[&str]) -> Result<OperatorGraph, AdmissionError> {
+    if layer_types.len() != 52 {
+        return Err(AdmissionError(
+            "glimmer layer_types length must be 52".into(),
+        ));
+    }
+    let hidden = vec![1u64, 6656];
+    let logits = vec![1u64, 202048];
+    let mut nodes: Vec<GraphNode> = Vec::new();
+    let node = |id: String, op: &str, input: Vec<Vec<u64>>, output: Vec<u64>, bindings: Vec<String>| GraphNode {
+        id,
+        op: op.to_string(),
+        input_shapes: input,
+        output_shape: output,
+        tensor_bindings: bindings,
+    };
+    nodes.push(node(
+        "embed".to_string(),
+        "embedding_lookup",
+        vec![vec![1]],
+        hidden.clone(),
+        vec!["model.embed_tokens.weight".to_string()],
+    ));
+    for (i, layer_type) in layer_types.iter().enumerate() {
+        let attn_id = match *layer_type {
+            "sliding_attention" => format!("layer{i}_attention_sliding"),
+            "full_attention" => format!("layer{i}_attention_full"),
+            other => {
+                return Err(AdmissionError(format!(
+                    "unknown glimmer layer type: {other}"
+                )))
+            }
+        };
+        let base = format!("model.layers.{i}");
+        nodes.push(node(
+            format!("layer{i}_input_norm"),
+            "normalization",
+            vec![hidden.clone()],
+            hidden.clone(),
+            vec![format!("{base}.input_layernorm.weight")],
+        ));
+        nodes.push(node(
+            format!("layer{i}_qk_norm"),
+            "qk_normalization",
+            vec![hidden.clone()],
+            hidden.clone(),
+            vec![],
+        ));
+        nodes.push(node(
+            format!("layer{i}_position"),
+            "position_transform",
+            vec![hidden.clone()],
+            hidden.clone(),
+            vec![],
+        ));
+        nodes.push(node(
+            attn_id,
+            "causal_attention",
+            vec![hidden.clone()],
+            hidden.clone(),
+            vec![
+                format!("{base}.self_attn.q_proj.weight"),
+                format!("{base}.self_attn.k_proj.weight"),
+                format!("{base}.self_attn.v_proj.weight"),
+                format!("{base}.self_attn.o_proj.weight"),
+            ],
+        ));
+        nodes.push(node(
+            format!("layer{i}_post_norm"),
+            "normalization",
+            vec![hidden.clone()],
+            hidden.clone(),
+            vec![format!("{base}.post_attn_norm.weight")],
+        ));
+        nodes.push(node(
+            format!("layer{i}_mlp"),
+            "gated_mlp",
+            vec![hidden.clone()],
+            hidden.clone(),
+            vec![
+                format!("{base}.mlp.gate_proj.weight"),
+                format!("{base}.mlp.up_proj.weight"),
+                format!("{base}.mlp.down_proj.weight"),
+            ],
+        ));
+        nodes.push(node(
+            format!("layer{i}_residual"),
+            "residual",
+            vec![hidden.clone()],
+            hidden.clone(),
+            vec![],
+        ));
+    }
+    nodes.push(node(
+        "final_norm".to_string(),
+        "normalization",
+        vec![hidden.clone()],
+        hidden.clone(),
+        vec!["model.norm.weight".to_string()],
+    ));
+    nodes.push(node(
+        "lm_head".to_string(),
+        "final_projection",
+        vec![hidden.clone()],
+        logits.clone(),
+        vec!["lm_head.weight".to_string()],
+    ));
+    nodes.push(node(
+        "logit_cap".to_string(),
+        "logit_cap",
+        vec![logits.clone()],
+        logits,
+        vec![],
+    ));
+    let digest = attest_graph(&nodes);
+    let graph = OperatorGraph {
+        nodes,
+        execution_contract_digest: digest,
+    };
+    admit_operator_graph(&graph)?;
+    Ok(graph)
+}
+
 /// Ingest and validate frozen Glimmer config. Returns the parsed JSON only
 /// after all architecture fields match the frozen contract. Does NOT allocate
 /// weights or execute.
@@ -236,6 +393,64 @@ mod tests {
         let mut partitioned = base.clone();
         partitioned.input_shapes = vec![vec![1], vec![2]];
         assert_ne!(attest_graph(&[base]), attest_graph(&[partitioned]));
+    }
+
+    fn glimmer_layer_types() -> Vec<&'static str> {
+        // Config pattern, verified against ~/models/Muse-Glimmer-q4km-gs128-MLX/config.json:
+        // sliding, sliding, sliding, full, repeating, 52 layers total,
+        // 39 sliding and 13 full.
+        let mut v = Vec::new();
+        for i in 0..52 {
+            if (i + 1) % 4 == 0 {
+                v.push("full_attention");
+            } else {
+                v.push("sliding_attention");
+            }
+        }
+        v
+    }
+
+    #[test]
+    fn operator_graph_digest_verified_and_forged_rejected() {
+        let graph = glimmer_layer_graph(&glimmer_layer_types()).expect("glimmer graph admits");
+        assert_eq!(graph.nodes.len(), 368);
+        assert!(admit_operator_graph(&graph).is_ok());
+        let mut forged = graph.clone();
+        forged.execution_contract_digest = "0".repeat(64);
+        assert!(admit_operator_graph(&forged).is_err());
+        let mut bad_hex = graph.clone();
+        bad_hex.execution_contract_digest = "not-a-digest".to_string();
+        assert!(admit_operator_graph(&bad_hex).is_err());
+        let mut empty_digest = graph.clone();
+        empty_digest.execution_contract_digest = String::new();
+        assert!(admit_operator_graph(&empty_digest).is_err());
+    }
+
+    #[test]
+    fn glimmer_graph_layer_types_and_digest_sensitivity() {
+        let graph = glimmer_layer_graph(&glimmer_layer_types()).expect("glimmer graph admits");
+        let sliding = graph
+            .nodes
+            .iter()
+            .filter(|n| n.id.contains("attention_sliding"))
+            .count();
+        let full = graph
+            .nodes
+            .iter()
+            .filter(|n| n.id.contains("attention_full"))
+            .count();
+        assert_eq!(sliding, 39);
+        assert_eq!(full, 13);
+        assert_eq!(graph.nodes.first().unwrap().id, "embed");
+        assert_eq!(graph.nodes.last().unwrap().id, "logit_cap");
+        let mut flipped = glimmer_layer_types();
+        flipped[0] = "full_attention";
+        let other = glimmer_layer_graph(&flipped).expect("flipped graph admits");
+        assert_ne!(
+            graph.execution_contract_digest, other.execution_contract_digest
+        );
+        assert!(glimmer_layer_graph(&["sliding_attention"]).is_err());
+        assert!(glimmer_layer_graph(&vec!["unknown_type"; 52]).is_err());
     }
 
     #[test]

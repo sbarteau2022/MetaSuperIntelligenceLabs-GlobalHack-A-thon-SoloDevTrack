@@ -50,6 +50,43 @@ tags: ["globalmind", "rust", "surrealdb", "distillation", "trajectories"]
 
 # Executive Summary
 
+2026-11-04 recall content gate: `mind.recall` and `mind.recall_scoped` now
+hydrate inline text only for ranked atoms in the requested workspace, verify
+its SHA-256 against the ranked content digest, and cap it at 16 KiB. URI-only
+atoms remain metadata-only. MCP JSON is control-plane output; the harness
+must transduce verified content to native model token IDs before the binary
+forward path. This change does not itself prove coherent model use.
+
+2026-11-04 exact Glimmer component gate: the native executor's
+`AttentionBackend` seam ran all 52 layers with full ordered K/V and obtained
+bit-identical next-token logits from a copied in-memory prefix cache. Receipt:
+`../results/glimmer-forward/exact-kv-in-memory-2026-11-04.md`. This does not
+include SurrealKV restart, atom consumption, or a governed mission. The
+candidate dense `model_loader.rs` refuses the frozen mixed-bit checkpoint
+before loading shards; its `glimmer_coherent_mind` test refuses unimplemented
+K/V persistence and hydration. Those candidates are not promotion evidence.
+The follow-up isolated full pass now persists and restores all 104 Glimmer
+K/V head pages across a SurrealKV process restart, attests a real MCP child,
+recalls the linked TPPE-addressed prefix atom, and obtains bit-identical
+52-layer continuation logits. Changed model/page digests and a missing head
+miss; perturbed K/V changes logits. Receipt:
+`../results/glimmer-forward/mcp-surreal-kv-full-pass-2026-11-04.md`. The atom
+is a prefix witness, not admitted teacher-neutral knowledge, and `core_lm/`
+is still untracked reference source. The source-grounded mind-use and governed
+output-binding gates remain open.
+An independent MLX checkpoint oracle on the same token tape chose the same
+next token but did not match the Rust executor's full logits. MLX batch and
+sequential execution also differed numerically. See
+`../results/glimmer-forward/independent-mlx-oracle-2026-11-04.md`; no full-model
+reference-parity claim is admitted from the restart gate.
+The reproducible offline oracle is `tools/offline_glimmer_mlx_oracle.py`.
+It loads frozen checkpoint shards for validation only; no Python is imported
+at the live model, harness, or MCP boundary.
+An opt-in Rust embedding precision ablation matched the frozen MLX BOS
+embedding exactly but slightly worsened full-logit error, so it remains
+disabled; the measured next divergence is layer-0 normalization. See the
+same oracle receipt for the stage measurements.
+
 Glimmer native forward setup (2026-11-03):
 `src/bin/glimmer_forward_preflight.rs` rehashes the frozen Glimmer roster,
 checks its 52-layer architecture and pinned tokenizer/config, and refuses an
@@ -161,6 +198,14 @@ quarantined `hypermind/core` database unless an explicit override is present.
 The model-agnostic atom admission gap and its proposed correction are specified
 in `MODEL-AGNOSTIC-ATOM-DESIGN.md`. Current hash-derived, run-scoped Layer-3 atoms
 are trace fixtures and do not yet carry independently verified shared knowledge.
+`src/shared_knowledge.rs` now provides the first native candidate contract:
+typed proposition/procedure/constraint/capability/observation fields, bounded
+binary field framing, versioned stable content identity, and separate model/run
+origin identity. Its tests cover identity stability and malformed-field refusal
+as code contracts only. It does not write to SurrealDB or certify any real
+cross-model fact; the existing trace atoms remain model-bound. Do not promote
+this candidate to `atom` until the independent evidence, immutable multi-origin
+transaction, and twin-model replay gates in the design pass.
 
 `GlobalMindStore::fetch_tensor_payload_exact` now performs a read-only lookup
 over the full model/request/prefix/TPPE/session/page identity before exposing

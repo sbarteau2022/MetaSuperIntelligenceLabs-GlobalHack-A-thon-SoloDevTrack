@@ -1,6 +1,8 @@
 # Model-agnostic atom admission — design gate
 
-Status: proposed correction, not an implementation or certification. Applies to the fresh GlobalMind runtime in this repository. Keep the existing SurrealDB `hypermind/core` quarantined.
+Status: first candidate identity contract implemented; admission and certification open. Applies to the fresh GlobalMind runtime in this repository. Keep the existing SurrealDB `hypermind/core` quarantined.
+
+2026-11-04 implementation slice: `src/shared_knowledge.rs` encodes a typed candidate with version, kind, and length-delimited semantic fields. It returns a stable content key independent of model/run origin. The origin struct stays separate and requires a distinct task and judge receipt digest. This check cannot prove judge independence. Exact byte equality is the only coalescence rule implemented; no semantic equivalence inference, address projection, database transaction, or real model reingest exists yet.
 
 ## Failure in the current slice
 

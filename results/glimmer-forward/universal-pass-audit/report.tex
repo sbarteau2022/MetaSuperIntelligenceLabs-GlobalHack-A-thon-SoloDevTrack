@@ -112,4 +112,75 @@ remain outside the exact-K/V certification claim.
 \section*{Verdict}
 Partial component proof; the requested pass is \textbf{not certified}.
 The exact blockers and one-variable next experiments are in \texttt{TODO.md}.
+
+\section*{2026-11-04 continuation: exact K/V passed; knowledge admission failed}
+An isolated hardware gate now streams all frozen Glimmer shard/config/tokenizer
+digests, runs all 52 native layers, persists 104 exact K/V head pages in a
+disposable SurrealKV database, restarts that server, attests a real MCP child,
+recalls a linked prefix witness at a TPPE-derived H3/T2 address, and restores
+every layer/head. The resumed next-token logits matched the uninterrupted
+run bit for bit. Changed model/page digests and a missing head missed; changing
+a K/V value changed the logits. The receipt is
+\texttt{results/glimmer-forward/mcp-surreal-kv-full-pass-2026-11-04.md}.
+This proves exact model-bound tensor continuation through a real MCP read seam.
+The prefix witness is not a distilled knowledge atom, and the test does not
+show that a recalled proposition changes the model's answer. The reference
+native executor remains untracked and cannot be silently promoted as the
+competition runtime.
+
+The current distillation lane fails the model-agnostic/actionable atom bar.
+\texttt{extract::atom\_key} hashes trace kind, dtype, layer, head, shape,
+and payload digest. This preimage depends on the teacher's tensor topology and
+bytes even though it omits the teacher name. Two models expressing one
+proposition with different head/layer layouts therefore do not share a
+canonical content preimage; a cryptographic hash cannot repair that mismatch.
+The map address is then derived from this digest. The replay writer stores
+\texttt{content\_text = "replayed atom <digest>"}, not a proposition or
+actionable step. These observations directly contradict the cross-model
+coalescence and learned-symbol requirements in
+\texttt{DistillationProtocol/PROTOCOL.md} section 8. The admitted Qwen
+Layer-3 artifact is a model-bound trace witness until reingested through a
+model-independent claim/trajectory representation with immutable origins and
+cross-model behavioral evidence. No current artifact proves that admission.
+
+The governing backend also disappeared from the current tree in commit
+\texttt{ba8273e6}, which rebuilt the Ares site. The prior backend exists in
+Git history at \texttt{6d9a7255}, but the reported dirty Glimmer seat was
+not committed there. The earlier HTTP mission cannot serve as a current live
+harness gate. These are source-state observations, not a claim that the work
+was never performed.
+\section*{Independent oracle and Rust numerical assessment}
+An offline MLX 0.32.4 oracle loaded the frozen Glimmer checkpoint's custom
+architecture and mixed-bit quantization map. On the pinned six-token tape,
+the MLX and Rust exact-K/V forward chose the same argmax, but their 202048
+final logits had maximum absolute difference
+\texttt{0.13231056928634644}; only two f32 values matched exactly. MLX
+batch and sequential modes also differed (maximum
+\texttt{0.1807829551398754}), so a tolerance cannot be inferred from exact
+f32 equality. No tolerance was preregistered; reference parity remains open.
+The numerical receipt is
+\texttt{results/glimmer-forward/independent-mlx-oracle-2026-11-04.md}.
+
+The first observed divergence precedes attention. MLX keeps the
+post-normalization embedding in bfloat16; Rust's implementation keeps f32.
+For the frozen BOS embedding, offline bfloat16 rounding of Rust's result
+increased exact component matches from 219 to 6339 of 6656, but residual
+differences remained. A further raw-row comparison replayed the MLX
+embedding's bfloat16 rounding before and after its f32 row out-scale; this
+matched all 6656 raw BOS components exactly. Thus the first measured
+divergence is a precision-contract mismatch in the embedding, not an
+attention-stage failure. This does not prove that all later differences have
+one cause. The model-bound K/V restart result remains
+valid as an internal Rust invariant, not checkpoint-reference correctness.
+The gated Rust embedding ablation matched the real MLX BOS embedding
+componentwise, but worsened the final-logit maximum absolute difference
+from 0.13231056928634644 to 0.13553541898727417. It therefore remains
+benched. The next measured mismatch is already in layer-0 pre-attention
+normalization; tuning the attention kernel before resolving the checkpoint
+numerical profile would not address that divergence.
+The scalar attention loop and per-call CPU worker spawning are plausible Rust
+performance targets only after fixed-precision stage parity and held-out
+task output checks. The current source's default HTTP seat still hashes
+config and tokenizer but not shard bytes into its identity, so it cannot
+authorize persistent K/V reuse across a changed weight file.
 \end{document}

@@ -565,6 +565,16 @@ impl Qwen36Layer3Weights {
                     attn_out[d] += weight * v_vec[d];
                 }
             }
+            let native_exact = globalmind_runtime::exact_attention::attend_one_head_f32(
+                q_vec, k_cache, v_cache, HEAD_DIM, 0, scale,
+            )?;
+            if !native_exact
+                .iter()
+                .zip(attn_out)
+                .all(|(native, reference)| native.to_bits() == reference.to_bits())
+            {
+                return Err("native exact attention diverged from real Qwen reference".into());
+            }
 
             let gate_vec = &gate_heads[q_h];
             let out_slice = &mut gated_concat[q_h * HEAD_DIM..(q_h + 1) * HEAD_DIM];

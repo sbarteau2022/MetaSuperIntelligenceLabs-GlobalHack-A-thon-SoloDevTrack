@@ -5,6 +5,7 @@
 //! legacy text-ingest MCP implementation.
 
 pub mod capability;
+pub mod exact_attention;
 pub mod extract;
 mod holding;
 mod holding_session;
@@ -15,12 +16,15 @@ mod kv_identity;
 mod manifest;
 mod model;
 pub mod replay;
+pub mod shared_knowledge;
 pub mod retrieval;
 mod store;
 mod tppe;
 pub mod trace;
 pub mod universal_decoder;
 pub mod whitehead;
+pub mod position_transform;
+pub mod model_loader;
 
 pub use holding::{
     BranchUpdate, HoldingController, HoldingDecision, HoldingPolicy, HoldingSnapshot,
@@ -54,4 +58,19 @@ pub use whitehead::{
     WhiteheadTopology, canonicalize, gamma12_generators, hyperbolic_distance, joint_well_cost,
     kuramoto_psi, lorentz_inner, lorentz_to_poincare, lorentz_to_uhs, poincare_to_lorentz,
     torus_distance_sq, uhs_to_lorentz, validate_lorentz_point, validate_t2_phase,
+};
+pub use position_transform::{
+    LayerAttentionType, RopeConfig, RopeFrequencies, NoPeTransform, PositionTransform,
+    GlimmerLayerConfig, build_glimmer_layer_configs, apply_position_transform_layer,
+    apply_position_transform_layer_windowed,
+};
+pub use model_loader::{
+    GLIMMER_HIDDEN_SIZE, GLIMMER_NUM_LAYERS, GLIMMER_NUM_Q_HEADS, GLIMMER_NUM_KV_HEADS,
+    GLIMMER_HEAD_DIM, GLIMMER_VOCAB_SIZE, GLIMMER_INTERMEDIATE_SIZE,
+    GLIMMER_QUANT_GROUP_SIZE, GLIMMER_RMS_NORM_EPS, GLIMMER_ROPE_THETA,
+    GLIMMER_PARTIAL_ROTARY_FACTOR, GLIMMER_SLIDING_WINDOW,
+    AffineQuantizedMatrix, DequantizedMatrix, RmsNorm, EmbeddingWeight, OutputProjection,
+    GlimmerModel, GlimmerLayerWeights, load_glimmer_model, dequantize_matrix, project_dequantized,
+    rms_norm,
+    ForwardOutput, FullKVCache, LayerKVCache,
 };

@@ -8,12 +8,14 @@ license = "UNLICENSED"
 [dependencies]
 serde_json = "1"
 sha2 = "0.10"
+safetensors = "0.5"
 
 [features]
 live-forward-model = []
 
 [dev-dependencies]
 rgah = { path = "../research-grade-harness" }
+core_lm = { path = "../core_lm" }
 
 [lib]
 path = "src/lib.rs"

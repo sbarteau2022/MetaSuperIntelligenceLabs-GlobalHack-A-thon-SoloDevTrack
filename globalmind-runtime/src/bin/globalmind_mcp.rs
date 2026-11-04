@@ -5,7 +5,9 @@
 //!   SurrealDB reachability at this instant, and contract status. Mode is "On"
 //!   only when the store connects and its contract verifies; otherwise "Unavailable".
 //! - `mind.recall`: typed hyperbolic recall bundle via `retrieval::retrieve`.
-//!   Read-only. Requires GLOBALMIND_SURREAL_USER/PASS; hypermind/core is
+//!   Ranked inline atom text is hydrated read-only and verified against its
+//!   content digest; URI-only atoms remain metadata-only. MCP JSON is control
+//!   transport, never model input. Requires GLOBALMIND_SURREAL_USER/PASS; hypermind/core is
 //!   quarantined unless GLOBALMIND_ALLOW_QUARANTINED_CORE=1.
 //! - `mind.recall_scoped`: read-only persisted cognitive-well projection.
 //!   The governor must authorize the well set; this child checks membership
@@ -195,6 +197,20 @@ fn recall(args: &Value) -> Result<Value, String> {
         &provenance,
         k,
     )?;
+    let store = GlobalMindStore::connect(StoreConfig::from_env())?;
+    let members = bundle.members.iter().map(|m| {
+        let content_text = store.fetch_atom_content_exact(&bundle.workspace, &m.atom, &m.content_digest)?;
+        Ok::<Value, String>(json!({
+            "atom": m.atom.as_str(),
+            "address": m.address.as_str(),
+            "content_digest": m.content_digest.as_str(),
+            "content_text": content_text,
+            "salience": m.salience,
+            "domain": m.domain,
+            "score": m.score,
+            "rank": m.rank,
+        }))
+    }).collect::<Result<Vec<_>, _>>()?;
     Ok(json!({
         "workspace": bundle.workspace.as_str(),
         "query_digest": bundle.query_digest.as_str(),
@@ -202,15 +218,7 @@ fn recall(args: &Value) -> Result<Value, String> {
         "metric": bundle.metric.as_str(),
         "candidates_scanned": bundle.candidates_scanned,
         "ranking_digest": bundle.ranking_digest.as_str(),
-        "members": bundle.members.iter().map(|m| json!({
-            "atom": m.atom.as_str(),
-            "address": m.address.as_str(),
-            "content_digest": m.content_digest.as_str(),
-            "salience": m.salience,
-            "domain": m.domain,
-            "score": m.score,
-            "rank": m.rank,
-        })).collect::<Vec<_>>(),
+        "members": members,
     }))
 }
 
@@ -244,6 +252,16 @@ fn recall_scoped(args: &Value) -> Result<Value, String> {
         &provenance,
         k,
     )?;
+    let store = GlobalMindStore::connect(StoreConfig::from_env())?;
+    let members = scoped.bundle.members.iter().map(|m| {
+        let content_text = store.fetch_atom_content_exact(
+            &scoped.bundle.workspace, &m.atom, &m.content_digest)?;
+        Ok::<Value, String>(json!({
+            "atom": m.atom.as_str(), "address": m.address.as_str(),
+            "content_digest": m.content_digest.as_str(), "content_text": content_text,
+            "score": m.score, "rank": m.rank,
+        }))
+    }).collect::<Result<Vec<_>, _>>()?;
     Ok(json!({
         "workspace": scoped.bundle.workspace.as_str(),
         "well_ids": scoped.well_ids.iter().map(RecordId::as_str).collect::<Vec<_>>(),
@@ -251,10 +269,7 @@ fn recall_scoped(args: &Value) -> Result<Value, String> {
         "query_digest": scoped.bundle.query_digest.as_str(),
         "ranking_digest": scoped.bundle.ranking_digest.as_str(),
         "candidates_scanned": scoped.bundle.candidates_scanned,
-        "members": scoped.bundle.members.iter().map(|m| json!({
-            "atom": m.atom.as_str(), "address": m.address.as_str(),
-            "content_digest": m.content_digest.as_str(), "score": m.score, "rank": m.rank,
-        })).collect::<Vec<_>>(),
+        "members": members,
         "edges": scoped.edges.iter().map(|e| json!({
             "id": e.id.as_str(), "from": e.from.as_str(), "to": e.to.as_str(), "kind": e.kind,
         })).collect::<Vec<_>>(),

@@ -3,7 +3,7 @@ GLOBALMIND LANE B — REAL TENSOR K/V QUALIFICATION REPORT
 status: PASS (all 7 required gates passed)
 harness_bridge_forward: PASS (real Layer-3; both exact K/V heads consumed; hidden and 248320 logits bit-exact)
 split_page_exact_span: PASS (real head-0 K/V split across 2 persisted pages, reassembled after Surreal restart in token-major and head-dim-major layouts; complete Layer-3 with both KV heads injected hidden/logits bit-exact; gap, overlap, missing-head, mixed-model, mixed-layout negatives rejected; key_sha256=7ae9089c17606f62bdadfd9bad8adb624a1b27326a9bdf077d4e710f019d5dec)
-mcp_child_read: PASS (live child attested same disposable Surreal authority, recalled the prefix atom, fetched real exact K/V digest, and rejected oversized/fractional tensor identity fields before typed bridge injection; authority_receipt=ab7f18e10931e9b1b42e8a058d01e9b1b3acf4996a737440edcd561e5b56ecf0 recall_receipt=f6f1b2ff7b961409efe5ca96a4df0f24aef4e2199c1891eb5d2c6eddacb5d3f1 kv_receipt=167e21e44e49252fbe98fe02c684bd036c9945fa4d91493fd0fadbe5829d7521)
+mcp_child_read: PASS (live child attested same disposable Surreal authority, recalled the prefix atom, fetched real exact K/V digest, and rejected oversized/fractional tensor identity fields before typed bridge injection; authority_receipt=f92de74dfb1d53db3f4c56c51d7e2215c965148058499a4698e59c5d4b5d6dd8 recall_receipt=f6f1b2ff7b961409efe5ca96a4df0f24aef4e2199c1891eb5d2c6eddacb5d3f1 kv_receipt=167e21e44e49252fbe98fe02c684bd036c9945fa4d91493fd0fadbe5829d7521)
 canonical_workspace: /Users/stewartbarteau/Desktop/GitHub/MetaSuperIntelligenceLabs-GlobalHack-A-thon-SoloDevTrack
 model_directory: /Users/stewartbarteau/models/fused/Qwen3.6-MoE-Combined
 model_id: stamsam/Qwen3.6-35B-A3B-Claude-4.7-Opus-Reasoning-Distilled-MLX-oQ4-MTP
@@ -23,23 +23,23 @@ phase_state_digest: d3b6b384e99dac864504842b8b1e9dc90c29ec215bb71c702aa9cd1edd70
 
 ISOLATED SURREALDB 3.3.5 INSTANCE
 ---------------------------------
-endpoint: http://127.0.0.1:60135
+endpoint: http://127.0.0.1:60645
 namespace: globalmind_tensor_kv_iso
 database: tensor_kv_qual_001
 quarantined_core_touched: false (port 8000 untouched)
-pid_before_restart: 56982
-pid_after_restart: 56990
+pid_before_restart: 57821
+pid_after_restart: 57829
 
 GATE RECEIPTS
 -------------
-Gate 1 (Create TensorSession): PASS | session_id=kv_session_qwen36_layer3_qual_001 | latency_ms=16.623
-Gate 2 (Write TensorPage head=0): PASS | page_id=kv_page_qwen36_l3_h0_0_4_r1 | shape=[4, 256] | dtype=f32 | layout=token_major | key_bytes=4096 | value_bytes=4096 | key_sha256=7ae9089c17606f62bdadfd9bad8adb624a1b27326a9bdf077d4e710f019d5dec | value_sha256=4afd2ff7fa493819985b4bb2700b8af062d7a320b8895018f401d70524409ff0 | latency_ms=27.946
-Gate 2 (Write TensorPage head=1): PASS | page_id=kv_page_qwen36_l3_h1_0_4_r1 | shape=[4, 256] | dtype=f32 | layout=token_major | key_bytes=4096 | value_bytes=4096 | key_sha256=ae535b115dcbc4a35b9467013c6ab5d9554a28ae2aaee92e7df9b002980c04d7 | value_sha256=521d82d8a49a30ad5f6b29019ff8cb3e1deac00eb87d9b155eeb9d6248dd196c | latency_ms=23.458
-Gate 3 (Restart SurrealDB & Reverify Contract): PASS | pid_before=56982 -> pid_after=56990 | restart_latency_ms=600.606
-Gate 4 (Fetch & Byte-for-Byte Digest Equality head=0): PASS | key_sha256_match=true | value_sha256_match=true | byte_equal=true | fetch_latency_ms=10.993
-Gate 4 (Fetch & Byte-for-Byte Digest Equality head=1): PASS | key_sha256_match=true | value_sha256_match=true | byte_equal=true | fetch_latency_ms=10.426
-Gate 5 (Inject Fetched KV & Prove Decode/Logit Parity): PASS | layer=3 | vocab_size=248320 | max_hidden_abs_diff=0.00000000 | max_logit_abs_diff=0.00000000 | reference_logits_sha256=0d8b0dc0ba661cf2fee843ecfcb297738958b504bc9b31e69121686b5efaa7bc | injected_logits_sha256=0d8b0dc0ba661cf2fee843ecfcb297738958b504bc9b31e69121686b5efaa7bc | perturbed_control_logits_sha256=23a4e401142d972afaa243eaeff43cb229fd73595ff6a4e52342a0622e6a1e80 | top1_token_id=96156 | top1_logit=13.903345 | inject_decode_latency_ms=279.063
-Gate 6 (Single-Field Identity Mutations & Write/Readonly Rejections): PASS | lookup_identity_misses=20/20 | write_and_readonly_rejections=13/13 | latency_ms=620.826
+Gate 1 (Create TensorSession): PASS | session_id=kv_session_qwen36_layer3_qual_001 | latency_ms=20.569
+Gate 2 (Write TensorPage head=0): PASS | page_id=kv_page_qwen36_l3_h0_0_4_r1 | shape=[4, 256] | dtype=f32 | layout=token_major | key_bytes=4096 | value_bytes=4096 | key_sha256=7ae9089c17606f62bdadfd9bad8adb624a1b27326a9bdf077d4e710f019d5dec | value_sha256=4afd2ff7fa493819985b4bb2700b8af062d7a320b8895018f401d70524409ff0 | latency_ms=26.922
+Gate 2 (Write TensorPage head=1): PASS | page_id=kv_page_qwen36_l3_h1_0_4_r1 | shape=[4, 256] | dtype=f32 | layout=token_major | key_bytes=4096 | value_bytes=4096 | key_sha256=ae535b115dcbc4a35b9467013c6ab5d9554a28ae2aaee92e7df9b002980c04d7 | value_sha256=521d82d8a49a30ad5f6b29019ff8cb3e1deac00eb87d9b155eeb9d6248dd196c | latency_ms=23.901
+Gate 3 (Restart SurrealDB & Reverify Contract): PASS | pid_before=57821 -> pid_after=57829 | restart_latency_ms=643.060
+Gate 4 (Fetch & Byte-for-Byte Digest Equality head=0): PASS | key_sha256_match=true | value_sha256_match=true | byte_equal=true | fetch_latency_ms=14.149
+Gate 4 (Fetch & Byte-for-Byte Digest Equality head=1): PASS | key_sha256_match=true | value_sha256_match=true | byte_equal=true | fetch_latency_ms=11.143
+Gate 5 (Inject Fetched KV & Prove Decode/Logit Parity): PASS | layer=3 | vocab_size=248320 | max_hidden_abs_diff=0.00000000 | max_logit_abs_diff=0.00000000 | reference_logits_sha256=0d8b0dc0ba661cf2fee843ecfcb297738958b504bc9b31e69121686b5efaa7bc | injected_logits_sha256=0d8b0dc0ba661cf2fee843ecfcb297738958b504bc9b31e69121686b5efaa7bc | perturbed_control_logits_sha256=23a4e401142d972afaa243eaeff43cb229fd73595ff6a4e52342a0622e6a1e80 | top1_token_id=96156 | top1_logit=13.903345 | inject_decode_latency_ms=275.612
+Gate 6 (Single-Field Identity Mutations & Write/Readonly Rejections): PASS | lookup_identity_misses=20/20 | write_and_readonly_rejections=13/13 | latency_ms=672.590
   - lookup_mutation[workspace]: MISS (cache miss: no matching active TensorSession)
   - lookup_mutation[model_id]: MISS (cache miss: no matching active TensorSession)
   - lookup_mutation[model_revision]: MISS (cache miss: no matching active TensorSession)
@@ -76,20 +76,20 @@ Gate 6 (Single-Field Identity Mutations & Write/Readonly Rejections): PASS | loo
 
 GATE 7 — REAL HARDWARE LATENCY & MEMORY MEASUREMENTS
 ----------------------------------------------------
-manifest_rehash_verify_ms: 32892.238
-model_weights_binary_load_ms: 41.348
-uninterrupted_forward_pass_ms: 312.386
-surreal_isolated_boot_and_schema_ms: 6183.663
-session_create_ms: 16.623
-page_write_head0_ms: 27.946
-page_write_head1_ms: 23.458
-surreal_restart_ms: 600.606
-page_fetch_head0_ms: 10.993
-page_fetch_head1_ms: 10.426
-injected_decode_forward_pass_ms: 279.063
-gate6_identity_and_immutability_checks_ms: 620.826
-total_qualification_suite_ms: 43430.909
-test_process_rss_after_model_load_bytes: 590938112
-test_process_rss_final_bytes: 601178112
-surreal_process_rss_before_restart_bytes: 109985792
-surreal_process_rss_after_restart_bytes: 81035264
+manifest_rehash_verify_ms: 33055.300
+model_weights_binary_load_ms: 43.260
+uninterrupted_forward_pass_ms: 312.098
+surreal_isolated_boot_and_schema_ms: 6238.003
+session_create_ms: 20.569
+page_write_head0_ms: 26.922
+page_write_head1_ms: 23.901
+surreal_restart_ms: 643.060
+page_fetch_head0_ms: 14.149
+page_fetch_head1_ms: 11.143
+injected_decode_forward_pass_ms: 275.612
+gate6_identity_and_immutability_checks_ms: 672.590
+total_qualification_suite_ms: 43507.346
+test_process_rss_after_model_load_bytes: 590856192
+test_process_rss_final_bytes: 601210880
+surreal_process_rss_before_restart_bytes: 112214016
+surreal_process_rss_after_restart_bytes: 106004480
