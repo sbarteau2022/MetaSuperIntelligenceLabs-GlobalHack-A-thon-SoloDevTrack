@@ -36,6 +36,12 @@ can proceed once that executable is pinned, without pretending TPPE Q/K is
 admitted. Do not change the manifest's identity
 to make a gate green. Keep the live `hypermind/core` quarantined and write
 only to disposable SurrealKV for the smoke.
+The Qwen Layer-3 baseline should attest a live `globalmind-mcp` child against
+the same disposable Surreal authority, obtain the prefix atom through the
+child's `mind.recall`, then inject only complete exact K/V fetched through the
+typed bridge. A declared target alone is not child participation. This proves
+the MCP read seam and model use in one gate, while remaining a partial-layer
+baseline rather than a full Glimmer pass.
 
 Promotion gates: native full-model logits vs an independent frozen reference
 on a held-out tape, exact-model K/V round-trip and identity-mismatch misses,

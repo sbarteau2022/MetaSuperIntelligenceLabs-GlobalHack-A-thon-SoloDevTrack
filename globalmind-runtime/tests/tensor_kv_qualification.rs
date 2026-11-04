@@ -1928,9 +1928,12 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
     );
 
     #[cfg(feature = "live-forward-model")]
+    let live_mcp_receipts: (String, String);
+    #[cfg(feature = "live-forward-model")]
     {
         use globalmind_runtime::retrieval::{RetrievalConfig, RetrievalMetric};
         use rgah::globalmind_bridge::{GlobalMindBridge, McpSurrealTarget};
+        use rgah::mcp_client::McpChild;
 
         let retrieval = RetrievalConfig {
             endpoint: format!("http://127.0.0.1:{}", surreal.port),
@@ -1948,6 +1951,41 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
             namespace: retrieval.namespace.clone(),
             database: retrieval.database.clone(),
         };
+        let mcp_binary = manifest_dir.join("target/debug/globalmind-mcp");
+        if !mcp_binary.is_file() {
+            return Err("build the native globalmind-mcp binary before the live gate".into());
+        }
+        let mcp_root = surreal.db_dir.join("mcp-child-root");
+        fs::create_dir_all(&mcp_root).map_err(|e| format!("create MCP root: {e}"))?;
+        let mut mcp_child = McpChild::spawn_with_env(
+            mcp_binary.to_str().ok_or("non-UTF-8 MCP binary path")?,
+            mcp_root.to_str().ok_or("non-UTF-8 MCP root path")?,
+            &[
+                ("GLOBALMIND_SURREAL_URL", retrieval.endpoint.as_str()),
+                ("GLOBALMIND_SURREAL_NS", retrieval.namespace.as_str()),
+                ("GLOBALMIND_SURREAL_DB", retrieval.database.as_str()),
+                ("GLOBALMIND_SURREAL_USER", retrieval.username.as_str()),
+                ("GLOBALMIND_SURREAL_PASS", retrieval.password.as_str()),
+            ],
+        )?;
+        let child_authority_receipt = mcp_target.verify_live_child(&retrieval, &mut mcp_child)?;
+        let recall_args = rgah::json::parse(
+            r#"{"workspace":"globalmind","query_h3":[1,0,0,0],"query_t2":[0,0],"query_provenance":"qwen-layer3-real-forward","k":1}"#,
+        )
+        .map_err(|e| format!("MCP recall args: {e}"))?;
+        let child_recall = mcp_child.call("mind.recall", &recall_args)?;
+        live_mcp_receipts = (
+            child_authority_receipt.clone(),
+            child_recall.receipt_sha256.clone(),
+        );
+        let child_members = child_recall
+            .inner
+            .get("members")
+            .ok_or("MCP child recall returned no members")?;
+        if !matches!(child_members, rgah::json::Json::Arr(members) if members.iter().any(|member| member.get("atom").and_then(rgah::json::Json::as_str) == Some("kv_qual_prefix")))
+        {
+            return Err("MCP child did not recall the real prefix atom".into());
+        }
         let bridge = GlobalMindBridge::connect_at_mcp_boundary(retrieval, &mcp_target)?;
         let mut bridge_payloads = Vec::with_capacity(KV_HEADS);
         for head in 0..KV_HEADS {
@@ -2011,8 +2049,10 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
             return Err("bridge admitted a changed model digest".into());
         }
         eprintln!(
-            "REAL HARNESS BRIDGE FORWARD PASS: Layer-3 hidden and 248320 logits bit-exact; both K/V heads consumed"
+            "REAL HARNESS BRIDGE FORWARD PASS: live MCP child authority and recall receipts {child_authority_receipt}/{}; Layer-3 hidden and 248320 logits bit-exact; both K/V heads consumed",
+            child_recall.receipt_sha256
         );
+        mcp_child.close();
     }
 
     let t_gate6 = Instant::now();
@@ -2234,7 +2274,7 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
     writeln!(&mut report, "harness_bridge_forward: PASS (real Layer-3; both exact K/V heads consumed; hidden and 248320 logits bit-exact)").unwrap();
     writeln!(&mut report, "split_page_exact_span: PASS (real head-0 K/V split across 2 persisted pages, reassembled after Surreal restart in token-major and head-dim-major layouts; complete Layer-3 with both KV heads injected hidden/logits bit-exact; gap, overlap, missing-head, mixed-model, mixed-layout negatives rejected; key_sha256={})", Digest::sha256(&assembled_pair[0].key)).unwrap();
     #[cfg(feature = "live-forward-model")]
-    writeln!(&mut report, "mcp_authority_preflight: PASS (declared MCP target equals isolated GlobalMind bridge target; MCP child transport not exercised)").unwrap();
+    writeln!(&mut report, "mcp_child_read: PASS (live child attested same disposable Surreal authority and recalled the prefix atom before exact K/V injection; authority_receipt={} recall_receipt={})", live_mcp_receipts.0, live_mcp_receipts.1).unwrap();
     writeln!(&mut report, "canonical_workspace: {}", repo_root.display()).unwrap();
     writeln!(&mut report, "model_directory: {MODEL_DIR}").unwrap();
     writeln!(&mut report, "model_id: {MODEL_ID}").unwrap();

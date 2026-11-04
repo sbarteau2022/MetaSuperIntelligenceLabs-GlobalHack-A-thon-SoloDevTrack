@@ -228,3 +228,11 @@ Next critical work: a new native decoder must expose Glimmer's complete
 trained K/V state, accept exact restored pages through binary model I/O,
 and then run the harness/automaton/MCP/Surreal round trip against the same
 frozen checkpoint. The geometric top-k map cannot supply exact continuation.
+
+The subsequent Qwen Layer-3 live gate also spawned the real
+`globalmind-mcp` child, verified its `mind.db_status` authority against the
+same disposable SurrealDB, and used its `mind.recall` to retrieve the prefix
+atom before typed bridge K/V hydration and bit-exact model injection. The
+report now records both child receipts. This closes the earlier
+declared-target-only limitation for the **Layer-3 baseline**; it does not
+exercise Glimmer, the automaton decision, or a full-model continuation.

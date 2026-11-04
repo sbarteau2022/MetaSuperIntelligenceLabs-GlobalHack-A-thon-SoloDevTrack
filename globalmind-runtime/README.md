@@ -82,7 +82,12 @@ or mixed layouts. This is a Layer-3 proof, not Glimmer's full nested K/V pass.
 TPPE at the Q/K boundary is an unpromoted ablation, while TPPE memory
 addressing remains a separate integration gate.
 The Qwen Layer-3 smoke now checks MCP boundary authority through the typed
-GlobalMind bridge; this does not mean a live MCP child participated.
+GlobalMind bridge. Its live qualification now also starts the real
+`globalmind-mcp` child, attests the same disposable Surreal authority, and
+receipts the prefix atom through `mind.recall` before the bridge hydrates
+exact K/V and injects both heads into the real Layer-3 decode. MCP carries
+recall metadata; tensor bytes use the typed bridge, so no text payload is
+promoted into the model I/O boundary.
 `globalmind-mcp` now reports `On` only after verifying the immutable atom,
 address, and exact transformer K/V fields that its read tools need. Full
 distillation schema verification remains a separate write admission gate.
