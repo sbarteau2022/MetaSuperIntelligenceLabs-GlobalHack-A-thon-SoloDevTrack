@@ -206,3 +206,25 @@ operator executor or harness→mind→nested-K/V pass. Do not apply the stash as
 single production change: its model seat uses JSON at the model boundary, its
 Glimmer K/V page is refused, and its draft forward report has a truncated
 binary hash.
+
+## Exact K/V and local generation follow-up
+
+The pinned ignored Glimmer executable completed one four-token Metal
+generation through all 52 layers: `The capital of France is Paris. It is`.
+This is a local frozen-weight baseline, with no exact K/V export or
+harness/mind participation. Receipt: `results/glimmer-forward/native-baseline-preflight-2026-11-03.md`.
+
+GlobalMind now rejects tensor pages whose shape disagrees with their token
+interval or session head dimension. Its exact read can reassemble ordered,
+contiguous dense K/V pages in token-major or head-dimension-major layout and
+requires every KV head for one layer before returning a complete layer.
+The real Qwen Layer-3 qualification split head 0 across two pages, persisted
+and restarted disposable SurrealDB, reassembled both layouts, and injected
+the complete two-head layer with bit-exact hidden/logit parity. Gap,
+overlap, missing-head, mixed-model, mixed-layout and malformed-page negatives
+were rejected. See `results/tensor-kv/tensor-kv-harness-bridge-report.txt`.
+This remains a Layer-3 component, not a 52-layer Glimmer exact-K/V pass.
+Next critical work: a new native decoder must expose Glimmer's complete
+trained K/V state, accept exact restored pages through binary model I/O,
+and then run the harness/automaton/MCP/Surreal round trip against the same
+frozen checkpoint. The geometric top-k map cannot supply exact continuation.

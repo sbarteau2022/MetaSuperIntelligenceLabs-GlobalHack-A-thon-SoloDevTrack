@@ -1383,7 +1383,7 @@ impl GlobalMindStore {
 
     fn require_compatible_tensor_session(&self, page: &TensorPage) -> Result<(), String> {
         let rows = self.one(&format!(
-            "SELECT workspace, dtype, layer_count, kv_head_count FROM {} WHERE active = true LIMIT 1;",
+            "SELECT workspace, dtype, layer_count, kv_head_count, head_dim FROM {} WHERE active = true LIMIT 1;",
             record("transformer_kv_session", &page.session)
         ))?;
         let session = rows
@@ -1401,8 +1401,15 @@ impl GlobalMindStore {
             .get("kv_head_count")
             .and_then(Value::as_u64)
             .ok_or_else(|| "tensor session kv_head_count is missing".to_string())?;
+        let head_dim = session
+            .get("head_dim")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| "tensor session head_dim is missing".to_string())?;
         if u64::from(page.layer) >= layer_count || u64::from(page.kv_head) >= kv_head_count {
             return Err("tensor page layer or KV head is outside its session".into());
+        }
+        if u64::from(page.tensor_shape[1]) != head_dim {
+            return Err("tensor page head dimension does not match its session".into());
         }
         let expected_workspace = record_ref("workspace", &page.workspace);
         if session.get("workspace").and_then(Value::as_str) != Some(&expected_workspace) {

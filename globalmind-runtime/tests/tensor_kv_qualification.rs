@@ -895,6 +895,18 @@ fn f32_slice_to_le_bytes(values: &[f32]) -> Box<[u8]> {
     bytes.into_boxed_slice()
 }
 
+fn token_major_to_head_dim_major_f32(bytes: &[u8], tokens: usize, dim: usize) -> Box<[u8]> {
+    assert_eq!(bytes.len(), tokens * dim * 4);
+    let mut reordered = Vec::with_capacity(bytes.len());
+    for coordinate in 0..dim {
+        for token in 0..tokens {
+            let start = (token * dim + coordinate) * 4;
+            reordered.extend_from_slice(&bytes[start..start + 4]);
+        }
+    }
+    reordered.into_boxed_slice()
+}
+
 fn f32_vec_from_le_bytes(bytes: &[u8]) -> Result<Vec<f32>, String> {
     if !bytes.len().is_multiple_of(4) {
         return Err("f32 byte buffer length is not a multiple of 4".into());
@@ -1498,6 +1510,8 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
     let mut expected_key_digests = Vec::with_capacity(KV_HEADS);
     let mut expected_val_digests = Vec::with_capacity(KV_HEADS);
     let mut gate2_write_durs = Vec::with_capacity(KV_HEADS);
+    let mut split_head0_pages: Vec<(RecordId, Digest, Digest, u64, u64)> = Vec::new();
+    let mut split_head0_head_major_pages: Vec<(RecordId, Digest, Digest, u64, u64)> = Vec::new();
 
     for kv_h in 0..KV_HEADS {
         let key_bytes = f32_slice_to_le_bytes(&trace.prefix_k_by_head[kv_h]);
@@ -1543,6 +1557,66 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
         let t_write = Instant::now();
         store.put_tensor_page(&page)?;
         gate2_write_durs.push(t_write.elapsed());
+
+        if kv_h == 0 {
+            let midpoint = prefix_tokens.len() / 2;
+            let split_byte = midpoint * HEAD_DIM * 4;
+            for (part, (start_token, end_token, start_byte, end_byte)) in [
+                (0usize, (0usize, midpoint, 0usize, split_byte)),
+                (
+                    1usize,
+                    (midpoint, prefix_tokens.len(), split_byte, key_bytes.len()),
+                ),
+            ] {
+                let mut split = page.clone();
+                split.id = RecordId::parse(format!("kv_page_qwen36_l3_h0_split_{part}"))?;
+                split.token_start = start_token as u64;
+                split.token_end = end_token as u64;
+                split.tensor_shape[0] = (end_token - start_token) as u32;
+                split.key_tensor = key_bytes[start_byte..end_byte].to_vec().into_boxed_slice();
+                split.value_tensor = val_bytes[start_byte..end_byte].to_vec().into_boxed_slice();
+                split.key_digest = Digest::sha256(&split.key_tensor);
+                split.value_digest = Digest::sha256(&split.value_tensor);
+                split.receipt_digest = Digest::sha256(
+                    format!("{}:{}", split.key_digest, split.value_digest).as_bytes(),
+                );
+                store.put_tensor_page(&split)?;
+                let mut head_major = split.clone();
+                head_major.id = RecordId::parse(format!("kv_page_qwen36_l3_h0_headmajor_{part}"))?;
+                head_major.revision = 2;
+                head_major.layout = TensorLayout::HeadDimMajor;
+                head_major.key_tensor = token_major_to_head_dim_major_f32(
+                    &split.key_tensor,
+                    end_token - start_token,
+                    HEAD_DIM,
+                );
+                head_major.value_tensor = token_major_to_head_dim_major_f32(
+                    &split.value_tensor,
+                    end_token - start_token,
+                    HEAD_DIM,
+                );
+                head_major.key_digest = Digest::sha256(&head_major.key_tensor);
+                head_major.value_digest = Digest::sha256(&head_major.value_tensor);
+                head_major.receipt_digest = Digest::sha256(
+                    format!("{}:{}", head_major.key_digest, head_major.value_digest).as_bytes(),
+                );
+                store.put_tensor_page(&head_major)?;
+                split_head0_head_major_pages.push((
+                    head_major.id,
+                    head_major.key_digest,
+                    head_major.value_digest,
+                    head_major.token_start,
+                    head_major.token_end,
+                ));
+                split_head0_pages.push((
+                    split.id,
+                    split.key_digest,
+                    split.value_digest,
+                    split.token_start,
+                    split.token_end,
+                ));
+            }
+        }
 
         page_ids.push(page_id);
         expected_key_bytes.push(key_bytes);
@@ -1717,6 +1791,140 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
         Digest::sha256(&baseline_hit.key),
         expected_key_digests[0],
         "baseline exact identity query must hit head 0"
+    );
+
+    let split_identities: Vec<ExactKvIdentity> = split_head0_pages
+        .iter()
+        .map(|(id, key_digest, value_digest, start, end)| {
+            let mut identity = base_runtime_query.clone();
+            identity.page = id.clone();
+            identity.key_digest = key_digest.clone();
+            identity.value_digest = value_digest.clone();
+            identity.token_start = *start;
+            identity.token_end = *end;
+            identity.tensor_shape[0] = (end - start) as u32;
+            identity
+        })
+        .collect();
+    let assembled = store_after_restart.fetch_contiguous_tensor_span_exact(
+        &split_identities,
+        0,
+        prefix_tokens.len() as u64,
+    )?;
+    assert_eq!(
+        assembled, baseline_hit,
+        "split real K/V must reassemble exactly"
+    );
+    let mut assembled_pair = fetched_pair.clone();
+    assembled_pair[0] = assembled;
+    let mut head1_identity = base_runtime_query.clone();
+    head1_identity.page = page_ids[1].clone();
+    head1_identity.kv_head = 1;
+    head1_identity.key_digest = expected_key_digests[1].clone();
+    head1_identity.value_digest = expected_val_digests[1].clone();
+    let mut complete_layer_identities = split_identities.clone();
+    complete_layer_identities.push(head1_identity);
+    let complete_layer = store_after_restart.fetch_complete_tensor_layer_exact(
+        &complete_layer_identities,
+        TARGET_FULL_ATTN_LAYER,
+        0,
+        prefix_tokens.len() as u64,
+    )?;
+    assert_eq!(complete_layer, fetched_pair.to_vec());
+    assert!(
+        store_after_restart
+            .fetch_complete_tensor_layer_exact(
+                &split_identities,
+                TARGET_FULL_ATTN_LAYER,
+                0,
+                prefix_tokens.len() as u64,
+            )
+            .is_err()
+    );
+    let (assembled_hidden, assembled_logits) = model.run_injected_decode(
+        &complete_layer
+            .clone()
+            .try_into()
+            .map_err(|_| "wrong KV head count")?,
+        prefix_tokens.len(),
+        decode_token,
+        &tppe_config,
+    )?;
+    assert_eq!(assembled_hidden.len(), trace.decode_hidden_out.len());
+    assert_eq!(assembled_logits.len(), trace.decode_logits.len());
+    assert!(
+        assembled_hidden
+            .iter()
+            .zip(&trace.decode_hidden_out)
+            .all(|(a, b)| a.to_bits() == b.to_bits())
+    );
+    assert!(
+        assembled_logits
+            .iter()
+            .zip(&trace.decode_logits)
+            .all(|(a, b)| a.to_bits() == b.to_bits())
+    );
+    assert!(
+        store_after_restart
+            .fetch_contiguous_tensor_span_exact(
+                &split_identities[..1],
+                0,
+                prefix_tokens.len() as u64
+            )
+            .is_err()
+    );
+    assert!(
+        store_after_restart
+            .fetch_contiguous_tensor_span_exact(
+                &[split_identities[0].clone(), split_identities[0].clone()],
+                0,
+                prefix_tokens.len() as u64
+            )
+            .is_err()
+    );
+    let mut mixed_model = split_identities.clone();
+    mixed_model[1].model_digest = Digest::sha256(b"different-model-negative-control");
+    assert!(
+        store_after_restart
+            .fetch_contiguous_tensor_span_exact(&mixed_model, 0, prefix_tokens.len() as u64)
+            .is_err()
+    );
+    let head_major_identities: Vec<ExactKvIdentity> = split_head0_head_major_pages
+        .iter()
+        .map(|(id, key_digest, value_digest, start, end)| {
+            let mut identity = base_runtime_query.clone();
+            identity.page = id.clone();
+            identity.key_digest = key_digest.clone();
+            identity.value_digest = value_digest.clone();
+            identity.token_start = *start;
+            identity.token_end = *end;
+            identity.tensor_shape[0] = (end - start) as u32;
+            identity.layout = TensorLayout::HeadDimMajor;
+            identity.revision = 2;
+            identity
+        })
+        .collect();
+    let assembled_head_major = store_after_restart.fetch_contiguous_tensor_span_exact(
+        &head_major_identities,
+        0,
+        prefix_tokens.len() as u64,
+    )?;
+    assert_eq!(
+        assembled_head_major.key,
+        token_major_to_head_dim_major_f32(&expected_key_bytes[0], prefix_tokens.len(), HEAD_DIM)
+    );
+    assert_eq!(
+        assembled_head_major.value,
+        token_major_to_head_dim_major_f32(&expected_val_bytes[0], prefix_tokens.len(), HEAD_DIM)
+    );
+    let mixed_layout = [
+        split_identities[0].clone(),
+        head_major_identities[1].clone(),
+    ];
+    assert!(
+        store_after_restart
+            .fetch_contiguous_tensor_span_exact(&mixed_layout, 0, prefix_tokens.len() as u64)
+            .is_err()
     );
 
     #[cfg(feature = "live-forward-model")]
@@ -1915,7 +2123,7 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
     };
 
     let mut write_rejection_receipts: Vec<(String, String)> = Vec::new();
-    let write_mutations: [PageMutator; 9] = [
+    let write_mutations: [PageMutator; 11] = [
         ("write_session_missing", |p| {
             p.session = RecordId::parse("missing_session_999").unwrap()
         }),
@@ -1938,6 +2146,21 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
         }),
         ("write_shape_byte_mismatch", |p| {
             p.tensor_shape = [p.tensor_shape[0], (HEAD_DIM as u32) - 1]
+        }),
+        ("write_token_interval_shape_mismatch", |p| {
+            p.token_end += 1;
+        }),
+        ("write_session_head_dim_mismatch", |p| {
+            p.tensor_shape[1] -= 1;
+            let required = p.tensor_shape[0] as usize * p.tensor_shape[1] as usize * 4;
+            let mut key = p.key_tensor.to_vec();
+            let mut value = p.value_tensor.to_vec();
+            key.truncate(required);
+            value.truncate(required);
+            p.key_digest = Digest::sha256(&key);
+            p.value_digest = Digest::sha256(&value);
+            p.key_tensor = key.into_boxed_slice();
+            p.value_tensor = value.into_boxed_slice();
         }),
         ("write_duplicate_coordinate_revision", |p| {
             p.id = RecordId::parse("kv_page_dup_coord_probe").unwrap();
@@ -2009,6 +2232,7 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
     writeln!(&mut report, "status: PASS (all 7 required gates passed)").unwrap();
     #[cfg(feature = "live-forward-model")]
     writeln!(&mut report, "harness_bridge_forward: PASS (real Layer-3; both exact K/V heads consumed; hidden and 248320 logits bit-exact)").unwrap();
+    writeln!(&mut report, "split_page_exact_span: PASS (real head-0 K/V split across 2 persisted pages, reassembled after Surreal restart in token-major and head-dim-major layouts; complete Layer-3 with both KV heads injected hidden/logits bit-exact; gap, overlap, missing-head, mixed-model, mixed-layout negatives rejected; key_sha256={})", Digest::sha256(&assembled_pair[0].key)).unwrap();
     #[cfg(feature = "live-forward-model")]
     writeln!(&mut report, "mcp_authority_preflight: PASS (declared MCP target equals isolated GlobalMind bridge target; MCP child transport not exercised)").unwrap();
     writeln!(&mut report, "canonical_workspace: {}", repo_root.display()).unwrap();

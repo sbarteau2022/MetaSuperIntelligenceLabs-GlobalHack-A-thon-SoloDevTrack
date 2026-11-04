@@ -838,7 +838,7 @@ impl TensorDtype {
         }
     }
 
-    fn scalar_bytes(self) -> Option<usize> {
+    pub(crate) fn scalar_bytes(self) -> Option<usize> {
         match self {
             Self::F16 | Self::Bf16 => Some(2),
             Self::F32 => Some(4),
@@ -936,6 +936,9 @@ impl TensorPage {
         }
         if self.tensor_shape[0] == 0 || self.tensor_shape[1] == 0 {
             return Err("tensor page shape dimensions must be positive".into());
+        }
+        if u64::from(self.tensor_shape[0]) != self.token_end - self.token_start {
+            return Err("tensor page shape does not match token interval".into());
         }
         if self.key_tensor.is_empty() || self.value_tensor.is_empty() {
             return Err("tensor page K and V payloads must be non-empty".into());

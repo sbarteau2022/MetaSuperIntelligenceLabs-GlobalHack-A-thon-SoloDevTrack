@@ -67,6 +67,18 @@ passed that preflight, and ran one separate Metal-backed prompt to a
 `Paris` prefill argmax. The exact executable hash, command, and limits are
 recorded in `../results/glimmer-forward/native-baseline-preflight-2026-11-03.md`.
 That local baseline does not connect the model to the mind or expose tensor K/V.
+The later local Glimmer run generated four tokens through all 52 layers,
+ending `The capital of France is Paris. It is`; it still used the quarantined
+geometric cache and supplied no exact K/V restore. The exact-cache path in
+this runtime now refuses pages whose token interval or head dimension differs
+from their shape/session and reassembles bounded contiguous dense K/V spans
+only when every page has the same model, request, TPPE, geometry, layer/head,
+dtype and layout contract. The real Qwen Layer-3 qualification splits one
+head's frozen-weight K/V into two pages, restarts disposable SurrealDB,
+reassembles them, and checks decode/logit bit parity plus gap/overlap/mixed
+model rejection. It also requires both heads of that layer before injection,
+checks the alternate head-dimension-major layout, and rejects a missing head
+or mixed layouts. This is a Layer-3 proof, not Glimmer's full nested K/V pass.
 TPPE at the Q/K boundary is an unpromoted ablation, while TPPE memory
 addressing remains a separate integration gate.
 The Qwen Layer-3 smoke now checks MCP boundary authority through the typed

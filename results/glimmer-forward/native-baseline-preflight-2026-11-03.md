@@ -22,3 +22,13 @@ were `[200000, 954, 7963, 323, 11698, 373]`; final prefill argmax was token
 `13796` (`Paris`), logit `17.3479`, after a reported 5.6 s prefill. This proves
 one frozen-weight local baseline prompt, not a universal decoder, exact tensor
 K/V page, Surreal recall, automaton admission, or full harness forward pass.
+
+The same pinned local executable subsequently ran without the prefill stop:
+`./core_lm/target/release/generate_glimmer 'The capital of France is' 4`
+exited 0 with Metal enabled and all 52 layers loaded. It reported generated
+IDs `[13796, 26, 1573, 373]` and final text
+`The capital of France is Paris. It is`. Prefill was reported as 5.5 s and
+the first three subsequent forward positions as 0.75, 0.74 and 0.74 s.
+This is a complete four-token local generation through the frozen model. Its
+geometric attention state was not exported as exact K/V, and no Surreal or
+harness path participated.

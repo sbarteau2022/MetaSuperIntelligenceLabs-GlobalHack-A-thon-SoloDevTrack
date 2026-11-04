@@ -17,6 +17,16 @@ those atoms losslessly does not repair that selection loss. The native decoder
 must export and restore exact per-layer/head K/V tensor pages before this
 contract can claim parity. Geometric top-k belongs to a separately judged
 retrieval ablation, with window eligibility applied before ranking.
+Each persisted tensor page must bind its first shape dimension to its exact
+half-open token interval and its second to the session head dimension. The
+writer rejects a page that is internally byte-consistent but disagrees with
+the immutable session, before storing it. A forward cache hit additionally
+requires complete coverage of the applicable interval across every required
+layer and KV head; any gap, overlap, or identity mismatch is a miss.
+The decoder fetches one complete layer at a time so K/V hydration does not
+materialize every layer's cache simultaneously. Every KV head for that layer
+must be present with the same immutable session contract and an exact,
+contiguous token span before any payload reaches attention.
 
 ## Admission
 

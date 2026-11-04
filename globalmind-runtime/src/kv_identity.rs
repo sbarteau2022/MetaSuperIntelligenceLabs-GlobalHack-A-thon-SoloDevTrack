@@ -138,4 +138,166 @@ impl GlobalMindStore {
         }
         Ok(payload)
     }
+
+    /// Reassemble one complete per-layer/head K/V interval from exact pages.
+    /// Input pages must be in token order. A missing, overlapping, or foreign
+    /// page is a cache miss; no partial tensor is returned to the decoder.
+    pub fn fetch_contiguous_tensor_span_exact(
+        &self,
+        pages: &[ExactKvIdentity],
+        token_start: u64,
+        token_end: u64,
+    ) -> Result<TensorPayload, String> {
+        const MAX_SPAN_BYTES: usize = 256 * 1024 * 1024;
+        if pages.is_empty() || pages.len() > 1024 || token_end <= token_start {
+            return Err("invalid exact K/V span page count or interval".into());
+        }
+        let first = &pages[0];
+        let scalar_bytes = first
+            .dtype
+            .scalar_bytes()
+            .ok_or("quantized K/V span assembly requires an explicit block layout")?;
+        let dim = usize::try_from(first.head_dim).map_err(|_| "head dimension overflow")?;
+        let total_tokens =
+            usize::try_from(token_end - token_start).map_err(|_| "K/V token span overflow")?;
+        let total_bytes = total_tokens
+            .checked_mul(dim)
+            .and_then(|n| n.checked_mul(scalar_bytes))
+            .ok_or("K/V span byte count overflow")?;
+        if total_bytes > MAX_SPAN_BYTES {
+            return Err("K/V span exceeds 256 MiB per tensor".into());
+        }
+
+        let mut cursor = token_start;
+        let mut payloads = Vec::with_capacity(pages.len());
+        for page in pages {
+            if page.token_start != cursor || page.token_end > token_end {
+                return Err("K/V span has a gap, overlap, or out-of-range page".into());
+            }
+            if page.workspace != first.workspace
+                || page.session != first.session
+                || page.model_id != first.model_id
+                || page.model_revision != first.model_revision
+                || page.model_digest != first.model_digest
+                || page.request_digest != first.request_digest
+                || page.prefix_digest != first.prefix_digest
+                || page.tppe_version != first.tppe_version
+                || page.tppe_configuration_digest != first.tppe_configuration_digest
+                || page.address_contract_digest != first.address_contract_digest
+                || page.tensor_contract_digest != first.tensor_contract_digest
+                || page.geometry_space != first.geometry_space
+                || page.dtype != first.dtype
+                || page.layer_count != first.layer_count
+                || page.kv_head_count != first.kv_head_count
+                || page.head_dim != first.head_dim
+                || page.layer != first.layer
+                || page.kv_head != first.kv_head
+                || page.layout != first.layout
+            {
+                return Err("K/V span mixes incompatible page identities".into());
+            }
+            let payload = self.fetch_tensor_payload_exact(page)?;
+            let page_tokens = usize::try_from(page.token_end - page.token_start)
+                .map_err(|_| "K/V page token count overflow")?;
+            let page_bytes = page_tokens
+                .checked_mul(dim)
+                .and_then(|n| n.checked_mul(scalar_bytes))
+                .ok_or("K/V page byte count overflow")?;
+            if payload.key.len() != page_bytes || payload.value.len() != page_bytes {
+                return Err("K/V page byte count does not match its shape".into());
+            }
+            payloads.push(payload);
+            cursor = page.token_end;
+        }
+        if cursor != token_end {
+            return Err("K/V span does not cover the requested token interval".into());
+        }
+
+        let mut key = Vec::with_capacity(total_bytes);
+        let mut value = Vec::with_capacity(total_bytes);
+        match first.layout {
+            TensorLayout::TokenMajor => {
+                for payload in &payloads {
+                    key.extend_from_slice(&payload.key);
+                    value.extend_from_slice(&payload.value);
+                }
+            }
+            TensorLayout::HeadDimMajor => {
+                for coordinate in 0..dim {
+                    for payload in &payloads {
+                        let page_tokens = payload.key.len() / (dim * scalar_bytes);
+                        let start = coordinate * page_tokens * scalar_bytes;
+                        let end = start + page_tokens * scalar_bytes;
+                        key.extend_from_slice(&payload.key[start..end]);
+                        value.extend_from_slice(&payload.value[start..end]);
+                    }
+                }
+            }
+        }
+        Ok(TensorPayload {
+            key: key.into_boxed_slice(),
+            value: value.into_boxed_slice(),
+        })
+    }
+
+    /// Hydrate one complete attention layer, with every KV head present.
+    /// Pages are ordered by head then token interval; missing heads fail closed.
+    pub fn fetch_complete_tensor_layer_exact(
+        &self,
+        pages: &[ExactKvIdentity],
+        layer: u32,
+        token_start: u64,
+        token_end: u64,
+    ) -> Result<Vec<TensorPayload>, String> {
+        if pages.is_empty() || pages.len() > 4096 {
+            return Err("invalid complete-layer page count".into());
+        }
+        let first = &pages[0];
+        if layer >= first.layer_count || first.kv_head_count == 0 {
+            return Err("complete-layer target outside session".into());
+        }
+        for page in pages {
+            if page.workspace != first.workspace
+                || page.session != first.session
+                || page.model_id != first.model_id
+                || page.model_revision != first.model_revision
+                || page.model_digest != first.model_digest
+                || page.request_digest != first.request_digest
+                || page.prefix_digest != first.prefix_digest
+                || page.tppe_version != first.tppe_version
+                || page.tppe_configuration_digest != first.tppe_configuration_digest
+                || page.address_contract_digest != first.address_contract_digest
+                || page.tensor_contract_digest != first.tensor_contract_digest
+                || page.geometry_space != first.geometry_space
+                || page.dtype != first.dtype
+                || page.layout != first.layout
+                || page.layer_count != first.layer_count
+                || page.kv_head_count != first.kv_head_count
+                || page.head_dim != first.head_dim
+                || page.layer != layer
+            {
+                return Err("complete K/V layer mixes incompatible identities".into());
+            }
+        }
+        let mut cursor = 0;
+        let mut heads = Vec::with_capacity(first.kv_head_count as usize);
+        for head in 0..first.kv_head_count {
+            let start = cursor;
+            while cursor < pages.len() && pages[cursor].kv_head == head {
+                cursor += 1;
+            }
+            if cursor == start {
+                return Err("complete K/V layer is missing a head".into());
+            }
+            heads.push(self.fetch_contiguous_tensor_span_exact(
+                &pages[start..cursor],
+                token_start,
+                token_end,
+            )?);
+        }
+        if cursor != pages.len() {
+            return Err("complete K/V layer contains extra or misordered pages".into());
+        }
+        Ok(heads)
+    }
 }
