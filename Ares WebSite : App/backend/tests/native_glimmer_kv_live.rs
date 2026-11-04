@@ -7,9 +7,15 @@
 
 use ares_backend::harness::mcp::McpAuthority;
 use ares_backend::harness::mind_recall_executor::MindRecallExecutor;
+use ares_backend::harness::mission::{
+    EnergyBudget, Judge, JudgeKind, JudgeRef, Packet, PacketStatus, Plan, ReceiptLog, RetryPolicy,
+    ToolCall,
+};
 use ares_backend::harness::native_glimmer_executor::{KvKey, KvPageStore, NativeGlimmerExecutor};
 use ares_backend::harness::native_pages_client::{Pages, Shape};
-use ares_backend::harness::runtime::Executor;
+use ares_backend::harness::output_receipt::BoundCallOutcome;
+use ares_backend::harness::runtime::{CapabilityGate, CapabilityNode, Engine, Executor};
+use ares_backend::harness::telemetry::{HyperdxConfig, HyperdxTelemetry};
 use globalmind_runtime::{
     Digest, ExactKvIdentity, GlobalMindStore, RadialLaw, RecordId, StoreConfig, TensorDtype,
     TensorLayout, TensorPage, TensorSession, TppeConfig, TppeState,
@@ -574,5 +580,445 @@ fn executor_kv_miss_then_restart_hit_equals_plain_forward() -> Result<(), String
         names(&miss),
         hit_names
     );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Governed 30-step run (handoff item 6)
+// ---------------------------------------------------------------------------
+
+const RUN_ATOMS: [&str; 6] = [
+    "The capital of France is",
+    "Water boils at one hundred degrees Celsius",
+    "The speed of light in vacuum is",
+    "Mount Everest is the highest mountain on Earth",
+    "The chemical symbol for gold is",
+    "Shakespeare wrote the play Hamlet",
+];
+
+#[derive(Clone)]
+struct Recorded {
+    packet_args: String,
+    result: Result<BoundCallOutcome, String>,
+    wall: Duration,
+}
+
+/// Records every executor call/outcome for the post-run audit and restarts the
+/// disposable Surreal once, mid-run, so persistence is exercised under load.
+struct Recording {
+    inner: NativeGlimmerExecutor,
+    log: Arc<Mutex<Vec<Recorded>>>,
+    db: Arc<Mutex<IsolatedSurreal>>,
+    restart_at: usize,
+}
+
+impl Executor for Recording {
+    fn call_bound(&mut self, tool: &str, args_json: &str) -> Result<BoundCallOutcome, String> {
+        if self.log.lock().unwrap().len() == self.restart_at {
+            self.db.lock().unwrap().restart()?;
+        }
+        let started = std::time::Instant::now();
+        let result = self.inner.call_bound(tool, args_json);
+        self.log.lock().unwrap().push(Recorded {
+            packet_args: args_json.to_string(),
+            result: result.clone(),
+            wall: started.elapsed(),
+        });
+        result
+    }
+}
+
+/// Local OTLP capture endpoint. HyperDX itself is NOT exercised: this sink only
+/// acknowledges and counts the harness's telemetry writes.
+fn start_otlp_sink() -> (u16, Arc<Mutex<Vec<String>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let bodies = Arc::new(Mutex::new(Vec::new()));
+    let seen = bodies.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let seen = seen.clone();
+            std::thread::spawn(move || {
+                let mut buf = Vec::new();
+                let mut chunk = [0u8; 8192];
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+                while let Ok(n) = stream.read(&mut chunk) {
+                    if n == 0 {
+                        break;
+                    }
+                    buf.extend_from_slice(&chunk[..n]);
+                    let text = String::from_utf8_lossy(&buf).to_string();
+                    if let Some(h) = text.find("\r\n\r\n") {
+                        let len = text[..h]
+                            .lines()
+                            .find_map(|l| {
+                                l.to_ascii_lowercase()
+                                    .strip_prefix("content-length:")
+                                    .and_then(|v| v.trim().parse::<usize>().ok())
+                            })
+                            .unwrap_or(0);
+                        if buf.len() >= h + 4 + len {
+                            let line = text[..h].lines().next().unwrap_or("").to_string();
+                            seen.lock()
+                                .unwrap()
+                                .push(format!("{line} {}", &text[h + 4..]));
+                            let _ = stream.write_all(
+                                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+                            );
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+    });
+    (port, bodies)
+}
+
+fn packet(
+    id: &str,
+    tool: &str,
+    args: &str,
+    declared: bool,
+    judge: &str,
+    deps: Vec<String>,
+) -> Packet {
+    Packet {
+        id: id.into(),
+        task: format!("governed step {id}"),
+        depends_on: deps,
+        declared_context_tokens: 100,
+        tool_calls: vec![ToolCall {
+            tool: tool.into(),
+            args_json: args.into(),
+            declared,
+        }],
+        judges: vec![JudgeRef {
+            id: judge.into(),
+            kind: "contains".into(),
+        }],
+        branch: None,
+        retry_policy: RetryPolicy {
+            max_rounds: 2,
+            material_change_required: true,
+        },
+        status: PacketStatus::Pending,
+        attempts: 0,
+        judge_joined: false,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "30 governed steps on frozen Glimmer: isolated server, real MCP child, SurrealKV restart"]
+async fn governed_run_30_steps_audit() -> Result<(), String> {
+    let schema_dir = PathBuf::from(
+        std::env::var("GLOBALMIND_SCHEMA_DIR").map_err(|_| "GLOBALMIND_SCHEMA_DIR required")?,
+    );
+    let url = std::env::var("ARES_GLIMMER_NATIVE_URL").map_err(|_| "ARES_GLIMMER_NATIVE_URL")?;
+    if url.contains(":8000") || url.contains(":8011") {
+        return Err("use an isolated Glimmer server".into());
+    }
+    let out_path = std::env::var("GOVERNED_RUN_REPORT").unwrap_or_default();
+    // Telemetry goes to a local sink; never read the operator's secrets.env.
+    let (sink_port, sink) = start_otlp_sink();
+    let scratch_home = std::env::temp_dir().join(format!("gov-run-home-{}", std::process::id()));
+    fs::create_dir_all(&scratch_home).map_err(|e| e.to_string())?;
+    let real_home = std::env::var("HOME").unwrap_or_default();
+    std::env::set_var("HOME", &scratch_home);
+    std::env::set_var("HYPERDX_API_KEY", "local-sink-key");
+    std::env::set_var(
+        "HYPERDX_OTLP_ENDPOINT",
+        format!("http://127.0.0.1:{sink_port}"),
+    );
+    std::env::set_var("ARES_GLIMMER_MAX_TOKENS", "4");
+    let telemetry = HyperdxTelemetry::new(HyperdxConfig::from_env())?;
+    // The key is read once at config time; Surreal and the MCP child need the real HOME.
+    std::env::set_var("HOME", real_home);
+
+    let db = IsolatedSurreal::start()?;
+    for name in SCHEMAS {
+        db.sql(&fs::read_to_string(schema_dir.join(name)).map_err(|e| e.to_string())?)?;
+    }
+    db.sql("UPSERT workspace:globalmind CONTENT { slug: 'globalmind', created_at: time::now() } RETURN NONE;")?;
+    let mut digests = Vec::new();
+    let mut queries = Vec::new();
+    for (k, text) in RUN_ATOMS.iter().enumerate() {
+        let digest = format!("{:x}", Sha256::digest(text.as_bytes()));
+        let a = 0.2 + 0.35 * k as f64;
+        let (t, x) = (a.cosh(), a.sinh());
+        db.sql(&format!(
+            "CREATE atom:`run_atom_{k}` CONTENT {{ workspace: workspace:`globalmind`, external_id: 'run_atom_{k}', content_kind: 'text', content_text: '{text}', content_uri: NONE, content_digest: '{digest}', domain: 'governed-run', rank: 0, salience: 1.0, provenance: 'governed-run-witness', taint: 'none', pinned: false, current_address: NONE }} RETURN NONE; CREATE atom_address:`smoke_addr` CONTENT {{ workspace: workspace:`globalmind`, atom: atom:`run_atom_{k}`, h3_lorentz: [{t:.17}, {x:.17}, 0.0, 0.0], t2_phase: [0.1, 0.2], geometry_model: 'lorentz-t2', geometry_version: 'v1', revision: 1, active: true }} RETURN NONE;"
+        ).replace("smoke_addr", &format!("run_addr_{k}")))?;
+        digests.push(digest);
+        queries.push(
+            serde_json::json!({"workspace":"globalmind","query_h3":[t,x,0.0,0.0],
+                "query_t2":[0.1,0.2],"query_provenance":"governed-run","k":1})
+            .to_string(),
+        );
+    }
+
+    // KV pages reference an address record; the adapter's fixed id must exist.
+    db.sql(&format!(
+        "CREATE atom_address:`smoke_addr` CONTENT {{ workspace: workspace:`globalmind`, atom: atom:`run_atom_0`, h3_lorentz: [{:.17}, {:.17}, 0.0, 0.0], t2_phase: [0.1, 0.2], geometry_model: 'lorentz-t2', geometry_version: 'v1', revision: 1, active: false }} RETURN NONE;",
+        0.2f64.cosh(),
+        0.2f64.sinh()
+    ))
+    .ok();
+
+    // Plan: 30 real recalls (6 distinct prefixes then repeats) + 3 must-fail steps.
+    let mut packets = Vec::new();
+    let mut expected_atom = Vec::new();
+    for i in 0..30usize {
+        let atom = if i < 6 { i } else { (i * 5 + 1) % 6 };
+        let deps = if i > 0 && i % 5 == 0 {
+            vec![format!("step-{:02}", i - 1)]
+        } else {
+            vec![]
+        };
+        packets.push(packet(
+            &format!("step-{i:02}"),
+            "mind.recall",
+            &queries[atom],
+            true,
+            &format!("judge-atom-{atom}"),
+            deps,
+        ));
+        expected_atom.push(atom);
+    }
+    packets.push(packet(
+        "neg-undeclared",
+        "mind.recall",
+        &queries[0],
+        false,
+        "judge-atom-0",
+        vec![],
+    ));
+    packets.push(packet(
+        "neg-unsupported",
+        "shell.exec",
+        "{}",
+        true,
+        "judge-atom-0",
+        vec![],
+    ));
+    packets.push(packet(
+        "neg-malformed",
+        "mind.recall",
+        "not json",
+        true,
+        "judge-atom-0",
+        vec![],
+    ));
+    let mut plan = Plan {
+        id: "governed-run-30-2026-11-04".into(),
+        objective:
+            "30 governed mind.recall steps through native tokenize, exact K/V and exact forward"
+                .into(),
+        packets,
+    };
+    plan.validate()?;
+
+    let mut engine = Engine::new();
+    for (k, text) in RUN_ATOMS.iter().enumerate() {
+        engine.register_judge(Judge {
+            id: format!("judge-atom-{k}"),
+            kind: JudgeKind::Contains {
+                needle: (*text).to_string(),
+            },
+        });
+    }
+    let mut gate = CapabilityGate::default();
+    for tool in [
+        "map.query",
+        "map.kv_fetch",
+        "map.ingest",
+        "mind.recall",
+        "mind.kv_exact",
+    ] {
+        gate.register(CapabilityNode {
+            name: tool.into(),
+            family: "map".into(),
+            judged_atom: true,
+            receipt_present: true,
+        });
+    }
+
+    let roster: Roster = Arc::new(Mutex::new(HashMap::new()));
+    let kv = StoreKv {
+        store: db.store()?,
+        roster,
+        schema_dir: schema_dir.clone(),
+        tppe_variant: "v1",
+    };
+    let inner = executor(&db, Some(kv))?;
+    let db = Arc::new(Mutex::new(db));
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut rec = Recording {
+        inner,
+        log: log.clone(),
+        db: db.clone(),
+        restart_at: 15,
+    };
+    let mut receipts = ReceiptLog::default();
+    let mut budget = EnergyBudget::new(100_000.0);
+    let started = std::time::Instant::now();
+    let report = engine
+        .run_sequential_live(
+            &mut plan,
+            &mut receipts,
+            &mut budget,
+            &mut rec,
+            &telemetry,
+            &gate,
+        )
+        .await;
+    let elapsed = started.elapsed();
+
+    // ---------------- audit: fail on any missing evidence ----------------
+    let mut audit = Vec::new();
+    let mut fail = |m: String| audit.push(m);
+    let calls = log.lock().unwrap().clone();
+    let total = plan.packets.len();
+    let accounted =
+        report.passed.len() + report.escalated.len() + report.failed.len() + report.skipped.len();
+    if accounted != total {
+        fail(format!(
+            "accounting: {accounted} of {total} packets reported"
+        ));
+    }
+    for id in ["neg-undeclared", "neg-unsupported", "neg-malformed"] {
+        if report.passed.contains(&id.to_string()) {
+            fail(format!("{id} must not pass"));
+        }
+    }
+    let good_calls: Vec<&Recorded> = calls.iter().filter(|c| c.result.is_ok()).collect();
+    if report.passed.len() != 30 || good_calls.len() != 30 {
+        fail(format!(
+            "expected 30 passed packets and 30 successful executor calls, got {} and {}",
+            report.passed.len(),
+            good_calls.len()
+        ));
+    }
+    if calls
+        .iter()
+        .any(|c| c.packet_args == "not json" || c.packet_args == "{}")
+    {
+        fail("a declared-bad packet reached the executor".into());
+    }
+    if receipts.verify_chain().is_err() {
+        fail("mission receipt chain does not verify".into());
+    }
+    let mut seen_prefix = std::collections::HashSet::new();
+    let (mut hits, mut misses) = (0usize, 0usize);
+    let mut reference: HashMap<usize, Vec<u32>> = HashMap::new();
+    let mut composites = std::collections::HashSet::new();
+    let mut chains = Vec::new();
+    for (i, call) in good_calls.iter().enumerate() {
+        let atom = expected_atom[i];
+        let out = call.result.as_ref().unwrap();
+        let r = &out.bound_receipt;
+        if r.validate().is_err() {
+            fail(format!("step {i}: bound receipt invalid"));
+        }
+        if r.input_bytes.bytes != RUN_ATOMS[atom].as_bytes() {
+            fail(format!(
+                "step {i}: model input is not atom {atom}'s exact text"
+            ));
+        }
+        if !out.inner_text.contains(&digests[atom]) {
+            fail(format!(
+                "step {i}: recall evidence lacks atom {atom}'s content digest"
+            ));
+        }
+        let names: Vec<&str> = r.tool_results.iter().map(|t| t.tool.as_str()).collect();
+        let first = seen_prefix.insert(atom);
+        let want_kv = if first {
+            "native.kv-prefill"
+        } else {
+            "native.kv-hit"
+        };
+        if !names.contains(&want_kv) || names.last() != Some(&"native.continue-exact") {
+            fail(format!(
+                "step {i}: expected {want_kv} then continue-exact, got {names:?}"
+            ));
+        }
+        if first {
+            misses += 1
+        } else {
+            hits += 1
+        }
+        match reference.get(&atom) {
+            Some(ids) if *ids != r.generated_token_ids => fail(format!(
+                "step {i}: atom {atom} generation differs from its first step"
+            )),
+            None => {
+                reference.insert(atom, r.generated_token_ids.clone());
+            }
+            _ => {}
+        }
+        composites.insert(r.model_artifact.composite_sha256.clone());
+        chains.push(r.chain_hash.clone());
+    }
+    if composites.len() != 1 {
+        fail("model artifact composite changed within the run".into());
+    }
+    // Every PASS receipt must carry the exact bound chain hashes recorded above.
+    let pass_chains: Vec<String> = receipts
+        .entries
+        .iter()
+        .filter(|e| e.outcome == "PASS")
+        .flat_map(|e| e.n3_receipts.clone())
+        .collect();
+    if pass_chains != chains {
+        fail("PASS receipts do not carry the executor's bound chain hashes in order".into());
+    }
+    let telemetry_events = sink.lock().unwrap().len();
+    if telemetry_events < 30 {
+        fail(format!(
+            "only {telemetry_events} telemetry writes for 30 steps"
+        ));
+    }
+    let mut lat: Vec<f64> = good_calls.iter().map(|c| c.wall.as_secs_f64()).collect();
+    lat.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let gen_tokens: usize = good_calls
+        .iter()
+        .map(|c| {
+            c.result
+                .as_ref()
+                .unwrap()
+                .bound_receipt
+                .generated_token_ids
+                .len()
+        })
+        .sum();
+    let summary = format!(
+        "GOVERNED RUN {}\nsteps_passed={} escalated={:?} skipped={} failed={}\nkv_misses={misses} kv_hits={hits} (expected 6 and 24)\n\
+         telemetry_writes={telemetry_events} (local OTLP sink, not HyperDX)\nreceipt_entries={} chain_verified={}\n\
+         latency_s min={:.1} median={:.1} max={:.1} total_wall_s={:.0}\ngenerated_tokens={gen_tokens} energy_spent_j={:.1}\n\
+         model_composite={}\naudit_failures={}\n{}",
+        plan.id,
+        report.passed.len(),
+        report.escalated,
+        report.skipped.len(),
+        report.failed.len(),
+        receipts.entries.len(),
+        receipts.verify_chain().is_ok(),
+        lat.first().unwrap_or(&0.0),
+        lat.get(lat.len() / 2).unwrap_or(&0.0),
+        lat.last().unwrap_or(&0.0),
+        elapsed.as_secs_f64(),
+        budget.spent_j,
+        composites.iter().next().cloned().unwrap_or_default(),
+        audit.len(),
+        audit.join("\n"),
+    );
+    println!("{summary}");
+    if !out_path.is_empty() {
+        fs::write(&out_path, &summary).map_err(|e| e.to_string())?;
+    }
+    if !audit.is_empty() {
+        return Err(format!("audit failed: {audit:?}"));
+    }
     Ok(())
 }
