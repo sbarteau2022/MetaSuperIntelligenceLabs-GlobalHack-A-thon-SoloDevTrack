@@ -1928,7 +1928,7 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
     );
 
     #[cfg(feature = "live-forward-model")]
-    let live_mcp_receipts: (String, String);
+    let live_mcp_receipts: (String, String, String);
     #[cfg(feature = "live-forward-model")]
     {
         use globalmind_runtime::retrieval::{RetrievalConfig, RetrievalMetric};
@@ -1974,10 +1974,6 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
         )
         .map_err(|e| format!("MCP recall args: {e}"))?;
         let child_recall = mcp_child.call("mind.recall", &recall_args)?;
-        live_mcp_receipts = (
-            child_authority_receipt.clone(),
-            child_recall.receipt_sha256.clone(),
-        );
         let child_members = child_recall
             .inner
             .get("members")
@@ -1985,6 +1981,65 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
         if !matches!(child_members, rgah::json::Json::Arr(members) if members.iter().any(|member| member.get("atom").and_then(rgah::json::Json::as_str) == Some("kv_qual_prefix")))
         {
             return Err("MCP child did not recall the real prefix atom".into());
+        }
+        let mut kv_args = serde_json::json!({
+            "workspace": base_runtime_query.workspace.as_str(),
+            "session": base_runtime_query.session.as_str(),
+            "page": base_runtime_query.page.as_str(),
+            "model_id": base_runtime_query.model_id,
+            "model_revision": base_runtime_query.model_revision,
+            "model_digest": base_runtime_query.model_digest.as_str(),
+            "request_digest": base_runtime_query.request_digest.as_str(),
+            "prefix_digest": base_runtime_query.prefix_digest.as_str(),
+            "tppe_version": base_runtime_query.tppe_version,
+            "tppe_configuration_digest": base_runtime_query.tppe_configuration_digest.as_str(),
+            "address_contract_digest": base_runtime_query.address_contract_digest.as_str(),
+            "tensor_contract_digest": base_runtime_query.tensor_contract_digest.as_str(),
+            "geometry_space": base_runtime_query.geometry_space.as_str(),
+            "dtype": "f32",
+            "layer_count": base_runtime_query.layer_count,
+            "kv_head_count": base_runtime_query.kv_head_count,
+            "head_dim": base_runtime_query.head_dim,
+            "layer": base_runtime_query.layer,
+            "kv_head": base_runtime_query.kv_head,
+            "token_start": base_runtime_query.token_start,
+            "token_end": base_runtime_query.token_end,
+            "tensor_shape": base_runtime_query.tensor_shape,
+            "layout": "token_major",
+            "address": base_runtime_query.address.as_str(),
+            "phase_state_digest": base_runtime_query.phase_state_digest.as_str(),
+            "revision": base_runtime_query.revision,
+            "key_digest": base_runtime_query.key_digest.as_str(),
+            "value_digest": base_runtime_query.value_digest.as_str(),
+        });
+        let parsed_kv_args = rgah::json::parse(&kv_args.to_string())
+            .map_err(|e| format!("MCP exact K/V args: {e}"))?;
+        let child_kv = mcp_child.call("mind.kv_exact", &parsed_kv_args)?;
+        live_mcp_receipts = (
+            child_authority_receipt.clone(),
+            child_recall.receipt_sha256.clone(),
+            child_kv.receipt_sha256.clone(),
+        );
+        if child_kv
+            .inner
+            .get("key_digest")
+            .and_then(rgah::json::Json::as_str)
+            != Some(expected_key_digests[0].as_str())
+        {
+            return Err("MCP exact K/V digest differs from the real persisted page".into());
+        }
+        kv_args["layer_count"] = serde_json::json!((1u64 << 32) + u64::from(NUM_LAYERS));
+        let overflow_args = rgah::json::parse(&kv_args.to_string())
+            .map_err(|e| format!("MCP overflow args: {e}"))?;
+        if mcp_child.call("mind.kv_exact", &overflow_args).is_ok() {
+            return Err("MCP narrowed an oversized layer_count into a valid identity".into());
+        }
+        kv_args["layer_count"] = serde_json::json!(NUM_LAYERS);
+        kv_args["tensor_shape"] = serde_json::json!([4.5, HEAD_DIM]);
+        let fractional_args = rgah::json::parse(&kv_args.to_string())
+            .map_err(|e| format!("MCP fractional shape args: {e}"))?;
+        if mcp_child.call("mind.kv_exact", &fractional_args).is_ok() {
+            return Err("MCP accepted a fractional tensor shape".into());
         }
         let bridge = GlobalMindBridge::connect_at_mcp_boundary(retrieval, &mcp_target)?;
         let mut bridge_payloads = Vec::with_capacity(KV_HEADS);
@@ -2274,7 +2329,7 @@ fn tensor_kv_qualification_end_to_end() -> Result<(), String> {
     writeln!(&mut report, "harness_bridge_forward: PASS (real Layer-3; both exact K/V heads consumed; hidden and 248320 logits bit-exact)").unwrap();
     writeln!(&mut report, "split_page_exact_span: PASS (real head-0 K/V split across 2 persisted pages, reassembled after Surreal restart in token-major and head-dim-major layouts; complete Layer-3 with both KV heads injected hidden/logits bit-exact; gap, overlap, missing-head, mixed-model, mixed-layout negatives rejected; key_sha256={})", Digest::sha256(&assembled_pair[0].key)).unwrap();
     #[cfg(feature = "live-forward-model")]
-    writeln!(&mut report, "mcp_child_read: PASS (live child attested same disposable Surreal authority and recalled the prefix atom before exact K/V injection; authority_receipt={} recall_receipt={})", live_mcp_receipts.0, live_mcp_receipts.1).unwrap();
+    writeln!(&mut report, "mcp_child_read: PASS (live child attested same disposable Surreal authority, recalled the prefix atom, fetched real exact K/V digest, and rejected oversized/fractional tensor identity fields before typed bridge injection; authority_receipt={} recall_receipt={} kv_receipt={})", live_mcp_receipts.0, live_mcp_receipts.1, live_mcp_receipts.2).unwrap();
     writeln!(&mut report, "canonical_workspace: {}", repo_root.display()).unwrap();
     writeln!(&mut report, "model_directory: {MODEL_DIR}").unwrap();
     writeln!(&mut report, "model_id: {MODEL_ID}").unwrap();

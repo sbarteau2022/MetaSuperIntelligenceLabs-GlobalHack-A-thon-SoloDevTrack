@@ -236,3 +236,7 @@ atom before typed bridge K/V hydration and bit-exact model injection. The
 report now records both child receipts. This closes the earlier
 declared-target-only limitation for the **Layer-3 baseline**; it does not
 exercise Glimmer, the automaton decision, or a full-model continuation.
+The MCP child now also returned the real Layer-3 page's exact K/V digest
+receipt; the same live run rejected an oversized layer count and fractional
+tensor shape before lookup. This verifies the MCP transport parser and
+store read, while model-facing bytes still travel through the typed bridge.

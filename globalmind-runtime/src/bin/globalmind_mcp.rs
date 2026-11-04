@@ -113,6 +113,33 @@ fn get_u64(args: &Value, k: &str) -> u64 {
     args.get(k).and_then(Value::as_u64).unwrap_or(0)
 }
 
+fn required_u64(args: &Value, key: &str) -> Result<u64, String> {
+    args.get(key)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| format!("{key} must be a nonnegative integer"))
+}
+
+fn required_u32(args: &Value, key: &str) -> Result<u32, String> {
+    u32::try_from(required_u64(args, key)?).map_err(|_| format!("{key} exceeds the u32 range"))
+}
+
+fn required_u32_pair(args: &Value, key: &str) -> Result<[u32; 2], String> {
+    let values = args
+        .get(key)
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("{key} must be an array"))?;
+    if values.len() != 2 {
+        return Err(format!("{key} must contain exactly two integers"));
+    }
+    let parse = |index: usize| {
+        values[index]
+            .as_u64()
+            .and_then(|value| u32::try_from(value).ok())
+            .ok_or_else(|| format!("{key}[{index}] must be a u32 integer"))
+    };
+    Ok([parse(0)?, parse(1)?])
+}
+
 fn parse_f64_array(args: &Value, k: &str, n: usize) -> Result<Vec<f64>, String> {
     let arr = args
         .get(k)
@@ -159,7 +186,7 @@ fn recall(args: &Value) -> Result<Value, String> {
     let h3v = parse_f64_array(args, "query_h3", 4)?;
     let t2v = parse_f64_array(args, "query_t2", 2)?;
     let provenance = get_str(args, "query_provenance")?;
-    let k = get_u64(args, "k") as u32;
+    let k = required_u32(args, "k")?;
     let config = RetrievalConfig::from_env(workspace, RetrievalMetric::Hyperbolic)?;
     let bundle = retrieve(
         &config,
@@ -207,7 +234,7 @@ fn recall_scoped(args: &Value) -> Result<Value, String> {
     let h3v = parse_f64_array(args, "query_h3", 4)?;
     let t2v = parse_f64_array(args, "query_t2", 2)?;
     let provenance = get_str(args, "query_provenance")?;
-    let k = u32::try_from(get_u64(args, "k")).map_err(|_| "k out of range".to_string())?;
+    let k = required_u32(args, "k")?;
     let config = RetrievalConfig::from_env(workspace, RetrievalMetric::Hyperbolic)?;
     let scoped = retrieve_scoped(
         &config,
@@ -249,7 +276,7 @@ fn kv_exact(args: &Value) -> Result<Value, String> {
         "head_dim_major" => TensorLayout::HeadDimMajor,
         other => return Err(format!("unknown layout: {}", other)),
     };
-    let shape = parse_f64_array(args, "tensor_shape", 2)?;
+    let shape = required_u32_pair(args, "tensor_shape")?;
     let q = ExactKvIdentity {
         workspace: RecordId::parse(get_str(args, "workspace")?)?,
         session: RecordId::parse(get_str(args, "session")?)?,
@@ -265,18 +292,18 @@ fn kv_exact(args: &Value) -> Result<Value, String> {
         tensor_contract_digest: Digest::parse(get_str(args, "tensor_contract_digest")?)?,
         geometry_space: RecordId::parse(get_str(args, "geometry_space")?)?,
         dtype,
-        layer_count: get_u64(args, "layer_count") as u32,
-        kv_head_count: get_u64(args, "kv_head_count") as u32,
-        head_dim: get_u64(args, "head_dim") as u32,
-        layer: get_u64(args, "layer") as u32,
-        kv_head: get_u64(args, "kv_head") as u32,
-        token_start: get_u64(args, "token_start"),
-        token_end: get_u64(args, "token_end"),
-        tensor_shape: [shape[0] as u32, shape[1] as u32],
+        layer_count: required_u32(args, "layer_count")?,
+        kv_head_count: required_u32(args, "kv_head_count")?,
+        head_dim: required_u32(args, "head_dim")?,
+        layer: required_u32(args, "layer")?,
+        kv_head: required_u32(args, "kv_head")?,
+        token_start: required_u64(args, "token_start")?,
+        token_end: required_u64(args, "token_end")?,
+        tensor_shape: shape,
         layout,
         address: RecordId::parse(get_str(args, "address")?)?,
         phase_state_digest: Digest::parse(get_str(args, "phase_state_digest")?)?,
-        revision: get_u64(args, "revision") as u32,
+        revision: required_u32(args, "revision")?,
         key_digest: Digest::parse(get_str(args, "key_digest")?)?,
         value_digest: Digest::parse(get_str(args, "value_digest")?)?,
     };

@@ -42,6 +42,11 @@ child's `mind.recall`, then inject only complete exact K/V fetched through the
 typed bridge. A declared target alone is not child participation. This proves
 the MCP read seam and model use in one gate, while remaining a partial-layer
 baseline rather than a full Glimmer pass.
+MCP `mind.kv_exact` transport arguments are untrusted. Every dimension,
+coordinate, token bound, and revision must parse as a nonnegative integer in
+the target type without narrowing or floating-point coercion; malformed or
+oversized values are refused before any Surreal read. The model still receives
+tensor bytes through the typed bridge, not the MCP text response.
 
 Promotion gates: native full-model logits vs an independent frozen reference
 on a held-out tape, exact-model K/V round-trip and identity-mismatch misses,

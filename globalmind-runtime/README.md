@@ -88,6 +88,10 @@ receipts the prefix atom through `mind.recall` before the bridge hydrates
 exact K/V and injects both heads into the real Layer-3 decode. MCP carries
 recall metadata; tensor bytes use the typed bridge, so no text payload is
 promoted into the model I/O boundary.
+The same real Layer-3 gate now calls the child's `mind.kv_exact` for a digest
+receipt and rejects oversized integers and fractional tensor dimensions at
+the MCP transport parser. That child result is an audit signal; the decoder
+continues to consume exact tensor bytes through the typed bridge.
 `globalmind-mcp` now reports `On` only after verifying the immutable atom,
 address, and exact transformer K/V fields that its read tools need. Full
 distillation schema verification remains a separate write admission gate.
