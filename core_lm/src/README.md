@@ -12,9 +12,11 @@ The existing `/v1/forward` JSON route remains a different, non-exact path.
 No harness integration or full-model certification follows from this
 component route alone. See
 `globalmind-runtime/EXACT-GLIMMER-KV-DESIGN.md`.
-`native_token_wire.rs` now defines bounded GTK2/GTO2 binary tokenization
-frames and receipt verification. The serving route and backend consumer are
-not yet wired; this module is source-only until a real server smoke passes.
+`POST /v1/tokenize-native` accepts bounded GTK2 text frames and returns GTO2
+token IDs from the model-owned tokenizer, optional BOS from `config.bos_token_id`,
+the pinned tokenizer digest, and a request-bound receipt. Malformed, truncated,
+empty, and invalid-flag frames are HTTP 400. Probe with `smoke_token_wire`.
+The JSON `/v1/tokenize` route remains a different, non-receipted path.
 
 `exact_kv::ExactKvCache` is a native, full-context K/V backend for Glimmer's
 `AttentionBackend` seam. It stores post-position-transform K/V in token order,

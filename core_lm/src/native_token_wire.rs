@@ -118,4 +118,29 @@ mod tests {
         assert!(decode_response(&request, &changed).is_err());
         assert!(decode_response(b"other request", &changed).is_err());
     }
+
+    #[test]
+    fn native_token_frames_reject_malformed_and_truncated_requests() {
+        let valid = encode_request(&TokenizeRequest {
+            text: "verified atom".into(),
+            add_bos: false,
+        })
+        .unwrap();
+        assert!(decode_request(&valid[..valid.len() - 1]).is_err());
+        assert!(decode_request(&valid[..4]).is_err());
+        let mut wrong_magic = valid.clone();
+        wrong_magic[0] = b'X';
+        assert!(decode_request(&wrong_magic).is_err());
+        let mut oversize = valid.clone();
+        oversize[4..8].copy_from_slice(&(MAX_TEXT_BYTES as u32 + 1).to_le_bytes());
+        assert!(decode_request(&oversize).is_err());
+        let mut bad_bos = valid;
+        bad_bos[8] = 2;
+        assert!(decode_request(&bad_bos).is_err());
+        assert!(encode_request(&TokenizeRequest {
+            text: String::new(),
+            add_bos: true,
+        })
+        .is_err());
+    }
 }

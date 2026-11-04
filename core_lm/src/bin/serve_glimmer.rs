@@ -18,6 +18,9 @@
 //!   profile = "glimmer"
 //! - POST /v1/tokenize, JSON {"text": "..."} -> JSON array of token ids
 //!   (encode only, no BOS inserted, matching the old tokenize output)
+//! - POST /v1/tokenize-native, binary GTK2 body -> GTO2 token IDs plus the
+//!   pinned tokenizer digest and a request-bound receipt. Model-owned
+//!   tokenizer only; add_bos prepends config.bos_token_id.
 //! - POST /v1/forward, JSON {"token_ids": [...], "max_tokens": N}
 //!   (also accepts "input_ids" for the token list) -> JSON
 //!   {"output_token_ids": [...], "logits_digest": "...", "receipt_sha256": "..."}
@@ -53,6 +56,9 @@ use core_lm::glimmer_forward::GlimmerModel;
 use core_lm::exact_kv::ExactKvCache;
 use core_lm::artifact_digest::ArtifactDigest;
 use core_lm::native_exact_wire::{decode_request, encode_response, exact_kv_digest};
+use core_lm::native_token_wire::{
+    decode_request as decode_token_request, encode_response as encode_token_response,
+};
 use core_lm::ops::argmax;
 use core_lm::tokenizer::BpeTokenizer;
 use std::io::{Read, Write};
@@ -149,6 +155,26 @@ fn receipt_hex(input_ids: &[u32], output_ids: &[u32], logits_digest: &str) -> St
     }
     data.extend_from_slice(logits_digest.as_bytes());
     sha256::sha256_hex(&data)
+}
+
+fn handle_tokenize_native(
+    body: &[u8],
+    tok: &BpeTokenizer,
+    bos_token_id: u32,
+    tokenizer_digest: [u8; 32],
+) -> Vec<u8> {
+    let result = (|| -> Result<Vec<u8>, String> {
+        let request = decode_token_request(body)?;
+        let mut token_ids = tok.encode(&request.text).map_err(|e| e.to_string())?;
+        if request.add_bos {
+            token_ids.insert(0, bos_token_id);
+        }
+        encode_token_response(body, &token_ids, tokenizer_digest)
+    })();
+    match result {
+        Ok(bytes) => http_response("200 OK", "application/vnd.glimmer.tokenize-v1", &bytes),
+        Err(error) => http_response("400 Bad Request", "text/plain", error.as_bytes()),
+    }
 }
 
 fn handle_exact(body: &[u8], model: &mut GlimmerModel, artifact: ArtifactDigest) -> Vec<u8> {
@@ -335,6 +361,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let body = &buf[hend..std::cmp::min(buf.len(), hend + content_length)];
         let resp = if method == "POST" && path == "/v1/forward-exact" {
             handle_exact(body, &mut model, artifact)
+        } else if method == "POST" && path == "/v1/tokenize-native" {
+            handle_tokenize_native(body, &tok, model.config.bos_token_id, artifact.tokenizer)
         } else {
             let body_text = String::from_utf8_lossy(body);
             handle(&method, &path, &body_text, max_new_tokens, &mut model, &tok, &seat)
