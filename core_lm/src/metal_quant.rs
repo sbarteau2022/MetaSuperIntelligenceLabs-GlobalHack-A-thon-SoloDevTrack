@@ -364,6 +364,32 @@ impl MetalQuantGemm {
         bias_dtype: &str,
         generic_bits: Option<u32>,
     ) -> Result<Vec<f32>, MetalQuantError> {
+        let started = std::time::Instant::now();
+        let out = self.gemv_inner_bytes_timed(
+            pipeline, packed_bytes, scales, biases, out_scale, x, rows, cols, group_size,
+            scale_dtype, bias_dtype, generic_bits,
+        );
+        GEMV_NS.fetch_add(started.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+        GEMV_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        out
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn gemv_inner_bytes_timed(
+        &self,
+        pipeline: &ComputePipelineState,
+        packed_bytes: &[u8],
+        scales: &[u8],
+        biases: &[u8],
+        out_scale: Option<&[f32]>,
+        x: &[f32],
+        rows: u32,
+        cols: u32,
+        group_size: u32,
+        scale_dtype: &str,
+        bias_dtype: &str,
+        generic_bits: Option<u32>,
+    ) -> Result<Vec<f32>, MetalQuantError> {
         let packed_buf = self.get_or_cache_buffer(packed_bytes.as_ptr(), packed_bytes.len());
         let scales_buf = self.get_or_cache_buffer(scales.as_ptr(), scales.len());
         let biases_buf = self.get_or_cache_buffer(biases.as_ptr(), biases.len());
@@ -427,6 +453,15 @@ impl MetalQuantGemm {
 
         Ok(result)
     }
+}
+
+pub static GEMV_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static GEMV_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// (calls, total nanoseconds inside quantized GEMV dispatch+wait) since the last reset.
+pub fn gemv_stats_take() -> (u64, u64) {
+    use std::sync::atomic::Ordering::Relaxed;
+    (GEMV_CALLS.swap(0, Relaxed), GEMV_NS.swap(0, Relaxed))
 }
 
 #[cfg(test)]

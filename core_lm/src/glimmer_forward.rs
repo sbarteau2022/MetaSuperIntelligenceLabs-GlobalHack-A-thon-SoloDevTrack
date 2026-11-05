@@ -121,6 +121,20 @@ fn apply_rope_traditional(
     Ok(())
 }
 
+pub static PROF_PERMIT_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static PROF_ATTN_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static PROF_MLP_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// (permit+fingerprint ns, attention ns, mlp ns) since the last call.
+pub fn prof_take() -> (u64, u64, u64) {
+    use std::sync::atomic::Ordering::Relaxed;
+    (
+        PROF_PERMIT_NS.swap(0, Relaxed),
+        PROF_ATTN_NS.swap(0, Relaxed),
+        PROF_MLP_NS.swap(0, Relaxed),
+    )
+}
+
 fn sigmoid(x: f32) -> f32 {
     1.0 / (1.0 + (-x).exp())
 }
@@ -425,7 +439,9 @@ impl GlimmerModel {
         let eps = self.config.rms_norm_eps;
         let post_eps = self.config.post_norm_eps;
         let p = self.layer_prefix(layer);
+        let t0 = std::time::Instant::now();
         let (attn_branch, loss_rep) = self.attention(layer, x, pos, token_id, backend)?;
+        PROF_ATTN_NS.fetch_add(t0.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
         let attn_normed = rmsnorm(
             &attn_branch,
             &self
@@ -445,7 +461,9 @@ impl GlimmerModel {
                 .get_weight(&format!("{}.post_attention_layernorm.weight", p))?,
             eps,
         )?;
+        let t1 = std::time::Instant::now();
         let mlp_branch = self.mlp(layer, &mlp_in)?;
+        PROF_MLP_NS.fetch_add(t1.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
         let mlp_normed = rmsnorm(
             &mlp_branch,
             &self
@@ -559,9 +577,11 @@ impl GlimmerModel {
     pub fn forward_with_backend(
         &mut self, token_id: u32, pos: usize, backend: &mut dyn AttentionBackend,
     ) -> Result<Vec<f32>, ForwardError> {
+        let tp = std::time::Instant::now();
         let permit = self.immune_gate.authorize_forward_pass(
             token_id, pos, self.weights.structural_fingerprint(),
         ).map_err(ForwardError::Compliance)?;
+        PROF_PERMIT_NS.fetch_add(tp.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
         self.forward_internal(token_id, pos, &permit, Some(backend))
     }
 

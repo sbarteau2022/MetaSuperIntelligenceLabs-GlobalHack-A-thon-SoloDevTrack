@@ -575,6 +575,9 @@ fn handle_session_turn(
     artifact: ArtifactDigest,
 ) -> Vec<u8> {
     let result = (|| -> Result<Vec<u8>, String> {
+        let profile_started = std::time::Instant::now();
+        let _ = core_lm::metal_quant::gemv_stats_take();
+        let _ = core_lm::glimmer_forward::prof_take();
         let (id, cont, max_tokens) = decode_turn(body)?;
         let cache = sessions.map.get_mut(&id).ok_or("unknown session")?;
         let start = cache.token_count(0).ok_or("empty session")?;
@@ -596,6 +599,22 @@ fn handle_session_turn(
             logits = model
                 .forward_with_backend(next, input_len + output.len() - 1, cache)
                 .map_err(|e| e.to_string())?;
+        }
+        if std::env::var("GLIMMER_PROFILE").is_ok() {
+            let (permit_ns, attn_ns, mlp_ns) = core_lm::glimmer_forward::prof_take();
+            eprintln!(
+                "PROFILE split: permit+fingerprint={:.2}s attention={:.2}s mlp={:.2}s",
+                permit_ns as f64 / 1e9, attn_ns as f64 / 1e9, mlp_ns as f64 / 1e9
+            );
+            let (calls, ns) = core_lm::metal_quant::gemv_stats_take();
+            let forwards = cont.len() + output.len().saturating_sub(1);
+            eprintln!(
+                "PROFILE session-turn: {forwards} token forwards in {:.2}s; gemv calls={calls} ({:.1}/token) gemv_time={:.2}s ({:.0}% of wall)",
+                profile_started.elapsed().as_secs_f64(),
+                calls as f64 / forwards.max(1) as f64,
+                ns as f64 / 1e9,
+                100.0 * ns as f64 / 1e9 / profile_started.elapsed().as_secs_f64().max(1e-9)
+            );
         }
         session_reply(body, id, cache, model, &output, &logits, artifact)
     })();
