@@ -16,12 +16,11 @@
 use ares_backend::harness::mcp::McpAuthority;
 use ares_backend::harness::mind_recall_executor::MindRecallExecutor;
 use ares_backend::harness::native_glimmer_executor::{
-    decode_forward_response, decode_token_response, encode_forward_request, encode_token_request,
-    verified_recall_text,
+    decode_token_response, encode_token_request, verified_recall_text,
 };
 use ares_backend::harness::native_pages_client::{
-    decode_prefill_response, encode_continue_request, encode_prefill_request, Pages, Shape,
-    MAX_PAGE_TOKENS,
+    decode_prefill_response, decode_session_response, encode_continue_request,
+    encode_prefill_request, Pages, Shape, MAX_PAGE_TOKENS,
 };
 use ares_backend::harness::runtime::Executor;
 use sha2::{Digest, Sha256};
@@ -165,7 +164,19 @@ struct Atom {
     pages: Option<(Shape, Pages)>,
 }
 
+/// A worker's persistent state on the shared weights: exact K/V tensor pages that
+/// grow turn by turn. Text is never re-sent for what is already in the pages.
+struct Session {
+    shape: Shape,
+    pages: Pages,
+    /// Last generated token: in the output but not yet in the pages.
+    pending: u32,
+    atoms: BTreeSet<usize>,
+    turns: usize,
+}
+
 struct Swarm {
+    sessions: HashMap<usize, Session>,
     url: String,
     db: Surreal,
     mind: MindRecallExecutor,
@@ -365,6 +376,126 @@ impl Swarm {
             .max_by_key(|(id, s)| (*s, usize::MAX - *id))
     }
 
+    /// One turn for `worker`: carry its state as exact K/V pages, feed only NEW tokens.
+    fn turn(
+        &mut self,
+        worker: usize,
+        new_atom: Option<usize>,
+        text: &str,
+        question: &str,
+    ) -> Result<(String, Vec<u32>, String), String> {
+        let q_ids = self.native_tokens(&format!("Question: {question}\nAnswer:"), false)?;
+        let mut note = String::new();
+        // Start (or restart) the worker's state from the atom's planned prefill pages.
+        let fits = |sess: &Session, extra: usize, max: usize| {
+            sess.shape.tokens + extra + max <= MAX_PAGE_TOKENS
+        };
+        let mut atom_ids: Vec<u32> = Vec::new();
+        if let Some(i) = new_atom {
+            if self
+                .sessions
+                .get(&worker)
+                .is_none_or(|sess| !sess.atoms.contains(&i))
+            {
+                atom_ids = self.native_tokens(&format!("{text}\n"), false)?;
+            }
+        }
+        let need_new = match self.sessions.get(&worker) {
+            None => true,
+            Some(sess) => !fits(sess, 1 + atom_ids.len() + q_ids.len(), self.max_tokens),
+        };
+        if need_new {
+            if self.sessions.contains_key(&worker) {
+                note = " (state full: restarted from the recalled atom)".to_string();
+            }
+            let i = new_atom.ok_or("worker has no state yet; ask it a question first")?;
+            let (shape, pages) = match self.atoms[i].pages.clone() {
+                Some(p) => p,
+                None => {
+                    let ids = self.native_tokens(&format!("{text}\n"), true)?;
+                    let req = encode_prefill_request(&ids)?;
+                    let pre = decode_prefill_response(
+                        &req,
+                        &self.post("/v1/prefill-exact", req.clone())?,
+                    )?;
+                    (pre.shape, pre.pages)
+                }
+            };
+            self.sessions.insert(
+                worker,
+                Session {
+                    shape,
+                    pages,
+                    pending: 0,
+                    atoms: BTreeSet::from([i]),
+                    turns: 0,
+                },
+            );
+            atom_ids.clear();
+        }
+        let sess = self.sessions.get(&worker).ok_or("no session")?;
+        let mut cont: Vec<u32> = Vec::new();
+        if sess.turns > 0 {
+            cont.push(sess.pending);
+        }
+        cont.extend(&atom_ids);
+        cont.extend(&q_ids);
+        if cont.len() > 64 {
+            return Err("turn too long (more than 64 new tokens)".into());
+        }
+        let before = sess.shape.tokens;
+        let req = encode_continue_request(&sess.shape, &sess.pages, &cont, self.max_tokens)?;
+        let resp = self.post("/v1/continue-session", req.clone())?;
+        let r = decode_session_response(&req, &resp)?;
+        match self.composite {
+            Some(c) if c != r.composite => return Err("weight identity changed!".into()),
+            _ => self.composite = Some(r.composite),
+        }
+        let answer = self.detokenize(&r.output_ids)?;
+        let sess = self.sessions.get_mut(&worker).ok_or("no session")?;
+        if let Some(i) = new_atom {
+            sess.atoms.insert(i);
+        }
+        sess.pending = *r.output_ids.last().ok_or("empty generation")?;
+        sess.turns += 1;
+        sess.shape = r.shape.clone();
+        sess.pages = r.pages;
+        let info = format!(
+            "turn {} — state {} -> {} tokens as exact K/V pages; only {} new tokens fed{note}",
+            sess.turns,
+            before,
+            sess.shape.tokens,
+            cont.len()
+        );
+        Ok((
+            answer,
+            r.output_ids,
+            format!("{info}|{}|{}", hex(&r.composite), hex(&r.kv_digest)),
+        ))
+    }
+
+    fn print_turn(&mut self, worker: usize, started: Instant, answer: &str, info: &str) {
+        let mut parts = info.split('|');
+        let (note, comp, kv) = (
+            parts.next().unwrap_or(""),
+            parts.next().unwrap_or(""),
+            parts.next().unwrap_or(""),
+        );
+        let elapsed = started.elapsed().as_secs_f64();
+        let entry = self.stats.entry(worker).or_insert((0, 0.0));
+        entry.0 += 1;
+        entry.1 += elapsed;
+        self.kv_hits += 1;
+        let line = answer.split('\n').next().unwrap_or("").trim();
+        println!("  state     : {note}");
+        println!("  answer    : {line}");
+        println!(
+            "  receipt   : weights {}…  kv {}…  ({elapsed:.1}s)",
+            &comp[..12.min(comp.len())],
+            &kv[..12.min(kv.len())]
+        );
+    }
+
     /// Answer `question` as `worker`, recalling only from that worker's well at `target`'s address.
     fn answer(&mut self, worker: usize, target: usize, question: &str) -> Result<(), String> {
         let a = self.atoms[target].a;
@@ -382,39 +513,6 @@ impl Swarm {
             .and_then(|v| v["members"][0]["atom"].as_str().map(str::to_string))
             .unwrap_or_default();
         let recalled = self.atoms.iter().position(|x| x.text == text);
-        let cont = self.native_tokens(&format!("Question: {question}\nAnswer:"), false)?;
-        let mut kv = "full forward (no cached pages)".to_string();
-        let (req, response) = match recalled.and_then(|i| self.atoms[i].pages.clone()) {
-            Some((shape, pages)) if cont.len() <= 64 => {
-                self.kv_hits += 1;
-                kv = format!(
-                    "KV HIT: reused {} prefix tokens from planned-prefill pages (no re-prefill)",
-                    shape.tokens
-                );
-                let req = encode_continue_request(&shape, &pages, &cont, self.max_tokens)?;
-                let resp = self.post("/v1/continue-exact", req.clone())?;
-                (req, resp)
-            }
-            _ => {
-                self.kv_miss += 1;
-                let mut ids = self.native_tokens(&format!("{text}\n"), true)?;
-                ids.extend(&cont);
-                let req = encode_forward_request(&ids, self.max_tokens)?;
-                let resp = self.post("/v1/forward-exact", req.clone())?;
-                (req, resp)
-            }
-        };
-        let r = decode_forward_response(&req, &response)?;
-        match self.composite {
-            Some(c) if c != r.composite => return Err("weight identity changed!".into()),
-            _ => self.composite = Some(r.composite),
-        }
-        let answer = self.detokenize(&r.output_ids)?;
-        let elapsed = started.elapsed().as_secs_f64();
-        let entry = self.stats.entry(worker).or_insert((0, 0.0));
-        entry.0 += 1;
-        entry.1 += elapsed;
-        let line = answer.split('\n').next().unwrap_or("").trim();
         println!(
             "  worker    : {} (scope: well {worker} only)",
             WORKER_NAMES[worker]
@@ -426,13 +524,20 @@ impl Swarm {
             );
         }
         println!("  recalled  : {atom_id} \"{text}\"");
-        println!("  path      : {kv}");
-        println!("  answer    : {line}");
+        let (answer, _ids, info) = self.turn(worker, recalled, &text, question)?;
+        self.print_turn(worker, started, &answer, &info);
+        Ok(())
+    }
+
+    /// Talk to a worker's existing state directly (no recall): proves state is in the pages.
+    fn tell(&mut self, worker: usize, text: &str) -> Result<(), String> {
+        let started = Instant::now();
         println!(
-            "  receipt   : weights {}…  kv {}…  ({elapsed:.1}s)",
-            &hex(&r.composite)[..12],
-            &hex(&r.kv)[..12]
+            "  worker    : {} (no recall this turn; only its K/V state)",
+            WORKER_NAMES[worker]
         );
+        let (answer, _ids, info) = self.turn(worker, None, "", text)?;
+        self.print_turn(worker, started, &answer, &info);
         Ok(())
     }
 
@@ -516,6 +621,7 @@ fn main() -> Result<(), String> {
     let mind = MindRecallExecutor::from_state(authority, ("root".into(), db.pass.clone()))?;
     println!("ready.");
     let mut swarm = Swarm {
+        sessions: HashMap::new(),
         url,
         db,
         mind,
@@ -556,7 +662,7 @@ fn main() -> Result<(), String> {
         let result: Result<(), String> = match head {
             "" => continue,
             "help" => {
-                println!("  demo                   load a built-in novel-facts document\n  ingest <text|@file>    carve text into atoms across workers (planned prefill)\n  ask <question>         route to the owning worker; scoped recall; answer\n  task <q1> ; <q2> ; ...  run several questions back to back (set it loose)\n  as <n> <question>      force worker n (cross-view: it can only see its own well)\n  atoms | status         inspect\n  prefill on|off         toggle planned prefill for future ingests\n  quit");
+                println!("  demo                   load a built-in novel-facts document\n  ingest <text|@file>    carve text into atoms across workers (planned prefill)\n  ask <question>         route to the owning worker; scoped recall; answer\n  task <q1> ; <q2> ; ...  run several questions back to back (set it loose)\n  tell <n> <question>    talk to worker n's K/V state directly (no recall)\n  as <n> <question>      force worker n (cross-view: it can only see its own well)\n  atoms | status         inspect\n  prefill on|off         toggle planned prefill for future ingests\n  quit");
                 Ok(())
             }
             "demo" => swarm.ingest(DEMO_DOC),
@@ -586,6 +692,13 @@ fn main() -> Result<(), String> {
                     _ => Err("usage: as <worker number> <question> (and the question must match an atom)".into()),
                 },
                 None => Err("usage: as <worker number> <question>".into()),
+            },
+            "tell" => match rest.split_once(' ') {
+                Some((n, q)) => match n.parse::<usize>() {
+                    Ok(w) if w < swarm.workers => swarm.tell(w, q),
+                    _ => Err("usage: tell <worker number> <question>".into()),
+                },
+                None => Err("usage: tell <worker number> <question>".into()),
             },
             "atoms" => {
                 for a in &swarm.atoms {

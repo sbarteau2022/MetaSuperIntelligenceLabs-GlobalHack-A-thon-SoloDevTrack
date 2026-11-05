@@ -4,7 +4,7 @@
 
 use sha2::{Digest, Sha256};
 
-pub const MAX_PAGE_TOKENS: usize = 48;
+pub const MAX_PAGE_TOKENS: usize = 160;
 const MAX_LAYERS: usize = 256;
 const MAX_KV_HEADS: usize = 64;
 const MAX_HEAD_DIM: usize = 1024;
@@ -143,6 +143,85 @@ pub fn decode_prefill_response(request: &[u8], bytes: &[u8]) -> Result<PrefillRe
         config: d(3),
         composite: d(4),
         receipt: d(5),
+    })
+}
+
+/// Continue-with-state response (GCO2): generated tokens plus the updated exact
+/// K/V pages for a worker session. Mirrors core_lm `decode_session_response`.
+pub struct SessionResponse {
+    pub output_ids: Vec<u32>,
+    pub shape: Shape,
+    pub pages: Pages,
+    pub logits_digest: [u8; 32],
+    pub kv_digest: [u8; 32],
+    pub weights: [u8; 32],
+    pub tokenizer: [u8; 32],
+    pub config: [u8; 32],
+    pub composite: [u8; 32],
+    pub receipt: [u8; 32],
+}
+
+pub fn decode_session_response(request: &[u8], bytes: &[u8]) -> Result<SessionResponse, String> {
+    if bytes.len() < 8 + 16 + 32 * 7 || &bytes[..4] != b"GCO2" {
+        return Err("session response header invalid".into());
+    }
+    let count = read_u32(bytes, 4);
+    if count == 0 || count > 128 || bytes.len() < 8 + count * 4 + 16 {
+        return Err("session response count invalid".into());
+    }
+    let mut at = 8 + count * 4;
+    let shape = Shape {
+        layers: read_u32(bytes, at),
+        kv_heads: read_u32(bytes, at + 4),
+        head_dim: read_u32(bytes, at + 8),
+        tokens: read_u32(bytes, at + 12),
+    };
+    shape.validate()?;
+    at += 16;
+    if bytes.len() != at + shape.payload_bytes() + 32 * 7 {
+        return Err("session response length mismatch".into());
+    }
+    let split = bytes.len() - 32;
+    let mut bound = request.to_vec();
+    bound.extend_from_slice(&bytes[..split]);
+    if sha(&bound) != bytes[split..] {
+        return Err("session response receipt mismatch".into());
+    }
+    let floats = |s: &[u8]| -> Result<Vec<f32>, String> {
+        (0..s.len() / 4)
+            .map(|i| {
+                let v = f32::from_le_bytes(s[4 * i..4 * i + 4].try_into().unwrap());
+                v.is_finite()
+                    .then_some(v)
+                    .ok_or_else(|| "exact page contains a non-finite value".to_string())
+            })
+            .collect()
+    };
+    let each = shape.page_floats() * 4;
+    let pages = (0..shape.page_count())
+        .map(|p| {
+            let o = at + p * each * 2;
+            Ok((
+                floats(&bytes[o..o + each])?,
+                floats(&bytes[o + each..o + 2 * each])?,
+            ))
+        })
+        .collect::<Result<Pages, String>>()?;
+    at += shape.payload_bytes();
+    let d = |i: usize| -> [u8; 32] { bytes[at + 32 * i..at + 32 * (i + 1)].try_into().unwrap() };
+    Ok(SessionResponse {
+        output_ids: (0..count)
+            .map(|i| read_u32(bytes, 8 + 4 * i) as u32)
+            .collect(),
+        shape,
+        pages,
+        logits_digest: d(0),
+        kv_digest: d(1),
+        weights: d(2),
+        tokenizer: d(3),
+        config: d(4),
+        composite: d(5),
+        receipt: d(6),
     })
 }
 

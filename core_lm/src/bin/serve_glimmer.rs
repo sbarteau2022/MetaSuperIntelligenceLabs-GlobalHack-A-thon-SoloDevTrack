@@ -62,7 +62,8 @@ use core_lm::native_exact_wire::{
     decode_request, decode_verify_request, encode_response, exact_kv_digest,
 };
 use core_lm::native_pages_wire::{
-    decode_continue_request, decode_prefill_request, encode_prefill_response, Shape,
+    decode_continue_request, decode_prefill_request, encode_prefill_response,
+    encode_session_response, Shape,
 };
 use core_lm::native_token_wire::{
     decode_detok_request, decode_request as decode_token_request, encode_detok_response,
@@ -394,6 +395,86 @@ fn handle_verify(body: &[u8], model: &mut GlimmerModel, artifact: ArtifactDigest
     }
 }
 
+/// Continue from pages and return the generated tokens PLUS the updated pages
+/// (all tokens now in the cache), so the caller keeps the state as tensors.
+fn handle_continue_session(
+    body: &[u8],
+    model: &mut GlimmerModel,
+    artifact: ArtifactDigest,
+) -> Vec<u8> {
+    let result = (|| -> Result<Vec<u8>, String> {
+        let request = decode_continue_request(body)?;
+        let c = &model.config;
+        let (layers, kv_heads, head_dim) =
+            (c.num_hidden_layers, c.num_key_value_heads, c.head_dim);
+        if (request.shape.layers, request.shape.kv_heads, request.shape.head_dim)
+            != (layers, kv_heads, head_dim)
+        {
+            return Err("page shape differs from loaded model".into());
+        }
+        let prefix = request.shape.tokens;
+        let mut cache = ExactKvCache::from_head_pages(
+            layers,
+            c.num_attention_heads,
+            kv_heads,
+            head_dim,
+            prefix,
+            request.pages,
+        )?;
+        model.reset_memory();
+        let mut logits = Vec::new();
+        for (offset, &id) in request.continuation_ids.iter().enumerate() {
+            logits = model
+                .forward_with_backend(id, prefix + offset, &mut cache)
+                .map_err(|e| e.to_string())?;
+        }
+        let input_len = prefix + request.continuation_ids.len();
+        let mut output = Vec::new();
+        loop {
+            let next = argmax(&logits).map_err(|e| e.to_string())? as u32;
+            output.push(next);
+            if output.len() >= request.max_tokens || model.config.eos_token_ids.contains(&next) {
+                break;
+            }
+            logits = model
+                .forward_with_backend(next, input_len + output.len() - 1, &mut cache)
+                .map_err(|e| e.to_string())?;
+        }
+        let mut logits_bytes = Vec::with_capacity(logits.len() * 4);
+        for value in logits {
+            logits_bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let tokens = input_len + output.len() - 1;
+        let kv_digest = exact_kv_digest(&cache, layers, kv_heads, tokens)?;
+        let mut pages = Vec::with_capacity(layers * kv_heads);
+        for layer in 0..layers {
+            for head in 0..kv_heads {
+                let (k, v) = cache.head_page(layer, head).ok_or("missing K/V page")?;
+                pages.push((k.to_vec(), v.to_vec()));
+            }
+        }
+        let shape = Shape {
+            layers,
+            kv_heads,
+            head_dim,
+            tokens,
+        };
+        encode_session_response(
+            body,
+            &output,
+            &shape,
+            &pages,
+            sha256::sha256(&logits_bytes),
+            kv_digest,
+            artifact,
+        )
+    })();
+    match result {
+        Ok(bytes) => http_response("200 OK", "application/vnd.glimmer.session-v1", &bytes),
+        Err(error) => http_response("400 Bad Request", "text/plain", error.as_bytes()),
+    }
+}
+
 fn http_response(status: &str, content_type: &str, body: &[u8]) -> Vec<u8> {
     let mut out = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -511,7 +592,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 max_new_tokens = v.trim().parse().ok();
             }
         }
-        if content_length > 8 * 1024 * 1024 {
+        if content_length > 64 * 1024 * 1024 {
             let resp = http_response("413 Payload Too Large", "text/plain", b"request too large");
             let _ = stream.write_all(&resp);
             continue;
@@ -526,6 +607,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let body = &buf[hend..std::cmp::min(buf.len(), hend + content_length)];
         let resp = if method == "POST" && path == "/v1/forward-exact" {
             handle_exact(body, &mut model, artifact)
+        } else if method == "POST" && path == "/v1/continue-session" {
+            handle_continue_session(body, &mut model, artifact)
         } else if method == "POST" && path == "/v1/detokenize-native" {
             handle_detokenize(body, &tok)
         } else if method == "POST" && path == "/v1/verify-exact" {

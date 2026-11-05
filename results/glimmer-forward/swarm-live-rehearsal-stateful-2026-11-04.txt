@@ -1,0 +1,57 @@
+booting disposable mind (Surreal + schemas + 4 wells)... ready.
+carving 8 atoms across 4 workers...
+  atom 0 -> scout [planned prefill 18 tokens in 20.4s]: The Zorblax reactor at Quillan Station vents coolant every 47 minutes.
+  atom 1 -> analyst [planned prefill 16 tokens in 12.1s]: Captain Elowen Marsh named her ship the Tern of Halvard.
+  atom 2 -> archivist [planned prefill 18 tokens in 14.9s]: The village of Brindlemoor paints every door violet in the month of March.
+  atom 3 -> engineer [planned prefill 20 tokens in 15.1s]: Professor Okonkwo-Reyes discovered the mineral talvorite in the Kesh Mountains.
+  atom 4 -> scout [planned prefill 18 tokens in 13.4s]: The annual Gantry Lantern Festival is held on the ninth day of Harvest Moon.
+  atom 5 -> analyst [planned prefill 20 tokens in 15.2s]: Vessel Q-17 carries exactly 312 crates of saffron to Port Alderon.
+  atom 6 -> archivist [planned prefill 17 tokens in 13.1s]: The lighthouse keeper at Cape Merrow rings a bronze bell at every low tide.
+  atom 7 -> engineer [planned prefill 17 tokens in 13.0s]: Dr. Ilsabet Fenn invented the pressure loom that weaves glass thread.
+CARVED SWARM on one frozen Muse Glimmer. Type `help`.
+swarm> router: best atom 0 (word overlap 3) belongs to scout
+  worker    : scout (scope: well 0 only)
+  recalled  : live_atom_0 "The Zorblax reactor at Quillan Station vents coolant every 47 minutes."
+  state     : turn 1 — state 18 -> 42 tokens as exact K/V pages; only 15 new tokens fed
+  answer    : Every 47 minutes.
+  receipt   : weights dbe78c78f207…  kv 312b945a2b82…  (18.8s)
+swarm>   worker    : scout (no recall this turn; only its K/V state)
+  state     : turn 2 — state 42 -> 64 tokens as exact K/V pages; only 13 new tokens fed
+  answer    : 47
+  receipt   : weights dbe78c78f207…  kv 613783ad64c0…  (17.1s)
+swarm> router: best atom 2 (word overlap 1) belongs to archivist
+  worker    : archivist (scope: well 2 only)
+  recalled  : live_atom_2 "The village of Brindlemoor paints every door violet in the month of March."
+  state     : turn 1 — state 18 -> 42 tokens as exact K/V pages; only 15 new tokens fed
+  answer    : Violet.
+  receipt   : weights dbe78c78f207…  kv d0085cf8aa42…  (18.6s)
+swarm> router: best atom 2 (word overlap 2) belongs to archivist
+  worker    : archivist (scope: well 2 only)
+  recalled  : live_atom_2 "The village of Brindlemoor paints every door violet in the month of March."
+  state     : turn 2 — state 42 -> 69 tokens as exact K/V pages; only 18 new tokens fed
+  answer    : March.
+  receipt   : weights dbe78c78f207…  kv 2f2c17b9fb53…  (22.4s)
+swarm>   worker    : archivist (no recall this turn; only its K/V state)
+  state     : turn 3 — state 69 -> 92 tokens as exact K/V pages; only 14 new tokens fed
+  answer    : Violet.
+  receipt   : weights dbe78c78f207…  kv 15dcace1e7b1…  (18.5s)
+swarm>   worker    : scout (scope: well 0 only)
+  BLOCKED   : the best-matching atom 1 lives in analyst's well; scout can only recall its own
+  recalled  : live_atom_0 "The Zorblax reactor at Quillan Station vents coolant every 47 minutes."
+  state     : turn 3 — state 64 -> 89 tokens as exact K/V pages; only 16 new tokens fed
+  answer    : The ship was named the "Starlight Seren
+  receipt   : weights dbe78c78f207…  kv b0f8066385c7…  (20.4s)
+swarm> one weight set: dbe78c78f2072bd53add370dcce8d39bd9779c477af79cab8797747683941a7e
+atoms: 8  kv hits: 6  full forwards: 0
+  scout        well 0: 2 atoms, 3 answers, 56.2s
+  analyst      well 1: 2 atoms, 0 answers, 0.0s
+  archivist    well 2: 2 atoms, 3 answers, 59.5s
+  engineer     well 3: 2 atoms, 0 answers, 0.0s
+swarm> 
+NOTES
+- Workers are persistent sessions on ONE frozen weight set (composite dbe78c78…): each worker's state is exact K/V tensor pages returned by the new
+  server route /v1/continue-session (GCO2) and fed back next turn; only NEW tokens are sent (text already in the pages is never re-prompted).
+- `tell <n> …` sends no recalled text, so "47" (scout) and "Violet." (archivist) came from tensor state alone. State grew 18 -> 42 -> 64 tokens (scout), 18 -> 42 -> 69 -> 92 (archivist).
+- Isolation: the cross-view question to scout printed BLOCKED (recall is scoped to well 0); with no matching atom the model invented "Starlight Seren…", i.e. scope removes the evidence, it does not make the model refuse.
+- Limits: session state includes the model's raw generated tokens (junk after the answer is kept); 160-token state cap, after which the worker restarts from its atom;
+  workers run serially on one GPU; routing is word overlap; atoms are operator-ingested text; in-memory Surreal and page cache; one rehearsal.

@@ -1,6 +1,8 @@
 ask How often does the Zorblax reactor vent coolant?
+tell 0 What number was in your last answer?
 ask What color are the doors in Brindlemoor?
+ask In which month are the doors painted in Brindlemoor?
+tell 2 What color did you say the doors were?
 as 0 What did Captain Elowen Marsh name her ship?
-task Where did Professor Okonkwo-Reyes discover talvorite? ; Who invented the pressure loom? ; What does the lighthouse keeper ring?
 status
 quit

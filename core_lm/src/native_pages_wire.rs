@@ -9,7 +9,7 @@ use crate::sha256::sha256;
 pub const PREFILL_REQUEST_MAGIC: &[u8; 4] = b"GPF2";
 pub const PREFILL_RESPONSE_MAGIC: &[u8; 4] = b"GPO2";
 pub const CONTINUE_REQUEST_MAGIC: &[u8; 4] = b"GCX2";
-pub const MAX_PAGE_TOKENS: usize = 48;
+pub const MAX_PAGE_TOKENS: usize = 160;
 pub const MAX_CONTINUE_IDS: usize = 64;
 pub const MAX_MAX_TOKENS: usize = 128;
 const MAX_LAYERS: usize = 256;
@@ -209,6 +209,103 @@ pub struct ContinueRequest {
     pub max_tokens: usize,
 }
 
+/// Continue-with-state response (GCO2): the generated tokens PLUS the updated
+/// exact K/V pages, so a worker session can keep its state as tensors and
+/// never re-prompt text. Bound to the request bytes by a trailing SHA-256.
+pub const SESSION_RESPONSE_MAGIC: &[u8; 4] = b"GCO2";
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SessionResponse {
+    pub output_ids: Vec<u32>,
+    pub shape: Shape,
+    pub pages: Pages,
+    pub logits_digest: [u8; 32],
+    pub kv_digest: [u8; 32],
+    pub artifact: ArtifactDigest,
+    pub receipt: [u8; 32],
+}
+
+pub fn encode_session_response(
+    request: &[u8],
+    output_ids: &[u32],
+    shape: &Shape,
+    pages: &Pages,
+    logits_digest: [u8; 32],
+    kv_digest: [u8; 32],
+    artifact: ArtifactDigest,
+) -> Result<Vec<u8>, String> {
+    shape.validate()?;
+    if output_ids.is_empty() || output_ids.len() > MAX_MAX_TOKENS {
+        return Err("session response token count invalid".into());
+    }
+    let mut out = Vec::new();
+    out.extend_from_slice(SESSION_RESPONSE_MAGIC);
+    out.extend_from_slice(&(output_ids.len() as u32).to_le_bytes());
+    for id in output_ids {
+        out.extend_from_slice(&id.to_le_bytes());
+    }
+    for n in [shape.layers, shape.kv_heads, shape.head_dim, shape.tokens] {
+        out.extend_from_slice(&(n as u32).to_le_bytes());
+    }
+    put_pages(&mut out, shape, pages)?;
+    out.extend_from_slice(&logits_digest);
+    out.extend_from_slice(&kv_digest);
+    for d in [artifact.weights, artifact.tokenizer, artifact.config, artifact.composite] {
+        out.extend_from_slice(&d);
+    }
+    let mut bound = request.to_vec();
+    bound.extend_from_slice(&out);
+    out.extend_from_slice(&sha256(&bound));
+    Ok(out)
+}
+
+pub fn decode_session_response(request: &[u8], bytes: &[u8]) -> Result<SessionResponse, String> {
+    if bytes.len() < 8 + 16 + 32 * 7 || &bytes[..4] != SESSION_RESPONSE_MAGIC {
+        return Err("session response header invalid".into());
+    }
+    let count = read_u32(bytes, 4);
+    if count == 0 || count > MAX_MAX_TOKENS || bytes.len() < 8 + count * 4 + 16 {
+        return Err("session response count invalid".into());
+    }
+    let mut at = 8 + count * 4;
+    let shape = Shape {
+        layers: read_u32(bytes, at),
+        kv_heads: read_u32(bytes, at + 4),
+        head_dim: read_u32(bytes, at + 8),
+        tokens: read_u32(bytes, at + 12),
+    };
+    shape.validate()?;
+    at += 16;
+    if bytes.len() != at + shape.payload_bytes() + 32 * 7 {
+        return Err("session response length mismatch".into());
+    }
+    let split = bytes.len() - 32;
+    let mut bound = request.to_vec();
+    bound.extend_from_slice(&bytes[..split]);
+    if sha256(&bound) != bytes[split..] {
+        return Err("session response receipt mismatch".into());
+    }
+    let pages = get_pages(&bytes[at..at + shape.payload_bytes()], &shape)?;
+    at += shape.payload_bytes();
+    let d = |i: usize| -> [u8; 32] { bytes[at + 32 * i..at + 32 * (i + 1)].try_into().unwrap() };
+    let artifact = ArtifactDigest {
+        weights: d(2),
+        tokenizer: d(3),
+        config: d(4),
+        composite: d(5),
+    };
+    artifact.verify_composite()?;
+    Ok(SessionResponse {
+        output_ids: (0..count).map(|i| read_u32(bytes, 8 + 4 * i) as u32).collect(),
+        shape,
+        pages,
+        logits_digest: d(0),
+        kv_digest: d(1),
+        artifact,
+        receipt: d(6),
+    })
+}
+
 pub fn encode_continue_request(req: &ContinueRequest) -> Result<Vec<u8>, String> {
     req.shape.validate()?;
     if req.continuation_ids.is_empty()
@@ -301,6 +398,21 @@ mod tests {
         assert!(decode_prefill_response(&req, &bad).is_err());
         assert!(decode_prefill_response(b"other", &resp).is_err());
         assert!(decode_prefill_response(&req, &resp[..resp.len() - 1]).is_err());
+    }
+
+    #[test]
+    fn session_response_round_trips_and_binds_request() {
+        let (shape, pages) = tiny();
+        let art = ArtifactDigest::from_parts([1; 32], [2; 32], [3; 32]);
+        let resp = encode_session_response(b"req", &[4, 5], &shape, &pages, [6; 32], [7; 32], art).unwrap();
+        let got = decode_session_response(b"req", &resp).unwrap();
+        assert_eq!(got.output_ids, [4, 5]);
+        assert_eq!(got.pages, pages);
+        assert!(decode_session_response(b"other", &resp).is_err());
+        let mut bad = resp.clone();
+        bad[9] ^= 1;
+        assert!(decode_session_response(b"req", &bad).is_err());
+        assert!(decode_session_response(b"req", &resp[..resp.len() - 1]).is_err());
     }
 
     #[test]
