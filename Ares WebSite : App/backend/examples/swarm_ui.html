@@ -5,7 +5,30 @@
 <style>
 :root{--bg:#0b0e14;--panel:#111620;--line:#1f2736;--text:#d7deea;--dim:#7d8aa3;--accent:#6ee7b7;--warn:#fbbf24;--bad:#f87171;--blue:#7aa2f7}
 *{box-sizing:border-box}html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}
-.app{display:grid;grid-template-columns:290px minmax(0,1fr) 340px;height:100vh;gap:1px;background:var(--line)}
+.app{display:grid;grid-template-columns:290px minmax(0,1fr) 340px;flex:1;min-height:0;gap:1px;background:var(--line)}
+body{display:flex;flex-direction:column}
+.tabs{display:flex;gap:6px;align-items:center;padding:8px 12px;background:#0b0e14;border-bottom:1px solid var(--line)}
+.tabs b{color:var(--accent);margin-right:10px;letter-spacing:.06em}.tabs a{color:var(--dim);text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:3px 10px}
+.tabs a.on{color:#06281d;background:var(--accent);border-color:var(--accent);font-weight:700}
+body.clean .tabs{display:none}
+#swarmpane{display:none}
+body[data-view=swarm] .app>section:not(#swarmpane),body[data-view^=w-] .app>section:not(#swarmpane){display:none}
+body[data-view=swarm] #swarmpane,body[data-view^=w-] #swarmpane{display:flex}
+body[data-view=swarm] .app,body[data-view^=w-] .app{grid-template-columns:minmax(0,1fr)}
+#cols{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+body[data-view^=w-] #cols{grid-template-columns:minmax(0,1fr);max-width:900px;margin:0 auto}
+.col{background:#0d1119;border:1px solid var(--line);border-top:3px solid var(--blue);border-radius:10px;padding:12px;min-width:0}
+.col h3{margin:0 0 2px;font-size:15px;color:#fff}.col .sub{color:var(--dim);font-size:11px;margin-bottom:8px}
+.col .m{display:flex;gap:10px;margin:8px 0;color:var(--dim);font-size:11px}.col .m b{color:var(--text);font-size:15px;display:block}
+.col h5{margin:10px 0 4px;color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.08em}
+.col .at{padding:5px 8px;border-left:2px solid var(--line);margin:3px 0;color:#aab6cc;font-size:12px}
+.col .tn{border-top:1px solid var(--line);padding:6px 0}.col .tn .q{color:var(--blue)}.col .tn .a{color:#fff;font-size:14px;margin:2px 0}.col .tn .x{color:var(--dim);font-size:11px}
+.col .tn.blk .a{color:var(--bad)}
+body[data-view=ide] .app,body[data-view=chat] .app,body[data-view=telemetry] .app{grid-template-columns:minmax(0,1fr)}
+body[data-view=ide] .app>section:not(:nth-child(1)),body[data-view=chat] .app>section:not(:nth-child(2)),body[data-view=telemetry] .app>section:not(:nth-child(3)){display:none}
+body[data-view=ide] #editor{height:60%}
+body[data-view=chat] #chat,body[data-view=chat] .composer,body[data-view=chat] .chips{width:100%;max-width:1100px;margin:0 auto}
+body[data-view=telemetry] .cards{grid-template-columns:repeat(4,1fr)}
 .pane{background:var(--panel);display:flex;flex-direction:column;min-height:0}
 .hd{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;font-size:11px}
 .hd b{color:var(--text)}.dot{width:8px;height:8px;border-radius:50%;background:var(--warn)}.dot.ready{background:var(--accent)}
@@ -40,6 +63,7 @@
 .rc{font-size:11px;color:var(--dim);border-top:1px solid var(--line);padding:4px 0}.rc b{color:var(--text)}
 .mono{word-break:break-all;color:var(--dim);font-size:11px}
 </style></head><body>
+<nav class="tabs"><b>CARVED SWARM</b><a href="#all" data-v="all">All</a><a href="#ide" data-v="ide">IDE</a><a href="#chat" data-v="chat">Chat</a><a href="#telemetry" data-v="telemetry">Telemetry</a><span style="flex:1"></span><a href="#swarm" data-v="swarm">Swarm</a><a href="#w-scout" data-v="w-scout">Scout</a><a href="#w-analyst" data-v="w-analyst">Analyst</a><a href="#w-archivist" data-v="w-archivist">Archivist</a><a href="#w-engineer" data-v="w-engineer">Engineer</a></nav>
 <div class="app">
   <section class="pane">
     <div class="hd"><b>IDE</b> repo files</div>
@@ -68,9 +92,16 @@
         <h4>receipts</h4><div id="rcs"></div></div>
     </div>
   </section>
+  <section class="pane" id="swarmpane">
+    <div class="hd"><i class="dot" id="dot2"></i><b>Carved swarm</b> · each worker is a silo: its own well, atoms and resident K/V state · one frozen Muse Glimmer weight set</div>
+    <div class="scroll" style="padding:12px"><div id="cols"></div></div>
+  </section>
 </div>
 <script>
+function view(){const parts=(location.hash||'#all').slice(1).split(',');const v=(['ide','chat','telemetry','swarm'].includes(parts[0])||/^w-\w+$/.test(parts[0]))?parts[0]:'all';document.body.dataset.view=v;document.body.classList.toggle('clean',parts.includes('clean'));document.querySelectorAll('.tabs a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));if(typeof renderSwarm==='function')renderSwarm()}
+addEventListener('hashchange',view);view();
 const TOKEN='__TOKEN__';const api=(u,o={})=>fetch(u,{...o,headers:{...(o.headers||{}),'X-Swarm-Token':TOKEN}});const $=id=>document.getElementById(id);let next=0,ready=false,cur=null,worker='',lastQ='';
+const sw={};const NAMES=['scout','analyst','archivist','engineer'];NAMES.forEach((n,i)=>sw[n]={well:i,atoms:[],turns:[],tokens:0,lat:[]});let turn=null;
 const tel={n:0,lat:[],blk:0,state:{},comp:'',rc:[]};
 const chips=['How often does the Zorblax reactor vent coolant?','/tell 0 What number was in your last answer?','What color are the doors in Brindlemoor?','/as 0 What did Captain Elowen Marsh name her ship?','/task Where did Professor Okonkwo-Reyes discover talvorite? ; Who invented the pressure loom? ; What does the lighthouse keeper ring?','/status'];
 chips.forEach(c=>{const b=document.createElement('button');b.className='chip';b.textContent=c.length>46?c.slice(0,44)+'…':c;b.title=c;b.onclick=()=>send(c);$('chips').appendChild(b)});
@@ -82,6 +113,9 @@ function addLine(l){const chat=$('chat');
   if(l.startsWith('\u0001> ')){const d=document.createElement('div');d.className='u';d.textContent=l.slice(3);chat.appendChild(d);cur=document.createElement('div');cur.className='r';chat.appendChild(cur);lastQ=l.slice(3);return}
   if(!cur){const d=document.createElement('div');d.className='sys';d.textContent=l;chat.appendChild(d);return}
   let m;
+  if(m=l.match(/atom \d+ -> (\w+) \[[^\]]*\]:\s*(.*)$/)){(sw[m[1]]||(sw[m[1]]={well:Object.keys(sw).length,atoms:[],turns:[],tokens:0,lat:[]})).atoms.push(m[2])}
+  if(m=l.match(/^\s*worker\s*:\s*(\w+)/)){turn={q:lastQ.replace(/^(ask|as \d+|tell \d+)\s*/,''),recalled:'',answer:'',secs:'',blocked:false,state:''};(sw[m[1]]||(sw[m[1]]={well:0,atoms:[],turns:[],tokens:0,lat:[]})).turns.push(turn)}
+  if(turn){if(m=l.match(/^\s*recalled\s*:\s*\S+\s*"(.*)"/))turn.recalled=m[1];if(/BLOCKED/.test(l))turn.blocked=true;if(m=l.match(/^\s*answer\s*:\s*(.*)$/))turn.answer=m[1];if(m=l.match(/resident K\/V state \d+ -> (\d+) tokens/)){turn.state=m[1];const w=Object.values(sw).find(x=>x.turns.includes(turn));if(w)w.tokens=+m[1]}if(m=l.match(/\(([\d.]+)s\)\s*$/)){turn.secs=m[1];const w=Object.values(sw).find(x=>x.turns.includes(turn));if(w)w.lat.push(+m[1])}}
   if(m=l.match(/^\s*answer\s*:\s*(.*)$/)){const s=document.createElement('span');s.className='ans';s.textContent=m[1];cur.appendChild(s);return}
   const span=document.createElement('span');
   if(/BLOCKED/.test(l)){span.className='blk';tel.blk++}else if(/^\s*(router|path|state|receipt|recalled|worker)/.test(l))span.className='dim';
@@ -90,13 +124,20 @@ function addLine(l){const chat=$('chat');
   if(m=l.match(/state\s*:.*?resident K\/V state (\d+) -> (\d+) tokens/))tel.state[worker]=+m[2];
   if(m=l.match(/receipt\s*:\s*weights (\w+)….*?kv (\w+)….*?\(([\d.]+)s\)/)){tel.n++;tel.lat.push(+m[3]);tel.comp=m[1];tel.rc.unshift({w:worker,kv:m[2],s:m[3]})}
 }
+function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+function renderSwarm(){const v=document.body.dataset.view;if(v!=='swarm'&&!v.startsWith('w-'))return;const only=v.startsWith('w-')?v.slice(2):null;$('dot2').className='dot'+(ready?' ready':'');
+  $('cols').innerHTML=Object.entries(sw).filter(([n])=>!only||n===only).map(([n,w])=>{const avg=w.lat.length?(w.lat.reduce((a,b)=>a+b,0)/w.lat.length).toFixed(1)+'s':'–';
+  return `<div class="col"><h3>${n}</h3><div class="sub">silo · well ${w.well} · sees only its own atoms</div>
+  <div class="m"><div><b>${w.atoms.length}</b>atoms</div><div><b>${w.turns.filter(t=>t.answer).length}</b>answers</div><div><b>${w.tokens||'–'}</b>K/V tokens</div><div><b>${avg}</b>avg</div></div>
+  <h5>atoms in this worker's well</h5>${w.atoms.map(a=>`<div class="at">${esc(a)}</div>`).join('')||'<div class="x">none</div>'}
+  <h5>turns</h5>${w.turns.slice().reverse().map(t=>`<div class="tn ${t.blocked?'blk':''}"><div class="q">${esc(t.q)}</div><div class="a">${esc(t.answer||'…')}</div><div class="x">${t.blocked?'BLOCKED — target atom is in another worker\'s well · ':''}recalled: ${esc(t.recalled)} ${t.secs?'· '+t.secs+'s':''}</div></div>`).join('')||'<div class="x">no turns yet</div>'}</div>`}).join('')}
 function tele(){$('t-n').textContent=tel.n;$('t-blk').textContent=tel.blk;const a=tel.lat.length?tel.lat.reduce((x,y)=>x+y,0)/tel.lat.length:0;$('t-avg').textContent=a?a.toFixed(1)+'s':'–';
   const mx=Math.max(1,...tel.lat);$('bars').innerHTML=tel.lat.slice(-24).map(v=>`<i title="${v}s" style="height:${Math.max(4,v/mx*100)}%"></i>`).join('');
   const smax=Math.max(1,...Object.values(tel.state));$('ws').innerHTML=Object.entries(tel.state).map(([k,v])=>`<div class="w"><span>${k}</span><em><i style="width:${v/smax*100}%"></i></em><b>${v}</b></div>`).join('')||'<div class="mono">no sessions yet</div>';
   $('comp').textContent=tel.comp?tel.comp+'… (same on every answer)':'–';
   $('rcs').innerHTML=tel.rc.slice(0,12).map(r=>`<div class="rc"><b>${r.w}</b> kv ${r.kv}… · ${r.s}s</div>`).join('')}
 async function poll(){try{const r=await (await api('/api/log?from='+next)).json();const was=r.lines.length;
-  r.lines.forEach(addLine);next=r.next;ready=r.ready;ui();if(was){tele();const c=$('chat');c.scrollTop=c.scrollHeight}}catch(e){}setTimeout(poll,600)}
+  r.lines.forEach(addLine);next=r.next;ready=r.ready;ui();if(was){tele();renderSwarm();const c=$('chat');c.scrollTop=c.scrollHeight}}catch(e){}setTimeout(poll,600)}
 poll();ui();
 /* IDE */
 const roots=[['results','results/glimmer-forward'],['server','core_lm/src'],['swarm','Ares WebSite : App/backend/examples'],['harness','Ares WebSite : App/backend/src/harness'],['runtime','globalmind-runtime/src']];
