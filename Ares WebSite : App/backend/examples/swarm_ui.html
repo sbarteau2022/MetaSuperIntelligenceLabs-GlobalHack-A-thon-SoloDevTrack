@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Carved Swarm · Muse Glimmer</title>
+<style>
+:root{--bg:#0b0e14;--panel:#111620;--line:#1f2736;--text:#d7deea;--dim:#7d8aa3;--accent:#6ee7b7;--warn:#fbbf24;--bad:#f87171;--blue:#7aa2f7}
+*{box-sizing:border-box}html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}
+.app{display:grid;grid-template-columns:290px minmax(0,1fr) 340px;height:100vh;gap:1px;background:var(--line)}
+.pane{background:var(--panel);display:flex;flex-direction:column;min-height:0}
+.hd{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;font-size:11px}
+.hd b{color:var(--text)}.dot{width:8px;height:8px;border-radius:50%;background:var(--warn)}.dot.ready{background:var(--accent)}
+.scroll{overflow:auto;min-height:0;flex:1}
+/* IDE */
+.nav{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line)}
+.nav button,.chip{background:#171d2b;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:3px 8px;cursor:pointer;font:inherit;font-size:11px}
+.nav button:hover,.chip:hover{border-color:var(--accent)}
+.tree{padding:6px 4px}.tree div{padding:1px 6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-radius:4px}
+.tree div:hover{background:#171d2b}.tree .d{color:var(--blue)}.tree .sel{background:#1c2540}
+#editor{display:none;flex-direction:column;height:46%;border-top:1px solid var(--line)}
+#editor textarea{flex:1;background:#0d1119;color:var(--text);border:0;padding:10px;font:inherit;resize:none;outline:none;tab-size:2}
+#editor .bar{display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line);color:var(--dim);font-size:11px}
+#editor .bar span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.save{background:var(--accent);color:#06281d;border:0;border-radius:6px;padding:3px 10px;font:inherit;font-weight:700;cursor:pointer}
+/* chat */
+#chat{padding:14px 18px}.u{margin:14px 0 6px;color:var(--blue)}.u:before{content:"you › "}
+.r{white-space:pre-wrap;background:#0d1119;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:10px 12px;margin:0 0 6px}
+.r .ans{display:block;font-size:15px;color:#fff;margin:6px 0}.r .blk{color:var(--bad);font-weight:700}.r .dim{color:var(--dim)}
+.sys{color:var(--dim);margin:6px 0}
+.composer{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--line)}
+.composer input{flex:1;background:#0d1119;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:inherit;outline:none}
+.composer input:focus{border-color:var(--accent)}.composer button{background:var(--accent);color:#06281d;border:0;border-radius:8px;padding:0 16px;font:inherit;font-weight:700;cursor:pointer}
+.composer button:disabled{opacity:.4}
+.chips{display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px 0}
+/* telemetry */
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px}
+.card{background:#0d1119;border:1px solid var(--line);border-radius:8px;padding:8px 10px}.card small{display:block;color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.08em}
+.card b{font-size:20px}.sec{padding:4px 12px 12px}.sec h4{margin:10px 0 6px;color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+.bars{display:flex;align-items:flex-end;gap:3px;height:56px}.bars i{flex:1;background:var(--accent);border-radius:2px 2px 0 0;min-height:2px}
+.w{display:flex;align-items:center;gap:8px;margin:4px 0}.w span{width:82px;color:var(--dim)}.w em{flex:1;height:8px;background:#0d1119;border-radius:4px;overflow:hidden}.w em i{display:block;height:100%;background:var(--blue)}
+.rc{font-size:11px;color:var(--dim);border-top:1px solid var(--line);padding:4px 0}.rc b{color:var(--text)}
+.mono{word-break:break-all;color:var(--dim);font-size:11px}
+</style></head><body>
+<div class="app">
+  <section class="pane">
+    <div class="hd"><b>IDE</b> repo files</div>
+    <div class="nav" id="nav"></div>
+    <div class="scroll tree" id="tree"></div>
+    <div id="editor"><div class="bar"><span id="fpath"></span><span id="fstat" style="flex:0"></span><button class="save" id="save">Save</button></div><textarea id="ta" spellcheck="false"></textarea></div>
+  </section>
+  <section class="pane">
+    <div class="hd"><i class="dot" id="dot"></i><b>Carved swarm</b> · 4 scoped workers · one frozen Muse Glimmer weight set</div>
+    <div class="chips" id="chips"></div>
+    <div class="scroll" id="chat"></div>
+    <div class="composer"><input id="in" placeholder="Ask anything about the ingested text · /tell 0 … · /task a ; b ; c · /ingest <text> · /status" autocomplete="off"><button id="go">Send</button></div>
+  </section>
+  <section class="pane">
+    <div class="hd"><b>Telemetry</b> live receipts</div>
+    <div class="scroll" id="tele">
+      <div class="cards">
+        <div class="card"><small>answers</small><b id="t-n">0</b></div>
+        <div class="card"><small>avg latency</small><b id="t-avg">–</b></div>
+        <div class="card"><small>blocked cross-view</small><b id="t-blk">0</b></div>
+        <div class="card"><small>weight sets</small><b id="t-w">1</b></div>
+      </div>
+      <div class="sec"><h4>latency per answer (s)</h4><div class="bars" id="bars"></div>
+        <h4>resident K/V state per worker (tokens)</h4><div id="ws"></div>
+        <h4>weights composite</h4><div class="mono" id="comp">–</div>
+        <h4>receipts</h4><div id="rcs"></div></div>
+    </div>
+  </section>
+</div>
+<script>
+const $=id=>document.getElementById(id);let next=0,ready=false,cur=null,worker='',lastQ='';
+const tel={n:0,lat:[],blk:0,state:{},comp:'',rc:[]};
+const chips=['How often does the Zorblax reactor vent coolant?','/tell 0 What number was in your last answer?','What color are the doors in Brindlemoor?','/as 0 What did Captain Elowen Marsh name her ship?','/task Where did Professor Okonkwo-Reyes discover talvorite? ; Who invented the pressure loom? ; What does the lighthouse keeper ring?','/status'];
+chips.forEach(c=>{const b=document.createElement('button');b.className='chip';b.textContent=c.length>46?c.slice(0,44)+'…':c;b.title=c;b.onclick=()=>send(c);$('chips').appendChild(b)});
+async function send(t){t=t.trim();if(!t||!ready)return;const line=t.startsWith('/')?t.slice(1):'ask '+t;
+  const r=await fetch('/api/send',{method:'POST',body:line});if(r.ok){$('in').value='';ready=false;ui()}}
+$('go').onclick=()=>send($('in').value);$('in').onkeydown=e=>{if(e.key==='Enter')send($('in').value)};
+function ui(){$('dot').className='dot'+(ready?' ready':'');$('go').disabled=!ready;$('in').placeholder=ready?'Ask anything about the ingested text · /tell 0 … · /task a ; b · /ingest <text> · /status':'swarm is working…'}
+function addLine(l){const chat=$('chat');
+  if(l.startsWith('\u0001> ')){const d=document.createElement('div');d.className='u';d.textContent=l.slice(3);chat.appendChild(d);cur=document.createElement('div');cur.className='r';chat.appendChild(cur);lastQ=l.slice(3);return}
+  if(!cur){const d=document.createElement('div');d.className='sys';d.textContent=l;chat.appendChild(d);return}
+  let m;
+  if(m=l.match(/^\s*answer\s*:\s*(.*)$/)){const s=document.createElement('span');s.className='ans';s.textContent=m[1];cur.appendChild(s);return}
+  const span=document.createElement('span');
+  if(/BLOCKED/.test(l)){span.className='blk';tel.blk++}else if(/^\s*(router|path|state|receipt|recalled|worker)/.test(l))span.className='dim';
+  span.textContent=l+'\n';cur.appendChild(span);
+  if(m=l.match(/worker\s*:\s*(\w+)/))worker=m[1];
+  if(m=l.match(/state\s*:.*?resident K\/V state (\d+) -> (\d+) tokens/))tel.state[worker]=+m[2];
+  if(m=l.match(/receipt\s*:\s*weights (\w+)….*?kv (\w+)….*?\(([\d.]+)s\)/)){tel.n++;tel.lat.push(+m[3]);tel.comp=m[1];tel.rc.unshift({w:worker,kv:m[2],s:m[3]})}
+}
+function tele(){$('t-n').textContent=tel.n;$('t-blk').textContent=tel.blk;const a=tel.lat.length?tel.lat.reduce((x,y)=>x+y,0)/tel.lat.length:0;$('t-avg').textContent=a?a.toFixed(1)+'s':'–';
+  const mx=Math.max(1,...tel.lat);$('bars').innerHTML=tel.lat.slice(-24).map(v=>`<i title="${v}s" style="height:${Math.max(4,v/mx*100)}%"></i>`).join('');
+  const smax=Math.max(1,...Object.values(tel.state));$('ws').innerHTML=Object.entries(tel.state).map(([k,v])=>`<div class="w"><span>${k}</span><em><i style="width:${v/smax*100}%"></i></em><b>${v}</b></div>`).join('')||'<div class="mono">no sessions yet</div>';
+  $('comp').textContent=tel.comp?tel.comp+'… (same on every answer)':'–';
+  $('rcs').innerHTML=tel.rc.slice(0,12).map(r=>`<div class="rc"><b>${r.w}</b> kv ${r.kv}… · ${r.s}s</div>`).join('')}
+async function poll(){try{const r=await (await fetch('/api/log?from='+next)).json();const was=r.lines.length;
+  r.lines.forEach(addLine);next=r.next;ready=r.ready;ui();if(was){tele();const c=$('chat');c.scrollTop=c.scrollHeight}}catch(e){}setTimeout(poll,600)}
+poll();ui();
+/* IDE */
+const roots=[['results','results/glimmer-forward'],['server','core_lm/src'],['swarm','Ares WebSite : App/backend/examples'],['harness','Ares WebSite : App/backend/src/harness'],['runtime','globalmind-runtime/src']];
+roots.forEach(([n,p])=>{const b=document.createElement('button');b.textContent=n;b.onclick=()=>listDir(p);$('nav').appendChild(b)});
+let curDir='';async function listDir(p){curDir=p;const items=await (await fetch('/api/files?path='+encodeURIComponent(p))).json();const t=$('tree');t.innerHTML='';
+  if(p){const up=document.createElement('div');up.className='d';up.textContent='‹ '+(p.split('/').slice(0,-1).join('/')||'repo root');up.onclick=()=>listDir(p.split('/').slice(0,-1).join('/'));t.appendChild(up)}
+  items.forEach(i=>{const d=document.createElement('div');d.className=i.dir?'d':'';d.textContent=(i.dir?'▸ ':'  ')+i.name;d.onclick=()=>i.dir?listDir((p?p+'/':'')+i.name):openFile((p?p+'/':'')+i.name,d);t.appendChild(d)})}
+let openPath='';async function openFile(p,el){document.querySelectorAll('.tree .sel').forEach(x=>x.classList.remove('sel'));if(el)el.classList.add('sel');
+  const r=await fetch('/api/file?path='+encodeURIComponent(p));$('editor').style.display='flex';$('fpath').textContent=p;openPath=p;
+  $('ta').value=r.ok?await r.text():'(cannot open: '+await r.text()+')';$('fstat').textContent=''}
+async function save(){if(!openPath)return;const r=await fetch('/api/save?path='+encodeURIComponent(openPath),{method:'POST',body:$('ta').value});$('fstat').textContent=r.ok?'saved ✓':'save failed'}
+$('save').onclick=save;$('ta').onkeydown=e=>{if((e.metaKey||e.ctrlKey)&&e.key==='s'){e.preventDefault();save()}};
+listDir('results/glimmer-forward');
+</script></body></html>
