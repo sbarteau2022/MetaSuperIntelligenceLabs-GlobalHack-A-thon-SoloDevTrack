@@ -69,13 +69,13 @@ body[data-view=telemetry] .cards{grid-template-columns:repeat(4,1fr)}
     <div class="hd"><b>IDE</b> repo files</div>
     <div class="nav" id="nav"></div>
     <div class="scroll tree" id="tree"></div>
-    <div id="editor"><div class="bar"><span id="fpath"></span><span id="fstat" style="flex:0"></span><button class="save" id="save">Save</button></div><textarea id="ta" spellcheck="false"></textarea></div>
+    <div id="editor"><div class="bar"><span id="fpath"></span><span id="fstat" style="flex:0"></span><button class="save" id="save">Save</button><button class="save" id="carve" style="background:var(--blue)">Carve into swarm</button></div><textarea id="ta" spellcheck="false"></textarea></div>
   </section>
   <section class="pane">
     <div class="hd"><i class="dot" id="dot"></i><b>Carved swarm</b> · 4 scoped workers · one frozen Muse Glimmer weight set</div>
     <div class="chips" id="chips"></div>
     <div class="scroll" id="chat"></div>
-    <div class="composer"><input id="in" placeholder="Ask anything about the ingested text · /tell 0 … · /task a ; b ; c · /ingest <text> · /status" autocomplete="off"><button id="go">Send</button></div>
+    <div class="composer"><input id="in" placeholder="Open a file in the IDE → Carve into swarm, then ask about it" autocomplete="off"><button id="go">Send</button></div>
   </section>
   <section class="pane">
     <div class="hd"><b>Telemetry</b> live receipts</div>
@@ -100,10 +100,10 @@ body[data-view=telemetry] .cards{grid-template-columns:repeat(4,1fr)}
 <script>
 function view(){const parts=(location.hash||'#all').slice(1).split(',');const v=(['ide','chat','telemetry','swarm'].includes(parts[0])||/^w-\w+$/.test(parts[0]))?parts[0]:'all';document.body.dataset.view=v;document.body.classList.toggle('clean',parts.includes('clean'));document.querySelectorAll('.tabs a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));if(typeof renderSwarm==='function')renderSwarm()}
 addEventListener('hashchange',view);view();
-const TOKEN='__TOKEN__';const api=(u,o={})=>fetch(u,{...o,headers:{...(o.headers||{}),'X-Swarm-Token':TOKEN}});const $=id=>document.getElementById(id);let next=0,ready=false,cur=null,worker='',lastQ='';
+const TOKEN='__TOKEN__';const ROOT='__ROOT__';const api=(u,o={})=>fetch(u,{...o,headers:{...(o.headers||{}),'X-Swarm-Token':TOKEN}});const $=id=>document.getElementById(id);let next=0,ready=false,cur=null,worker='',lastQ='';
 const sw={};const NAMES=['scout','analyst','archivist','engineer'];NAMES.forEach((n,i)=>sw[n]={well:i,atoms:[],turns:[],tokens:0,lat:[]});let turn=null;
 const tel={n:0,lat:[],blk:0,state:{},comp:'',rc:[]};
-const chips=['How often does the Zorblax reactor vent coolant?','/tell 0 What number was in your last answer?','What color are the doors in Brindlemoor?','/as 0 What did Captain Elowen Marsh name her ship?','/task Where did Professor Okonkwo-Reyes discover talvorite? ; Who invented the pressure loom? ; What does the lighthouse keeper ring?','/status'];
+const chips=['/status','/atoms','/help'];
 chips.forEach(c=>{const b=document.createElement('button');b.className='chip';b.textContent=c.length>46?c.slice(0,44)+'…':c;b.title=c;b.onclick=()=>send(c);$('chips').appendChild(b)});
 async function send(t){t=t.trim();if(!t||!ready)return;const line=t.startsWith('/')?t.slice(1):'ask '+t;
   const r=await api('/api/send',{method:'POST',body:line});if(r.ok){$('in').value='';ready=false;ui()}}
@@ -149,6 +149,6 @@ let openPath='';async function openFile(p,el){document.querySelectorAll('.tree .
   const r=await api('/api/file?path='+encodeURIComponent(p));$('editor').style.display='flex';$('fpath').textContent=p;openPath=p;
   $('ta').value=r.ok?await r.text():'(cannot open: '+await r.text()+')';$('fstat').textContent=''}
 async function save(){if(!openPath)return;const r=await api('/api/save?path='+encodeURIComponent(openPath),{method:'POST',body:$('ta').value});$('fstat').textContent=r.ok?'saved ✓':'save failed'}
-$('save').onclick=save;$('ta').onkeydown=e=>{if((e.metaKey||e.ctrlKey)&&e.key==='s'){e.preventDefault();save()}};
+$('save').onclick=save;$('carve').onclick=()=>{if(openPath)send('/ingest @'+ROOT+'/'+openPath)};$('ta').onkeydown=e=>{if((e.metaKey||e.ctrlKey)&&e.key==='s'){e.preventDefault();save()}};
 listDir('results/glimmer-forward');
 </script></body></html>

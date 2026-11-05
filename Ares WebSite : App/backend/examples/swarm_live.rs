@@ -208,6 +208,20 @@ const ABBREVIATIONS: &[&str] = &[
 
 /// Sentence split that does not cut after titles such as "Dr." or "Prof.".
 fn sentences(text: &str) -> Vec<String> {
+    // Real documents are markdown: drop markers/fences/short fragments so atoms are prose.
+    let cleaned: Vec<String> = text
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("```"))
+        .map(|l| {
+            l.trim()
+                .trim_start_matches(['#', '-', '*', '>', '|', ' ', '+'])
+                .replace(['`', '*', '|'], "")
+                .trim()
+                .to_string()
+        })
+        .filter(|l| l.len() >= 25)
+        .collect();
+    let text = cleaned.join("\n");
     let chars: Vec<char> = text.chars().collect();
     let mut out = Vec::new();
     let mut cur = String::new();
@@ -315,9 +329,21 @@ impl Swarm {
     }
 
     fn ingest(&mut self, text: &str) -> Result<(), String> {
-        let pieces = chunks(text);
+        let mut pieces = chunks(text);
         if pieces.is_empty() {
             return Err("nothing to ingest".into());
+        }
+        const MAX_ATOMS: usize = 150;
+        let room = MAX_ATOMS.saturating_sub(self.atoms.len());
+        if pieces.len() > room {
+            println!(
+                "  (limit {MAX_ATOMS} atoms: keeping the first {room} of {})",
+                pieces.len()
+            );
+            pieces.truncate(room);
+        }
+        if pieces.is_empty() {
+            return Err("atom limit reached".into());
         }
         println!(
             "carving {} atoms across {} workers...",
@@ -329,7 +355,7 @@ impl Swarm {
             let worker = id % self.workers;
             let a = 0.1 + 0.09 * id as f64;
             let digest = format!("{:x}", Sha256::digest(piece.as_bytes()));
-            let esc = piece.replace('\'', "\\'");
+            let esc = piece.replace('\\', "\\\\").replace('\'', "\\'");
             let well_digest = format!("{:x}", Sha256::digest(b"swarm-live-well"));
             let cls = format!("{:x}", Sha256::digest(format!("cls-{id}").as_bytes()));
             self.db.sql(&format!(
@@ -628,7 +654,7 @@ fn main() -> Result<(), String> {
         stats: HashMap::new(),
         kv_hits: 0,
         kv_miss: 0,
-        prefill: true,
+        prefill: std::env::var("SWARM_PREFILL").as_deref() != Ok("off"),
     };
     // Planned work happens before the audience arrives: carve + prefill once.
     match std::env::var("SWARM_PRELOAD").as_deref() {

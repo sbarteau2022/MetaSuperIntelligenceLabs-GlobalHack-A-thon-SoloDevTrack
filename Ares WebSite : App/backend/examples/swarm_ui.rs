@@ -140,12 +140,17 @@ fn handle(
     let body = String::from_utf8_lossy(&body).to_string();
 
     match (method, path) {
-        ("GET", "/") => respond(
-            &mut stream,
-            "200 OK",
-            "text/html; charset=utf-8",
-            &PAGE.replace("__TOKEN__", &token),
-        ),
+        ("GET", "/") => {
+            // SWARM_UI_HTML (a path) is read per request so the page can be edited without a restart.
+            let page = std::env::var("SWARM_UI_HTML")
+                .ok()
+                .and_then(|p| std::fs::read_to_string(p).ok())
+                .unwrap_or_else(|| PAGE.to_string());
+            let page = page
+                .replace("__ROOT__", &root.display().to_string())
+                .replace("__TOKEN__", &token);
+            respond(&mut stream, "200 OK", "text/html; charset=utf-8", &page)
+        }
         ("GET", "/api/log") => {
             let from: usize = query_param(query, "from").parse().unwrap_or(0);
             let s = st.lock().unwrap();
