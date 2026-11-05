@@ -69,6 +69,7 @@ use core_lm::native_token_wire::{
     decode_detok_request, decode_request as decode_token_request, encode_detok_response,
     encode_response as encode_token_response,
 };
+use core_lm::native_session_wire::{decode_fork, decode_turn, encode_reply};
 use core_lm::ops::argmax;
 use core_lm::tokenizer::BpeTokenizer;
 use std::io::{Read, Write};
@@ -475,6 +476,135 @@ fn handle_continue_session(
     }
 }
 
+/// Server-resident sessions: the exact K/V cache never leaves the server.
+struct Sessions {
+    map: std::collections::HashMap<u64, ExactKvCache>,
+    order: Vec<u64>,
+    next: u64,
+}
+
+impl Sessions {
+    const CAP: usize = 64;
+    fn insert(&mut self, cache: ExactKvCache) -> u64 {
+        if self.order.len() >= Self::CAP {
+            let oldest = self.order.remove(0);
+            self.map.remove(&oldest);
+        }
+        self.next += 1;
+        self.map.insert(self.next, cache);
+        self.order.push(self.next);
+        self.next
+    }
+}
+
+fn session_reply(
+    body: &[u8],
+    id: u64,
+    cache: &ExactKvCache,
+    model: &GlimmerModel,
+    output: &[u32],
+    logits: &[f32],
+    artifact: ArtifactDigest,
+) -> Result<Vec<u8>, String> {
+    let c = &model.config;
+    let tokens = cache.token_count(0).ok_or("empty session")?;
+    let mut logits_bytes = Vec::with_capacity(logits.len() * 4);
+    for v in logits {
+        logits_bytes.extend_from_slice(&v.to_le_bytes());
+    }
+    let kv = exact_kv_digest(cache, c.num_hidden_layers, c.num_key_value_heads, tokens)?;
+    Ok(encode_reply(body, id, tokens, output, sha256::sha256(&logits_bytes), kv, artifact))
+}
+
+fn handle_session_prefill(
+    body: &[u8],
+    model: &mut GlimmerModel,
+    sessions: &mut Sessions,
+    artifact: ArtifactDigest,
+) -> Vec<u8> {
+    let result = (|| -> Result<Vec<u8>, String> {
+        let ids = decode_prefill_request(body)?;
+        let c = &model.config;
+        let mut cache = ExactKvCache::new(
+            c.num_hidden_layers,
+            c.num_attention_heads,
+            c.num_key_value_heads,
+            c.head_dim,
+        )?;
+        model.reset_memory();
+        let mut logits = Vec::new();
+        for (position, &id) in ids.iter().enumerate() {
+            logits = model
+                .forward_with_backend(id, position, &mut cache)
+                .map_err(|e| e.to_string())?;
+        }
+        let reply = |id| session_reply(body, id, &cache, model, &[], &logits, artifact);
+        let probe = reply(0)?; // validates the cache before it is stored
+        drop(probe);
+        let id = sessions.insert(cache.clone());
+        session_reply(body, id, &cache, model, &[], &logits, artifact)
+    })();
+    match result {
+        Ok(bytes) => http_response("200 OK", "application/vnd.glimmer.session-v1", &bytes),
+        Err(error) => http_response("400 Bad Request", "text/plain", error.as_bytes()),
+    }
+}
+
+fn handle_session_fork(
+    body: &[u8],
+    model: &GlimmerModel,
+    sessions: &mut Sessions,
+    artifact: ArtifactDigest,
+) -> Vec<u8> {
+    let result = (|| -> Result<Vec<u8>, String> {
+        let from = decode_fork(body)?;
+        let cache = sessions.map.get(&from).ok_or("unknown session")?.clone();
+        let id = sessions.insert(cache.clone());
+        session_reply(body, id, &cache, model, &[], &[0.0], artifact)
+    })();
+    match result {
+        Ok(bytes) => http_response("200 OK", "application/vnd.glimmer.session-v1", &bytes),
+        Err(error) => http_response("400 Bad Request", "text/plain", error.as_bytes()),
+    }
+}
+
+fn handle_session_turn(
+    body: &[u8],
+    model: &mut GlimmerModel,
+    sessions: &mut Sessions,
+    artifact: ArtifactDigest,
+) -> Vec<u8> {
+    let result = (|| -> Result<Vec<u8>, String> {
+        let (id, cont, max_tokens) = decode_turn(body)?;
+        let cache = sessions.map.get_mut(&id).ok_or("unknown session")?;
+        let start = cache.token_count(0).ok_or("empty session")?;
+        model.reset_memory();
+        let mut logits = Vec::new();
+        for (offset, &t) in cont.iter().enumerate() {
+            logits = model
+                .forward_with_backend(t, start + offset, cache)
+                .map_err(|e| e.to_string())?;
+        }
+        let input_len = start + cont.len();
+        let mut output = Vec::new();
+        loop {
+            let next = argmax(&logits).map_err(|e| e.to_string())? as u32;
+            output.push(next);
+            if output.len() >= max_tokens || model.config.eos_token_ids.contains(&next) {
+                break;
+            }
+            logits = model
+                .forward_with_backend(next, input_len + output.len() - 1, cache)
+                .map_err(|e| e.to_string())?;
+        }
+        session_reply(body, id, cache, model, &output, &logits, artifact)
+    })();
+    match result {
+        Ok(bytes) => http_response("200 OK", "application/vnd.glimmer.session-v1", &bytes),
+        Err(error) => http_response("400 Bad Request", "text/plain", error.as_bytes()),
+    }
+}
+
 fn http_response(status: &str, content_type: &str, body: &[u8]) -> Vec<u8> {
     let mut out = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -532,6 +662,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Seat: {seat}");
     println!("Loading Glimmer model (this takes a while) ...");
     let mut model = GlimmerModel::load(&model_dir)?;
+    let mut sessions = Sessions {
+        map: std::collections::HashMap::new(),
+        order: Vec::new(),
+        next: 0,
+    };
     if ArtifactDigest::from_dir(&model_dir)? != artifact {
         return Err("Glimmer artifact changed during model load".into());
     }
@@ -607,6 +742,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let body = &buf[hend..std::cmp::min(buf.len(), hend + content_length)];
         let resp = if method == "POST" && path == "/v1/forward-exact" {
             handle_exact(body, &mut model, artifact)
+        } else if method == "POST" && path == "/v1/session-prefill" {
+            handle_session_prefill(body, &mut model, &mut sessions, artifact)
+        } else if method == "POST" && path == "/v1/session-fork" {
+            handle_session_fork(body, &model, &mut sessions, artifact)
+        } else if method == "POST" && path == "/v1/session-turn" {
+            handle_session_turn(body, &mut model, &mut sessions, artifact)
         } else if method == "POST" && path == "/v1/continue-session" {
             handle_continue_session(body, &mut model, artifact)
         } else if method == "POST" && path == "/v1/detokenize-native" {

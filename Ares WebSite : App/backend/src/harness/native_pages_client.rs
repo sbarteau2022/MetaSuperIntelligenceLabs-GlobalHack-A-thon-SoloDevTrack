@@ -225,6 +225,70 @@ pub fn decode_session_response(request: &[u8], bytes: &[u8]) -> Result<SessionRe
     })
 }
 
+/// Server-resident sessions (GSF2/GST2/GSR2): the server keeps the exact K/V cache and the
+/// client holds only an id. Mirrors core_lm `native_session_wire`.
+pub fn encode_session_fork(id: u64) -> Vec<u8> {
+    let mut out = b"GSF2".to_vec();
+    out.extend_from_slice(&id.to_le_bytes());
+    out
+}
+
+pub fn encode_session_turn(id: u64, cont: &[u32], max_tokens: usize) -> Result<Vec<u8>, String> {
+    if cont.is_empty() || cont.len() > 256 || !(1..=128).contains(&max_tokens) {
+        return Err("session turn bounds violated".into());
+    }
+    let mut out = b"GST2".to_vec();
+    out.extend_from_slice(&id.to_le_bytes());
+    out.extend_from_slice(&(cont.len() as u32).to_le_bytes());
+    out.extend_from_slice(&(max_tokens as u32).to_le_bytes());
+    for t in cont {
+        out.extend_from_slice(&t.to_le_bytes());
+    }
+    Ok(out)
+}
+
+pub struct SessionReply {
+    pub id: u64,
+    pub tokens: usize,
+    pub output_ids: Vec<u32>,
+    pub logits_digest: [u8; 32],
+    pub kv_digest: [u8; 32],
+    pub weights: [u8; 32],
+    pub tokenizer: [u8; 32],
+    pub config: [u8; 32],
+    pub composite: [u8; 32],
+}
+
+pub fn decode_session_reply(request: &[u8], bytes: &[u8]) -> Result<SessionReply, String> {
+    if bytes.len() < 20 + 32 * 7 || &bytes[..4] != b"GSR2" {
+        return Err("session reply header invalid".into());
+    }
+    let id = u64::from_le_bytes(bytes[4..12].try_into().unwrap());
+    let (tokens, n) = (read_u32(bytes, 12), read_u32(bytes, 16));
+    if n > 128 || bytes.len() != 20 + n * 4 + 32 * 7 {
+        return Err("session reply length invalid".into());
+    }
+    let split = bytes.len() - 32;
+    let mut bound = request.to_vec();
+    bound.extend_from_slice(&bytes[..split]);
+    if sha(&bound) != bytes[split..] {
+        return Err("session reply receipt mismatch".into());
+    }
+    let at = 20 + n * 4;
+    let d = |i: usize| -> [u8; 32] { bytes[at + 32 * i..at + 32 * (i + 1)].try_into().unwrap() };
+    Ok(SessionReply {
+        id,
+        tokens,
+        output_ids: (0..n).map(|i| read_u32(bytes, 20 + 4 * i) as u32).collect(),
+        logits_digest: d(0),
+        kv_digest: d(1),
+        weights: d(2),
+        tokenizer: d(3),
+        config: d(4),
+        composite: d(5),
+    })
+}
+
 pub fn encode_continue_request(
     shape: &Shape,
     pages: &Pages,

@@ -1,0 +1,11 @@
+RESIDENT SESSIONS vs SHIPPING PAGES EVERY TURN (frozen Muse Glimmer, 2 turns)
+turn1: shipping 22.61s  resident 22.10s | turn2: shipping 17.52s  resident 17.03s
+bytes over the wire (2 turns): shipping 19.28 MB, resident 0.0007 MB (26049x less)
+identical output ids, K/V digests and logits digest across both arms: true
+NOTES
+- New server routes /v1/session-prefill, /v1/session-fork, /v1/session-turn (GPF2/GSF2/GST2 -> GSR2, core_lm native_session_wire.rs): the exact K/V cache stays resident on the
+  server (cap 64 sessions, oldest evicted); the client keeps an id and sends only new tokens. Outputs, K/V digests and logits digest are bit-identical to shipping pages.
+- Wire: 19.28 MB -> 0.0007 MB over two turns. Wall time improved only ~0.5 s/turn (22.6 -> 22.1 s, 17.5 -> 17.0 s): on loopback the transfer was cheap, so forward compute
+  (~0.8 s per token) dominates. The 160-token per-request page cap no longer applies to the REPL (soft state cap 600 tokens per worker).
+- Live rehearsal on resident sessions (swarm-live-rehearsal-resident-2026-11-04.txt): same answers as before; 231 s wall including preload.
+- Remaining throughput lever: per-token GPU work (~360 synced Metal GEMV commits per token) — not attempted here.

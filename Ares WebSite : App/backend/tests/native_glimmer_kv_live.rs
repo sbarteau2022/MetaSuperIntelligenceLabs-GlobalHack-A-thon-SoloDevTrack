@@ -16,7 +16,8 @@ use ares_backend::harness::native_glimmer_executor::{
     verified_recall_text, KvKey, KvPageStore, NativeGlimmerExecutor,
 };
 use ares_backend::harness::native_pages_client::{
-    decode_prefill_response, encode_continue_request, encode_prefill_request, Pages, Shape,
+    decode_prefill_response, decode_session_reply, decode_session_response,
+    encode_continue_request, encode_prefill_request, encode_session_turn, Pages, Shape,
 };
 use ares_backend::harness::output_receipt::BoundCallOutcome;
 use ares_backend::harness::runtime::{CapabilityGate, CapabilityNode, Engine, Executor};
@@ -1565,6 +1566,90 @@ fn carved_swarm_four_workers_one_weight_set() -> Result<(), String> {
     }
     if composites.len() != 1 {
         return Err("more than one weight identity in the swarm".into());
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Throughput: server-resident sessions vs shipping pages every turn
+// ---------------------------------------------------------------------------
+
+#[test]
+#[ignore = "isolated frozen-Glimmer server with session routes"]
+fn resident_sessions_equal_page_shipping_and_cut_transfer() -> Result<(), String> {
+    let url = std::env::var("ARES_GLIMMER_NATIVE_URL").map_err(|_| "ARES_GLIMMER_NATIVE_URL")?;
+    if url.contains(":8000") || url.contains(":8011") {
+        return Err("use an isolated Glimmer server".into());
+    }
+    let out_path = std::env::var("RESIDENT_REPORT").unwrap_or_default();
+    let (atom, q1, q2) = (
+        FACTS[0].0,
+        "How often does the Zorblax reactor at Quillan Station vent coolant?",
+        "What number was in your last answer?",
+    );
+    let prefix = native_tokens(&url, &format!("{atom}\n"), true)?;
+    let t1 = native_tokens(&url, &format!("Question: {q1}\nAnswer:"), false)?;
+    let t2 = native_tokens(&url, &format!("Question: {q2}\nAnswer:"), false)?;
+    const GEN: usize = 10;
+    let mut lines = vec![
+        "RESIDENT SESSIONS vs SHIPPING PAGES EVERY TURN (frozen Muse Glimmer, 2 turns)".to_string(),
+    ];
+
+    // Arm A: ship pages both ways each turn.
+    let preq = encode_prefill_request(&prefix)?;
+    let (pb, _) = timed_post(&url, "/v1/prefill-exact", preq.clone())?;
+    let pre = decode_prefill_response(&preq, &pb)?;
+    let r1q = encode_continue_request(&pre.shape, &pre.pages, &t1, GEN)?;
+    let (r1b, a1_t) = timed_post(&url, "/v1/continue-session", r1q.clone())?;
+    let a1 = decode_session_response(&r1q, &r1b)?;
+    let mut cont2 = vec![*a1.output_ids.last().unwrap()];
+    cont2.extend(&t2);
+    let r2q = encode_continue_request(&a1.shape, &a1.pages, &cont2, GEN)?;
+    let (r2b, a2_t) = timed_post(&url, "/v1/continue-session", r2q.clone())?;
+    let a2 = decode_session_response(&r2q, &r2b)?;
+    let shipped = r1q.len() + r1b.len() + r2q.len() + r2b.len();
+
+    // Arm B: resident session; only ids and new tokens cross the wire.
+    let (sb, _) = timed_post(&url, "/v1/session-prefill", preq.clone())?;
+    let sid = decode_session_reply(&preq, &sb)?.id;
+    let b1q = encode_session_turn(sid, &t1, GEN)?;
+    let (b1b, b1_t) = timed_post(&url, "/v1/session-turn", b1q.clone())?;
+    let b1 = decode_session_reply(&b1q, &b1b)?;
+    let mut cont2b = vec![*b1.output_ids.last().unwrap()];
+    cont2b.extend(&t2);
+    let b2q = encode_session_turn(sid, &cont2b, GEN)?;
+    let (b2b, b2_t) = timed_post(&url, "/v1/session-turn", b2q.clone())?;
+    let b2 = decode_session_reply(&b2q, &b2b)?;
+    let resident = b1q.len() + b1b.len() + b2q.len() + b2b.len();
+
+    let same = a1.output_ids == b1.output_ids
+        && a2.output_ids == b2.output_ids
+        && a1.kv_digest == b1.kv_digest
+        && a2.kv_digest == b2.kv_digest
+        && a2.logits_digest == b2.logits_digest;
+    lines.push(format!(
+        "turn1: shipping {:.2}s  resident {:.2}s | turn2: shipping {:.2}s  resident {:.2}s",
+        a1_t.as_secs_f64(),
+        b1_t.as_secs_f64(),
+        a2_t.as_secs_f64(),
+        b2_t.as_secs_f64()
+    ));
+    lines.push(format!(
+        "bytes over the wire (2 turns): shipping {:.2} MB, resident {:.4} MB ({:.0}x less)",
+        shipped as f64 / 1e6,
+        resident as f64 / 1e6,
+        shipped as f64 / resident as f64
+    ));
+    lines.push(format!(
+        "identical output ids, K/V digests and logits digest across both arms: {same}"
+    ));
+    let report = lines.join("\n");
+    println!("{report}");
+    if !out_path.is_empty() {
+        fs::write(&out_path, &report).map_err(|e| e.to_string())?;
+    }
+    if !same {
+        return Err("resident session diverged from page shipping".into());
     }
     Ok(())
 }

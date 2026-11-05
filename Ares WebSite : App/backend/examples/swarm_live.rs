@@ -19,8 +19,8 @@ use ares_backend::harness::native_glimmer_executor::{
     decode_token_response, encode_token_request, verified_recall_text,
 };
 use ares_backend::harness::native_pages_client::{
-    decode_prefill_response, decode_session_response, encode_continue_request,
-    encode_prefill_request, Pages, Shape, MAX_PAGE_TOKENS,
+    decode_session_reply, encode_prefill_request, encode_session_fork, encode_session_turn,
+    MAX_PAGE_TOKENS,
 };
 use ares_backend::harness::runtime::Executor;
 use sha2::{Digest, Sha256};
@@ -161,15 +161,19 @@ struct Atom {
     worker: usize,
     a: f64,
     words: BTreeSet<String>,
-    pages: Option<(Shape, Pages)>,
+    /// Server-resident planned-prefill session for this atom (exact K/V stays on the server).
+    sid: Option<u64>,
 }
 
-/// A worker's persistent state on the shared weights: exact K/V tensor pages that
-/// grow turn by turn. Text is never re-sent for what is already in the pages.
+/// Soft cap on a worker's resident state before it restarts from its atom (memory bound).
+const SESSION_TOKEN_CAP: usize = 600;
+
+/// A worker's persistent state on the shared weights: an exact K/V cache RESIDENT on the
+/// server. The client holds only an id and sends only NEW tokens each turn.
 struct Session {
-    shape: Shape,
-    pages: Pages,
-    /// Last generated token: in the output but not yet in the pages.
+    sid: u64,
+    tokens: usize,
+    /// Last generated token: in the output but not yet in the cache.
     pending: u32,
     atoms: BTreeSet<usize>,
     turns: usize,
@@ -334,22 +338,25 @@ impl Swarm {
                  CREATE address_well_membership CONTENT {{ workspace: workspace:`globalmind`, address: atom_address:`live_addr_{id}`, well: cognitive_well:`live_well_{worker}`, classifier_version: 'swarm-live-v1', classifier_digest: '{cls}', boundary_receipt_digest: '{well_digest}' }} RETURN NONE;",
                 a.cosh(), a.sinh()
             ))?;
-            let mut pages = None;
+            let mut sid = None;
             let mut note = String::from("no prefill");
             if self.prefill {
                 let ids = self.native_tokens(&format!("{piece}\n"), true)?;
                 if ids.len() <= MAX_PAGE_TOKENS {
                     let started = Instant::now();
                     let req = encode_prefill_request(&ids)?;
-                    let resp = self.post("/v1/prefill-exact", req.clone())?;
-                    let pre = decode_prefill_response(&req, &resp)?;
-                    self.composite.get_or_insert(pre.composite);
+                    let r = decode_session_reply(
+                        &req,
+                        &self.post("/v1/session-prefill", req.clone())?,
+                    )?;
+                    self.composite.get_or_insert(r.composite);
                     note = format!(
-                        "planned prefill {} tokens in {:.1}s",
+                        "planned prefill {} tokens in {:.1}s, resident session {}",
                         ids.len(),
-                        started.elapsed().as_secs_f64()
+                        started.elapsed().as_secs_f64(),
+                        r.id
                     );
-                    pages = Some((pre.shape, pre.pages));
+                    sid = Some(r.id);
                 } else {
                     note = format!("{} tokens > {MAX_PAGE_TOKENS}: no prefill cache", ids.len());
                 }
@@ -361,7 +368,7 @@ impl Swarm {
                 worker,
                 a,
                 words: words(&piece),
-                pages,
+                sid,
             });
         }
         Ok(())
@@ -376,7 +383,7 @@ impl Swarm {
             .max_by_key(|(id, s)| (*s, usize::MAX - *id))
     }
 
-    /// One turn for `worker`: carry its state as exact K/V pages, feed only NEW tokens.
+    /// One turn for `worker`: its exact K/V cache stays resident on the server; feed only NEW tokens.
     fn turn(
         &mut self,
         worker: usize,
@@ -386,10 +393,6 @@ impl Swarm {
     ) -> Result<(String, Vec<u32>, String), String> {
         let q_ids = self.native_tokens(&format!("Question: {question}\nAnswer:"), false)?;
         let mut note = String::new();
-        // Start (or restart) the worker's state from the atom's planned prefill pages.
-        let fits = |sess: &Session, extra: usize, max: usize| {
-            sess.shape.tokens + extra + max <= MAX_PAGE_TOKENS
-        };
         let mut atom_ids: Vec<u32> = Vec::new();
         if let Some(i) = new_atom {
             if self
@@ -402,30 +405,31 @@ impl Swarm {
         }
         let need_new = match self.sessions.get(&worker) {
             None => true,
-            Some(sess) => !fits(sess, 1 + atom_ids.len() + q_ids.len(), self.max_tokens),
+            Some(sess) => {
+                sess.tokens + 1 + atom_ids.len() + q_ids.len() + self.max_tokens > SESSION_TOKEN_CAP
+            }
         };
         if need_new {
             if self.sessions.contains_key(&worker) {
                 note = " (state full: restarted from the recalled atom)".to_string();
             }
             let i = new_atom.ok_or("worker has no state yet; ask it a question first")?;
-            let (shape, pages) = match self.atoms[i].pages.clone() {
-                Some(p) => p,
+            let from = match self.atoms[i].sid {
+                Some(id) => id,
                 None => {
                     let ids = self.native_tokens(&format!("{text}\n"), true)?;
                     let req = encode_prefill_request(&ids)?;
-                    let pre = decode_prefill_response(
-                        &req,
-                        &self.post("/v1/prefill-exact", req.clone())?,
-                    )?;
-                    (pre.shape, pre.pages)
+                    decode_session_reply(&req, &self.post("/v1/session-prefill", req.clone())?)?.id
                 }
             };
+            // The worker gets its own copy of the atom's state; the atom's stays untouched.
+            let req = encode_session_fork(from);
+            let forked = decode_session_reply(&req, &self.post("/v1/session-fork", req.clone())?)?;
             self.sessions.insert(
                 worker,
                 Session {
-                    shape,
-                    pages,
+                    sid: forked.id,
+                    tokens: forked.tokens,
                     pending: 0,
                     atoms: BTreeSet::from([i]),
                     turns: 0,
@@ -440,13 +444,9 @@ impl Swarm {
         }
         cont.extend(&atom_ids);
         cont.extend(&q_ids);
-        if cont.len() > 64 {
-            return Err("turn too long (more than 64 new tokens)".into());
-        }
-        let before = sess.shape.tokens;
-        let req = encode_continue_request(&sess.shape, &sess.pages, &cont, self.max_tokens)?;
-        let resp = self.post("/v1/continue-session", req.clone())?;
-        let r = decode_session_response(&req, &resp)?;
+        let before = sess.tokens;
+        let req = encode_session_turn(sess.sid, &cont, self.max_tokens)?;
+        let r = decode_session_reply(&req, &self.post("/v1/session-turn", req.clone())?)?;
         match self.composite {
             Some(c) if c != r.composite => return Err("weight identity changed!".into()),
             _ => self.composite = Some(r.composite),
@@ -458,18 +458,14 @@ impl Swarm {
         }
         sess.pending = *r.output_ids.last().ok_or("empty generation")?;
         sess.turns += 1;
-        sess.shape = r.shape.clone();
-        sess.pages = r.pages;
+        sess.tokens = r.tokens;
         let info = format!(
-            "turn {} — state {} -> {} tokens as exact K/V pages; only {} new tokens fed{note}",
-            sess.turns,
-            before,
-            sess.shape.tokens,
-            cont.len()
+            "turn {} — resident K/V state {} -> {} tokens; only {} new tokens sent, no pages shipped{note}",
+            sess.turns, before, sess.tokens, cont.len()
         );
         Ok((
             answer,
-            r.output_ids,
+            r.output_ids.clone(),
             format!("{info}|{}|{}", hex(&r.composite), hex(&r.kv_digest)),
         ))
     }
