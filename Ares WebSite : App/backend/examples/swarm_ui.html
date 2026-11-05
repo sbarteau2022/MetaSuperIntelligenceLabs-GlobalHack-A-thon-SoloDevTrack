@@ -70,12 +70,12 @@
   </section>
 </div>
 <script>
-const $=id=>document.getElementById(id);let next=0,ready=false,cur=null,worker='',lastQ='';
+const TOKEN='__TOKEN__';const api=(u,o={})=>fetch(u,{...o,headers:{...(o.headers||{}),'X-Swarm-Token':TOKEN}});const $=id=>document.getElementById(id);let next=0,ready=false,cur=null,worker='',lastQ='';
 const tel={n:0,lat:[],blk:0,state:{},comp:'',rc:[]};
 const chips=['How often does the Zorblax reactor vent coolant?','/tell 0 What number was in your last answer?','What color are the doors in Brindlemoor?','/as 0 What did Captain Elowen Marsh name her ship?','/task Where did Professor Okonkwo-Reyes discover talvorite? ; Who invented the pressure loom? ; What does the lighthouse keeper ring?','/status'];
 chips.forEach(c=>{const b=document.createElement('button');b.className='chip';b.textContent=c.length>46?c.slice(0,44)+'…':c;b.title=c;b.onclick=()=>send(c);$('chips').appendChild(b)});
 async function send(t){t=t.trim();if(!t||!ready)return;const line=t.startsWith('/')?t.slice(1):'ask '+t;
-  const r=await fetch('/api/send',{method:'POST',body:line});if(r.ok){$('in').value='';ready=false;ui()}}
+  const r=await api('/api/send',{method:'POST',body:line});if(r.ok){$('in').value='';ready=false;ui()}}
 $('go').onclick=()=>send($('in').value);$('in').onkeydown=e=>{if(e.key==='Enter')send($('in').value)};
 function ui(){$('dot').className='dot'+(ready?' ready':'');$('go').disabled=!ready;$('in').placeholder=ready?'Ask anything about the ingested text · /tell 0 … · /task a ; b · /ingest <text> · /status':'swarm is working…'}
 function addLine(l){const chat=$('chat');
@@ -95,19 +95,19 @@ function tele(){$('t-n').textContent=tel.n;$('t-blk').textContent=tel.blk;const 
   const smax=Math.max(1,...Object.values(tel.state));$('ws').innerHTML=Object.entries(tel.state).map(([k,v])=>`<div class="w"><span>${k}</span><em><i style="width:${v/smax*100}%"></i></em><b>${v}</b></div>`).join('')||'<div class="mono">no sessions yet</div>';
   $('comp').textContent=tel.comp?tel.comp+'… (same on every answer)':'–';
   $('rcs').innerHTML=tel.rc.slice(0,12).map(r=>`<div class="rc"><b>${r.w}</b> kv ${r.kv}… · ${r.s}s</div>`).join('')}
-async function poll(){try{const r=await (await fetch('/api/log?from='+next)).json();const was=r.lines.length;
+async function poll(){try{const r=await (await api('/api/log?from='+next)).json();const was=r.lines.length;
   r.lines.forEach(addLine);next=r.next;ready=r.ready;ui();if(was){tele();const c=$('chat');c.scrollTop=c.scrollHeight}}catch(e){}setTimeout(poll,600)}
 poll();ui();
 /* IDE */
 const roots=[['results','results/glimmer-forward'],['server','core_lm/src'],['swarm','Ares WebSite : App/backend/examples'],['harness','Ares WebSite : App/backend/src/harness'],['runtime','globalmind-runtime/src']];
 roots.forEach(([n,p])=>{const b=document.createElement('button');b.textContent=n;b.onclick=()=>listDir(p);$('nav').appendChild(b)});
-let curDir='';async function listDir(p){curDir=p;const items=await (await fetch('/api/files?path='+encodeURIComponent(p))).json();const t=$('tree');t.innerHTML='';
+let curDir='';async function listDir(p){curDir=p;const items=await (await api('/api/files?path='+encodeURIComponent(p))).json();const t=$('tree');t.innerHTML='';
   if(p){const up=document.createElement('div');up.className='d';up.textContent='‹ '+(p.split('/').slice(0,-1).join('/')||'repo root');up.onclick=()=>listDir(p.split('/').slice(0,-1).join('/'));t.appendChild(up)}
   items.forEach(i=>{const d=document.createElement('div');d.className=i.dir?'d':'';d.textContent=(i.dir?'▸ ':'  ')+i.name;d.onclick=()=>i.dir?listDir((p?p+'/':'')+i.name):openFile((p?p+'/':'')+i.name,d);t.appendChild(d)})}
 let openPath='';async function openFile(p,el){document.querySelectorAll('.tree .sel').forEach(x=>x.classList.remove('sel'));if(el)el.classList.add('sel');
-  const r=await fetch('/api/file?path='+encodeURIComponent(p));$('editor').style.display='flex';$('fpath').textContent=p;openPath=p;
+  const r=await api('/api/file?path='+encodeURIComponent(p));$('editor').style.display='flex';$('fpath').textContent=p;openPath=p;
   $('ta').value=r.ok?await r.text():'(cannot open: '+await r.text()+')';$('fstat').textContent=''}
-async function save(){if(!openPath)return;const r=await fetch('/api/save?path='+encodeURIComponent(openPath),{method:'POST',body:$('ta').value});$('fstat').textContent=r.ok?'saved ✓':'save failed'}
+async function save(){if(!openPath)return;const r=await api('/api/save?path='+encodeURIComponent(openPath),{method:'POST',body:$('ta').value});$('fstat').textContent=r.ok?'saved ✓':'save failed'}
 $('save').onclick=save;$('ta').onkeydown=e=>{if((e.metaKey||e.ctrlKey)&&e.key==='s'){e.preventDefault();save()}};
 listDir('results/glimmer-forward');
 </script></body></html>

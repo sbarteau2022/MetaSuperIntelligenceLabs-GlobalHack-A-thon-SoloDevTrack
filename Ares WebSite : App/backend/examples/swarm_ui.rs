@@ -92,7 +92,13 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).to_string()
 }
 
-fn handle(mut stream: TcpStream, root: Arc<PathBuf>, st: Arc<Mutex<State>>) {
+fn handle(
+    mut stream: TcpStream,
+    root: Arc<PathBuf>,
+    st: Arc<Mutex<State>>,
+    port: u16,
+    token: Arc<String>,
+) {
     let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
     let mut first = String::new();
     if reader.read_line(&mut first).is_err() {
@@ -102,21 +108,44 @@ fn handle(mut stream: TcpStream, root: Arc<PathBuf>, st: Arc<Mutex<State>>) {
     let (method, target) = (parts.next().unwrap_or(""), parts.next().unwrap_or("/"));
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
     let mut len = 0usize;
+    let (mut host, mut origin, mut tok) = (String::new(), None::<String>, String::new());
     loop {
         let mut h = String::new();
         if reader.read_line(&mut h).is_err() || h.trim().is_empty() {
             break;
         }
-        if let Some(v) = h.to_ascii_lowercase().strip_prefix("content-length:") {
+        let lower = h.to_ascii_lowercase();
+        if let Some(v) = lower.strip_prefix("content-length:") {
             len = v.trim().parse().unwrap_or(0);
+        } else if let Some(v) = lower.strip_prefix("host:") {
+            host = v.trim().to_string();
+        } else if lower.starts_with("origin:") {
+            origin = Some(h[7..].trim().to_string());
+        } else if lower.starts_with("x-swarm-token:") {
+            tok = h[14..].trim().to_string();
         }
+    }
+    // DNS-rebinding / CSRF guard: exact loopback Host, matching Origin when present,
+    // and (for every API call) an unguessable per-launch token in a custom header.
+    let host_ok = host == format!("127.0.0.1:{port}") || host == format!("localhost:{port}");
+    let origin_ok = origin.as_deref().is_none_or(|o| {
+        o == format!("http://127.0.0.1:{port}") || o == format!("http://localhost:{port}")
+    });
+    let is_page = method == "GET" && path == "/";
+    if !host_ok || !origin_ok || (!is_page && tok != *token) {
+        return respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");
     }
     let mut body = vec![0u8; len.min(2 * MAX_FILE)];
     let _ = reader.read_exact(&mut body);
     let body = String::from_utf8_lossy(&body).to_string();
 
     match (method, path) {
-        ("GET", "/") => respond(&mut stream, "200 OK", "text/html; charset=utf-8", PAGE),
+        ("GET", "/") => respond(
+            &mut stream,
+            "200 OK",
+            "text/html; charset=utf-8",
+            &PAGE.replace("__TOKEN__", &token),
+        ),
         ("GET", "/api/log") => {
             let from: usize = query_param(query, "from").parse().unwrap_or(0);
             let s = st.lock().unwrap();
@@ -297,6 +326,13 @@ fn main() -> Result<(), String> {
             s.ready = false;
         });
     }
+    let token = Arc::new({
+        let mut raw = [0u8; 32];
+        std::fs::File::open("/dev/urandom")
+            .and_then(|mut f| f.read_exact(&mut raw))
+            .map_err(|e| format!("urandom: {e}"))?;
+        raw.iter().map(|b| format!("{b:02x}")).collect::<String>()
+    });
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| e.to_string())?;
     println!(
         "swarm UI: http://127.0.0.1:{port}  (repo: {})",
@@ -304,8 +340,8 @@ fn main() -> Result<(), String> {
     );
     let root = Arc::new(root);
     for stream in listener.incoming().flatten() {
-        let (root, st) = (root.clone(), st.clone());
-        std::thread::spawn(move || handle(stream, root, st));
+        let (root, st, token) = (root.clone(), st.clone(), token.clone());
+        std::thread::spawn(move || handle(stream, root, st, port, token));
     }
     let _ = child.kill();
     Ok(())
