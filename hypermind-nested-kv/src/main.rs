@@ -6,8 +6,23 @@ mod ledger;
 mod mapmath;
 mod role;
 mod surreal;
+use hypermind_nested_kv::tensor_transport;
 use role::Role;
 use surreal::Store;
+
+impl tensor_transport::TensorSql for Store {
+    fn authority(&self) -> tensor_transport::SurrealAuthority {
+        match self.mode {
+            surreal::SurrealMode::Off => tensor_transport::SurrealAuthority::Off,
+            surreal::SurrealMode::Shadow => tensor_transport::SurrealAuthority::Shadow,
+            surreal::SurrealMode::On => tensor_transport::SurrealAuthority::On,
+        }
+    }
+
+    fn query(&self, surrealql: &str) -> Result<Vec<serde_json::Value>, String> {
+        Store::sql(self, surrealql)
+    }
+}
 
 // ---- Goal 57f1db48 items 1+2: judge gate + hashed-TF embedder ----
 // Judge: every ingest carries a pass/fail BEFORE mint. No pass, no atom.
@@ -1985,7 +2000,16 @@ fn backfill_atom_cache(atom: &mut Atom) {
 }
 
 fn open_or_create(root: PathBuf) -> State {
-    std::fs::create_dir_all(&root).ok();
+    open_or_create_with(root, Store::from_env())
+}
+
+fn open_or_create_with(root: PathBuf, store: Store) -> State {
+    // HYPERMIND_SURREAL=on: SurrealDB hypermind/core is the only durable
+    // authority. Do not create .hypermind, the JSONL ledger, or a snapshot.
+    let file_store = store.mode != surreal::SurrealMode::On;
+    if file_store {
+        std::fs::create_dir_all(&root).ok();
+    }
     // Map-owned persistence only. Stored atoms have nothing to do with
     // atomadb (the RAG). Canonical stores:
     //   map.snapshot.bin -- checkpoint (atoms, basins, hunger, kv)
@@ -2007,7 +2031,7 @@ fn open_or_create(root: PathBuf) -> State {
     let mut snap_seq_start: u64 = 1;
     let mut snap_idf: Option<std::collections::HashMap<String, f64>> = None;
     let mut snap_has_basins = false;
-    {
+    if file_store {
         let sp = root.join("map.snapshot.bin");
         let hp = root.join("map.snapshot.sha256");
         if sp.exists() {
@@ -2038,6 +2062,7 @@ fn open_or_create(root: PathBuf) -> State {
     // Replayed ids are basin-appended after state construction (they are
     // not in the snapshot's basins).
     let mut replayed_ids: Vec<u64> = Vec::new();
+    if file_store {
     for v in ledger::read_ledger(&root) {
         let id = v.get("id").and_then(|x| x.as_u64()).unwrap_or(0);
         if id == 0 || atoms.contains_key(&id) {
@@ -2065,8 +2090,9 @@ fn open_or_create(root: PathBuf) -> State {
         atoms.insert(id, atom);
         replayed_ids.push(id);
     }
+    }
     // 3. Legacy one-way import from the old atomadb mind file, if needed.
-    if atoms.is_empty() && !ledger::ledger_path(&root).exists() {
+    if file_store && atoms.is_empty() && !ledger::ledger_path(&root).exists() {
         let mind_path = root.join("db").join("mind.jsonl");
         if mind_path.exists() {
             if let Ok(raw) = std::fs::read_to_string(&mind_path) {
@@ -2142,7 +2168,7 @@ fn open_or_create(root: PathBuf) -> State {
     let mut basin_state = State {
         root,
         role,
-        store: Store::from_env(),
+        store,
         db_id_floor: None,
         dedup_index: std::collections::HashMap::new(),
         basins_dirty: false,
@@ -2251,6 +2277,9 @@ fn wal_path(st: &State) -> PathBuf {
 }
 
 fn write_snapshot(st: &mut State) -> Value {
+    if st.store.mode == surreal::SurrealMode::On {
+        return json!({"status":"fail-closed","error":"file snapshot refused while HYPERMIND_SURREAL=on"});
+    }
     refresh_basin_receipts(st);
     let atoms: Vec<Atom> = st.atoms.values().cloned().collect();
     let snap = StateSnapshot {
@@ -2308,6 +2337,9 @@ fn write_snapshot(st: &mut State) -> Value {
 }
 
 fn recover(st: &mut State) -> Value {
+    if st.store.mode == surreal::SurrealMode::On {
+        return json!({"status":"fail-closed","error":"file recover refused while HYPERMIND_SURREAL=on"});
+    }
     let sp = snapshot_path(st);
     let hp = hash_path(st);
     if !sp.exists() {
@@ -2588,9 +2620,26 @@ fn tools_list() -> Value {
     json!({"tools": tools_a})
 }
 
+fn refuse_string_kv(state: &State, tool: &str, args: &Value) -> Option<Value> {
+    if state.store.mode != surreal::SurrealMode::On {
+        return None;
+    }
+    let out = json!({
+        "status": "fail-closed",
+        "error": "string KvEntry refused while HYPERMIND_SURREAL=on; K/V bytes use the HMKV binary path and transformer_kv_page"
+    });
+    let rcpt = now_receipt(tool, args, &out);
+    Some(json!({"result": out, "receipt": rcpt}))
+}
+
 fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
     match name {
         "map.create" => {
+            if state.store.mode == surreal::SurrealMode::On {
+                let out = json!({"status":"fail-closed","error":"file store refused while HYPERMIND_SURREAL=on"});
+                let rcpt = now_receipt("map.create", args, &out);
+                return json!({"result": out, "receipt": rcpt});
+            }
             let sub = args
                 .get("subpath")
                 .and_then(|x| x.as_str())
@@ -2838,10 +2887,22 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 topic: atom_topic,
                 toks_hash: atom_toks_hash,
             };
-            // Map-owned durability: append to the map ledger before the
-            // atom enters memory. A failed append means no atom, so ledger
-            // and memory can never diverge.
-            if let Err(e) = ledger::append_atom(
+            // Durability before the atom enters memory.
+            // HYPERMIND_SURREAL=on writes only through Surreal (no JSONL).
+            // Otherwise the map ledger stays canonical.
+            if state.store.mode == surreal::SurrealMode::On {
+                let digest = hash_bytes(atom.text.as_bytes());
+                if let Err(e) = state.store.upsert_atom(
+                    id, &atom.text, atom.salience, atom.rank,
+                    &atom.provenance, &atom.taint, &atom.domain,
+                    atom.pinned, &digest,
+                ) {
+                    return json!({"result": {"status": "fail-closed", "error": format!("surreal atom upsert: {e}")}});
+                }
+                if let Err(e) = state.store.upsert_address(id, &atom.coord, &atom.phase) {
+                    return json!({"result": {"status": "fail-closed", "error": format!("surreal address upsert: {e}")}});
+                }
+            } else if let Err(e) = ledger::append_atom(
                 &state.root,
                 id,
                 &atom.text,
@@ -2859,7 +2920,10 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             state.dedup_index.entry(atom.toks_hash).or_default().push(id);
             // Step 1 (SurrealDB shadow dual-write): JSONL+memory stay
             // canonical. Shadow errors are logged, never fatal.
-            let surreal_note = if state.store.enabled() {
+            // On-mode already wrote above and must not open a file side channel.
+            let surreal_note = if state.store.mode == surreal::SurrealMode::On {
+                "surreal-authority".to_string()
+            } else if state.store.enabled() {
                 if state.db_id_floor.is_none() {
                     state.db_id_floor = Some(state.store.max_external_id());
                 }
@@ -3766,6 +3830,9 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             json!({"result":out,"receipt":rcpt})
         }
         "map.kv_store" => {
+            if let Some(denial) = refuse_string_kv(state, "map.kv_store", args) {
+                return denial;
+            }
             // Nested KV write: key-ordered tree, snapshotted, receipted.
             if args.get("key").and_then(|x| x.as_str()).is_none()
                 || args.get("value").and_then(|x| x.as_str()).is_none()
@@ -3820,6 +3887,9 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             json!({"result": out, "receipt": rcpt})
         }
         "map.kv_fetch" => {
+            if let Some(denial) = refuse_string_kv(state, "map.kv_fetch", args) {
+                return denial;
+            }
             // Nested KV read with hit receipt. MISS taps hunger (H-1).
             if args.get("key").and_then(|x| x.as_str()).is_none() {
                 return json!({"result": {"status": "error", "error": "schema: key must be string"}});
@@ -3867,6 +3937,9 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
             }
         }
         "map.kv_invalidate" => {
+            if let Some(denial) = refuse_string_kv(state, "map.kv_invalidate", args) {
+                return denial;
+            }
             // Exact invalidation (Recall-vs-Recompute Law §4): mark + walk.
             if args.get("key").and_then(|x| x.as_str()).is_none() {
                 return json!({"result": {"status": "error", "error": "schema: key must be string"}});
@@ -4911,10 +4984,17 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
     }
 }
 
-fn run_stdio() {
+fn boot_state() -> Arc<Mutex<State>> {
     let root = workspace_root();
-    std::fs::create_dir_all(&root).ok();
-    let state = Arc::new(Mutex::new(open_or_create(root.join(".hypermind"))));
+    let probe = Store::from_env();
+    if probe.mode != surreal::SurrealMode::On {
+        std::fs::create_dir_all(&root).ok();
+    }
+    Arc::new(Mutex::new(open_or_create(root.join(".hypermind"))))
+}
+
+fn run_stdio() {
+    let state = boot_state();
     let stdin = std::io::stdin();
     for line in BufReader::new(stdin).lines() {
         let line = match line {
@@ -6517,6 +6597,61 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn surreal_on_does_not_create_file_store_and_refuses_string_kv() {
+        let dir = std::env::temp_dir().join(format!("hm_surreal_on_nofile_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut store = Store::from_env();
+        store.mode = surreal::SurrealMode::On;
+        let mut st = open_or_create_with(dir.clone(), store);
+        assert!(
+            !dir.exists(),
+            "HYPERMIND_SURREAL=on must not create .hypermind"
+        );
+        assert!(!ledger::ledger_path(&dir).exists());
+        let kv = handle_tool(
+            &mut st,
+            "map.kv_store",
+            &json!({"key": "reasoning/walk/step-3", "value": "not a tensor"}),
+        );
+        assert_eq!(kv["result"]["status"], "fail-closed");
+        assert!(st.kv.is_empty());
+        let snap = handle_tool(&mut st, "map.snapshot", &json!({}));
+        assert_eq!(snap["result"]["status"], "fail-closed");
+        assert!(!dir.join("map.snapshot.bin").exists());
+        assert!(!dir.join("map.atoms.jsonl").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tensor_commit_unreachable_surreal_fails_closed() {
+        let req = tensor_transport::WriteRequest {
+            atom_id: 7,
+            address_revision: 1,
+            h3_lorentz: [1.0, 0.0, 0.0, 0.0],
+            t2_phase: [0.25, -0.5],
+            dtype: tensor_transport::TensorDtype::F32,
+            layout: "row-major".into(),
+            positional_encoding: "toroidal-phase".into(),
+            shape: vec![2, 4],
+            tppe: "toroidal-phase-finite-feature-v1".into(),
+            model_digest: [0x11; 32],
+            key_tensor: (0u8..32).collect(),
+            value_tensor: (32u8..64).collect(),
+        };
+        let page = tensor_transport::prepare_write(&req).expect("fixture page");
+        let mut store = Store::from_env();
+        store.mode = surreal::SurrealMode::On;
+        store.host = "127.0.0.1".into();
+        store.port = 1;
+        let rcpt = tensor_transport::commit_page(&store, &page);
+        assert_eq!(rcpt.status, "fail-closed");
+        assert_eq!(rcpt.field, "surreal");
+        assert_eq!(rcpt.prefill, "refused");
+        assert!(rcpt.key_tensor.is_empty());
+        assert!(rcpt.reason.contains("surreal"));
+    }
 }
 
 #[cfg(test)]
@@ -6892,12 +7027,16 @@ fn run_http(state: std::sync::Arc<std::sync::Mutex<State>>, port: u16) {
         }
         // read headers
         let mut content_length = 0usize;
+        let mut content_type = String::new();
         loop {
             let mut h = String::new();
             if reader.read_line(&mut h).is_err() || h.trim().is_empty() {
                 break;
             }
             let hl = h.to_lowercase();
+            if hl.starts_with("content-type:") {
+                content_type = hl.split(':').nth(1).unwrap_or("").trim().to_string();
+            }
             if hl.starts_with("content-length:") {
                 content_length = hl
                     .split(':')
@@ -6910,6 +7049,20 @@ fn run_http(state: std::sync::Arc<std::sync::Mutex<State>>, port: u16) {
         }
         let mut body = vec![0u8; content_length];
         let _ = reader.read_exact(&mut body);
+        if content_type.starts_with("application/octet-stream") {
+            let frame = {
+                let st = state.lock().unwrap();
+                tensor_transport::dispatch_authoritative(&st.store, &body)
+            };
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                frame.len()
+            );
+            let _ = stream.write_all(header.as_bytes());
+            let _ = stream.write_all(&frame);
+            let _ = stream.flush();
+            continue;
+        }
         let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or(serde_json::json!({}));
         let id = req.get("id").cloned().unwrap_or(serde_json::Value::Null);
         let method = req.get("method").and_then(|x| x.as_str()).unwrap_or("");
@@ -6942,14 +7095,17 @@ fn run_http(state: std::sync::Arc<std::sync::Mutex<State>>, port: u16) {
 }
 
 fn main() {
-    let root = workspace_root();
-    std::fs::create_dir_all(&root).ok();
-    let state = std::sync::Arc::new(std::sync::Mutex::new(open_or_create(
-        root.join(".hypermind"),
-    )));
+    if std::env::args().nth(1).as_deref() == Some("tensor-session") {
+        let code = tensor_transport::run_tensor_session(
+            std::io::stdin(),
+            std::io::stdout(),
+            &Store::from_env(),
+        );
+        std::process::exit(code);
+    }
     if let Ok(port) = std::env::var("HYPERMIND_HTTP_PORT") {
         if let Ok(p) = port.parse::<u16>() {
-            run_http(state, p);
+            run_http(boot_state(), p);
             return;
         }
     }

@@ -118,6 +118,83 @@ DNHG sources are excluded from the competition evidence chain.
   traversal mid-plan IS the detector — re-ground, don't push through.
 - **Superior Quality:** `E[Q] = cov × p_useful × (1-drift)`, all measured.
 
+## Tensor page path (binary, not MCP)
+
+K/V pages are `f32` or `bf16` bytes. They are not JSON, not string `KvEntry`
+values, and not returned by semantic `map.query` / `map.attend`. Score,
+rank, `acosh`, and `shell_project` stay `f64`.
+
+SurrealDB namespace `hypermind`, database `core` is the durable authority
+when `HYPERMIND_SURREAL=on`. Pages live in `transformer_kv_session`,
+`transformer_kv_page` (`key_tensor` / `value_tensor` are `bytes`), and
+`transformer_kv_next`. That mode does not create `.hypermind`,
+`map.atoms.jsonl`, or `map.snapshot.bin`. Shadow mode is rejected for
+tensor pages. The harness speaks MCP only and must not receive database
+credentials. String `map.kv_store` / `map.kv_fetch` fail closed while
+Surreal is `on`.
+
+`geometry_space` is `h3_t2_r12_v1`. `quotient_status` is `opaque`.
+`contract_digest` is `UNSPECIFIED-R12-ACTION`. That is not a certified
+`H³×T²/r_12`. RoPE and Euclidean positional encodings are inadmissible.
+
+Reuse is an exact match on model digest, shape, layout, dtype, TPPE
+(`toroidal_phase_encoder_version`), address-contract digest, and K/V
+digests. A mismatch is a closed miss: prefill is refused and the bytes
+are not returned.
+
+### Prove the gate without the live database
+
+```bash
+cargo test --locked --offline --manifest-path hypermind-nested-kv/Cargo.toml --lib tensor_transport
+```
+
+Those tests write a page, fetch it by address plus the exact contract,
+and check reuse without re-prefill. They also close the miss on every
+gate field. The working set in that test is process memory. It is not
+the durable store.
+
+### SurrealDB 3.3.5 on the Mac
+
+Live `hypermind/core` (2,079 atoms, zero tensor pages) is not assumed
+reachable from a cloud VM. On the Mac, with the existing HTTP client
+(no `surrealdb` crate, no harness credentials):
+
+```bash
+# Surreal is already installed (CLI 3.3.5). Do not point the harness at these.
+export HYPERMIND_SURREAL=on
+export HYPERMIND_SURREAL_URL=http://127.0.0.1:8000
+export HYPERMIND_SURREAL_NS=hypermind
+export HYPERMIND_SURREAL_DB=core
+export HYPERMIND_SURREAL_USER=...
+export HYPERMIND_SURREAL_PASS=...
+
+# Apply only if these revisions are not already on hypermind/core.
+surreal sql --endpoint http://127.0.0.1:8000 --namespace hypermind --database core \
+  --username "$HYPERMIND_SURREAL_USER" --password "$HYPERMIND_SURREAL_PASS" \
+  --file hypermind-nested-kv/schema/0003_nested_hyperbolic_kv.surql
+surreal sql --endpoint http://127.0.0.1:8000 --namespace hypermind --database core \
+  --username "$HYPERMIND_SURREAL_USER" --password "$HYPERMIND_SURREAL_PASS" \
+  --file hypermind-nested-kv/schema/0004_exact_match_admission.surql
+surreal sql --endpoint http://127.0.0.1:8000 --namespace hypermind --database core \
+  --username "$HYPERMIND_SURREAL_USER" --password "$HYPERMIND_SURREAL_PASS" \
+  --file hypermind-nested-kv/schema/0009_immutable_tensor_kv.surql
+
+# Binary session. Frames are little-endian length-prefixed HMKV blobs
+# (magic HMKV, version 1). Op 1 writes K/V bytes. Op 2 fetches by address
+# and contract. A hit receipt has prefill=skipped and returns the bytes.
+# This process must not create .hypermind, map.atoms.jsonl, or map.snapshot.bin.
+cargo build --locked --offline --manifest-path hypermind-nested-kv/Cargo.toml --bin hypermind-mcp
+./hypermind-nested-kv/target/debug/hypermind-mcp tensor-session < frames.bin > receipts.bin
+```
+
+`tensor-session` fails closed (exit 2, explained receipt, no query) unless
+`HYPERMIND_SURREAL=on`. An HTTP body with `Content-Type: application/octet-stream`
+on `HYPERMIND_HTTP_PORT` is the same binary frame, not MCP JSON.
+
+Pick an existing atom id from `hypermind/core` when writing the first page.
+The page links to `atom:{id}` and `atom_address:{id}` and is a separate
+retrieval plane from semantic recall.
+
 ## Whole-system SQLite traceability foundation (2026-10-29)
 
 [observability/README.md](observability/README.md) documents the 76-table SQLite
