@@ -134,6 +134,9 @@ pub struct StrategyState {
 }
 
 impl StrategyState {
+    /// Legacy state digest. It omits `confidence_floor`, so a floor change is
+    /// invisible in it. Kept only so older receipts stay recomputable; every
+    /// new transition binds `digest_v2`.
     pub fn digest(&self) -> String {
         Sha256Digest::compute(
             format!(
@@ -150,6 +153,50 @@ impl StrategyState {
         )
         .to_hex()
     }
+}
+
+impl StrategyState {
+    /// State digest that binds the preregistered floor. A floor can no longer
+    /// change without the receipt chain showing it.
+    pub fn digest_v2(&self) -> String {
+        Sha256Digest::compute(
+            format!(
+                "strategy-state-v2\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+                self.strategy_id,
+                self.policy_version,
+                self.prefix_identity,
+                self.map_identity,
+                self.confidence.0,
+                self.confidence_floor.0,
+                self.calibration_count,
+                self.outcome_history_digest,
+            )
+            .as_bytes(),
+        )
+        .to_hex()
+    }
+}
+
+/// Deterministic re-rank of a held set: confidence descending on the raw
+/// Q32.31 value, ties broken by `strategy_id` ascending. Strategy ids must be
+/// distinct, because that is what makes the order total; a duplicate id fails
+/// closed instead of ranking. No model, prose, or self-reported score is read.
+pub fn rerank_strategies(states: &mut [StrategyState]) -> Result<(), String> {
+    for (i, a) in states.iter().enumerate() {
+        if states[..i].iter().any(|b| b.strategy_id == a.strategy_id) {
+            return Err(format!(
+                "duplicate strategy_id in held set: {}",
+                a.strategy_id
+            ));
+        }
+    }
+    states.sort_by(|a, b| {
+        b.confidence
+            .0
+            .cmp(&a.confidence.0)
+            .then_with(|| a.strategy_id.cmp(&b.strategy_id))
+    });
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -212,7 +259,7 @@ pub fn transition(
     signals: &AuditSignals,
     now_ms: u64,
 ) -> AutomatonTransition {
-    let prior = state.digest();
+    let prior = state.digest_v2();
     let proposal_digest = proposal.digest();
     let verdict = if proposal.policy_version != state.policy_version
         || proposal.prefix_identity != state.prefix_identity
@@ -260,7 +307,7 @@ pub fn update_from_outcome(
     if !verified {
         return Err("unverified outcome cannot update confidence".to_string());
     }
-    let prior = state.digest();
+    let prior = state.digest_v2();
     let step = Q32_31::from_f64(0.1);
     state.confidence = if success {
         state.confidence + (Q32_31::ONE - state.confidence) * step
@@ -311,7 +358,7 @@ pub fn update_from_prediction_error(
     if error < Q32_31::ZERO || error > Q32_31::ONE {
         return Err("prediction error outside [0, 1]".to_string());
     }
-    let prior = state.digest();
+    let prior = state.digest_v2();
     let step = Q32_31::from_f64(0.1);
     let target = Q32_31::ONE - error;
     state.confidence = state.confidence + (target - state.confidence) * step;
@@ -334,6 +381,53 @@ pub fn update_from_prediction_error(
     Ok(AutomatonTransition {
         prior_state_digest: prior,
         proposal_digest: "prediction-error".to_string(),
+        verdict: Verdict::Admit,
+        updated_confidence: state.confidence,
+        updated_history_digest: state.outcome_history_digest.clone(),
+        committed: true,
+        receipt_digest: receipt,
+    })
+}
+
+/// Probe admission: the only way past the confidence floor.
+///
+/// Confidence moves only on verified outcomes, and a strategy below its floor
+/// is never run, so it would never be judged again and could never recover.
+/// This function lets the automaton itself, and nothing else, admit one
+/// bounded probe after `probe_every` consecutive floor-gated proposals. It
+/// returns `Some` only when the ordinary verdict is Clarify and nothing but
+/// the floor caused it: open dependencies and entity ambiguity are never
+/// probed past, and a Reject is never probed at all. Admission leaves
+/// confidence unchanged; the probe's verified outcome does the moving.
+pub fn probe_admit(
+    state: &StrategyState,
+    proposal: &ProposerEnvelope,
+    signals: &AuditSignals,
+    now_ms: u64,
+    gated_rounds: u32,
+    probe_every: u32,
+) -> Option<AutomatonTransition> {
+    if probe_every == 0 || gated_rounds < probe_every {
+        return None;
+    }
+    if signals.unresolved_dependencies > 0 || signals.entity_ambiguity {
+        return None;
+    }
+    let base = transition(state, proposal, signals, now_ms);
+    if base.verdict != Verdict::Clarify {
+        return None;
+    }
+    let tagged = format!("probe:{}", base.proposal_digest);
+    let receipt = transition_receipt(
+        &base.prior_state_digest,
+        &tagged,
+        Verdict::Admit,
+        state.confidence,
+        &state.outcome_history_digest,
+    );
+    Some(AutomatonTransition {
+        prior_state_digest: base.prior_state_digest,
+        proposal_digest: tagged,
         verdict: Verdict::Admit,
         updated_confidence: state.confidence,
         updated_history_digest: state.outcome_history_digest.clone(),
@@ -537,5 +631,104 @@ mod tests {
         assert!(sql.contains(&state().confidence.0.to_string()));
         let sql = transition_insert_sql(&transition(&state(), &proposal(), &signals(0.8), 100));
         assert!(sql.contains("admit"));
+    }
+
+    #[test]
+    fn one_success_from_point_six_is_the_papers_raw_value() {
+        // Meta-Superposition v2, Proof 5 Step 6: raw 1374389534 is 0.64 in
+        // Q32.31, and it follows from a starting confidence of exactly 0.6.
+        let mut s = state();
+        update_from_outcome(&mut s, true, true).expect("verified outcome");
+        assert_eq!(s.confidence.0, 1_374_389_534);
+    }
+
+    #[test]
+    fn digest_v2_binds_the_floor_and_legacy_digest_does_not() {
+        let a = state();
+        let mut b = state();
+        b.confidence_floor = Q32_31::from_f64(0.9);
+        assert_eq!(a.digest(), b.digest(), "legacy digest cannot see the floor");
+        assert_ne!(a.digest_v2(), b.digest_v2(), "v2 must bind the floor");
+        let ta = transition(&a, &proposal(), &signals(0.8), 100);
+        let tb = transition(&b, &proposal(), &signals(0.8), 100);
+        assert_ne!(ta.prior_state_digest, tb.prior_state_digest);
+    }
+
+    fn ranked(id: &str, conf: f64) -> StrategyState {
+        let mut s = state();
+        s.strategy_id = id.to_string();
+        s.confidence = Q32_31::from_f64(conf);
+        s
+    }
+
+    #[test]
+    fn rerank_is_confidence_descending_then_id_ascending_and_input_order_free() {
+        let mut v = vec![
+            ranked("c", 0.5),
+            ranked("a", 0.5),
+            ranked("z", 0.9),
+            ranked("b", 0.1),
+        ];
+        rerank_strategies(&mut v).unwrap();
+        let ids: Vec<&str> = v.iter().map(|s| s.strategy_id.as_str()).collect();
+        assert_eq!(ids, ["z", "a", "c", "b"]);
+        // Every permutation of the input yields the same order.
+        let base = ["c", "a", "z", "b"];
+        let conf = |id: &str| match id {
+            "z" => 0.9,
+            "b" => 0.1,
+            _ => 0.5,
+        };
+        let mut perm = base.to_vec();
+        for rot in 0..4 {
+            perm.rotate_left(rot);
+            let mut w: Vec<StrategyState> = perm.iter().map(|i| ranked(i, conf(i))).collect();
+            w.reverse();
+            rerank_strategies(&mut w).unwrap();
+            let got: Vec<&str> = w.iter().map(|s| s.strategy_id.as_str()).collect();
+            assert_eq!(got, ["z", "a", "c", "b"]);
+        }
+    }
+
+    #[test]
+    fn rerank_refuses_duplicate_strategy_ids() {
+        let mut v = vec![ranked("a", 0.5), ranked("a", 0.7)];
+        assert!(rerank_strategies(&mut v).is_err());
+    }
+
+    #[test]
+    fn probe_admits_only_past_the_floor_and_only_when_due() {
+        let low = {
+            let mut s = state();
+            s.confidence = Q32_31::from_f64(0.1);
+            s
+        };
+        let sig = signals(0.1);
+        // Gated, but not yet due.
+        assert!(probe_admit(&low, &proposal(), &sig, 100, 1, 2).is_none());
+        // Disabled.
+        assert!(probe_admit(&low, &proposal(), &sig, 100, 99, 0).is_none());
+        // Due: admitted, tagged, and confidence untouched.
+        let p = probe_admit(&low, &proposal(), &sig, 100, 2, 2).expect("due probe");
+        assert_eq!(p.verdict, Verdict::Admit);
+        assert!(p.committed);
+        assert!(p.proposal_digest.starts_with("probe:"));
+        assert_eq!(p.updated_confidence, low.confidence);
+        let plain = transition(&low, &proposal(), &sig, 100);
+        assert_ne!(p.receipt_digest, plain.receipt_digest);
+        // Open dependencies and ambiguity are never probed past.
+        let mut dep = signals(0.1);
+        dep.unresolved_dependencies = 1;
+        assert!(probe_admit(&low, &proposal(), &dep, 100, 9, 2).is_none());
+        let mut amb = signals(0.1);
+        amb.entity_ambiguity = true;
+        assert!(probe_admit(&low, &proposal(), &amb, 100, 9, 2).is_none());
+        // A Reject is never probed: expired, wrong identity.
+        assert!(probe_admit(&low, &proposal(), &sig, 2_000_000, 9, 2).is_none());
+        let mut foreign = proposal();
+        foreign.map_identity = "other-map".to_string();
+        assert!(probe_admit(&low, &foreign, &sig, 100, 9, 2).is_none());
+        // An already-admissible proposal needs no probe.
+        assert!(probe_admit(&state(), &proposal(), &signals(0.8), 100, 9, 2).is_none());
     }
 }
