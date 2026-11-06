@@ -120,27 +120,36 @@ DNHG sources are excluded from the competition evidence chain.
 
 ## Tensor page path (binary, not MCP)
 
-K/V pages are `f32` or `bf16` bytes. They are not JSON, not string `KvEntry`
-values, and not returned by semantic `map.query` / `map.attend`. Score,
-rank, `acosh`, and `shell_project` stay `f64`.
+Pages are bytes on an `HMKV` version-2 frame. Dtypes are `f16`, `bf16`,
+`f32`, `q8_0`, and `q4_0`. Layouts are `token_major` and `head_dim_major`.
+They are not JSON, not string `KvEntry` values, and not returned by
+semantic `map.query` / `map.attend`. Score, rank, `acosh`, and
+`shell_project` stay `f64`.
 
 SurrealDB namespace `hypermind`, database `core` is the durable authority
-when `HYPERMIND_SURREAL=on`. Pages live in `transformer_kv_session`,
-`transformer_kv_page` (`key_tensor` / `value_tensor` are `bytes`), and
-`transformer_kv_next`. That mode does not create `.hypermind`,
-`map.atoms.jsonl`, or `map.snapshot.bin`. Shadow mode is rejected for
-tensor pages. The harness speaks MCP only and must not receive database
-credentials. String `map.kv_store` / `map.kv_fetch` fail closed while
-Surreal is `on`.
+when `HYPERMIND_SURREAL=on`, through the existing HTTP client in
+`src/surreal.rs`. The live table contract is
+`schema/0004_transformer_kv_tensor_pages.surql`. That file is already
+applied. Do not run it, and do not apply any other tensor migration,
+against the live database. Pages use `tensor_shape` (`array<int, 2>`),
+`key_tensor` / `value_tensor` bytes, and `address` (`record<atom_address>`).
+`transformer_kv_next` is a relation. That mode does not create
+`.hypermind`, `map.atoms.jsonl`, or `map.snapshot.bin`. Shadow mode is
+rejected for tensor pages. The harness speaks MCP only and must not
+receive database credentials. String `map.kv_store` / `map.kv_fetch`
+fail closed while Surreal is `on`.
 
-`geometry_space` is `h3_t2_r12_v1`. `quotient_status` is `opaque`.
-`contract_digest` is `UNSPECIFIED-R12-ACTION`. That is not a certified
-`H³×T²/r_12`. RoPE and Euclidean positional encodings are inadmissible.
+`geometry_space` is the record `geometry_space:h3_t2_r12_v1`.
+`quotient_status` is `opaque`. `contract_digest` is
+`UNSPECIFIED-R12-ACTION`. Those two strings are receipt labels; the live
+session and page tables do not have those columns. This is not a
+certified `H³×T²/r_12`. RoPE and Euclidean positional encodings are
+inadmissible.
 
-Reuse is an exact match on model digest, shape, layout, dtype, TPPE
-(`toroidal_phase_encoder_version`), address-contract digest, and K/V
-digests. A mismatch is a closed miss: prefill is refused and the bytes
-are not returned.
+Reuse is an exact match on model digest, `tensor_shape`, layout, dtype,
+TPPE (`toroidal_phase_encoder_version`), address-contract digest, and
+K/V digests. A mismatch is a closed miss: prefill is refused and the
+bytes are not returned.
 
 ### Prove the gate without the live database
 
@@ -148,52 +157,44 @@ are not returned.
 cargo test --locked --offline --manifest-path hypermind-nested-kv/Cargo.toml --lib tensor_transport
 ```
 
-Those tests write a page, fetch it by address plus the exact contract,
-and check reuse without re-prefill. They also close the miss on every
-gate field. The working set in that test is process memory. It is not
-the durable store.
+### Mac hop (SurrealDB 3.3.5 already running, schema already applied)
 
-### SurrealDB 3.3.5 on the Mac
-
-Live `hypermind/core` (2,079 atoms, zero tensor pages) is not assumed
-reachable from a cloud VM. On the Mac, with the existing HTTP client
-(no `surrealdb` crate, no harness credentials):
+Do not apply a schema file. Pick an existing `atom_address` id from
+`hypermind` / `core`. The commands below use `1` as that id. The demo
+page is `f32`, `token_major`, `tensor_shape [2, 4]`, layer 0, kv head 0,
+tokens `[0, 2)`, revision 1, model digest `11` repeated, request digest
+`22` repeated. A second write of that same session identity fails closed
+on the live unique index.
 
 ```bash
-# Surreal is already installed (CLI 3.3.5). Do not point the harness at these.
 export HYPERMIND_SURREAL=on
 export HYPERMIND_SURREAL_URL=http://127.0.0.1:8000
 export HYPERMIND_SURREAL_NS=hypermind
 export HYPERMIND_SURREAL_DB=core
-export HYPERMIND_SURREAL_USER=...
+export HYPERMIND_SURREAL_USER=...   # local Surreal user, never the harness
 export HYPERMIND_SURREAL_PASS=...
 
-# Apply only if these revisions are not already on hypermind/core.
-surreal sql --endpoint http://127.0.0.1:8000 --namespace hypermind --database core \
-  --username "$HYPERMIND_SURREAL_USER" --password "$HYPERMIND_SURREAL_PASS" \
-  --file hypermind-nested-kv/schema/0003_nested_hyperbolic_kv.surql
-surreal sql --endpoint http://127.0.0.1:8000 --namespace hypermind --database core \
-  --username "$HYPERMIND_SURREAL_USER" --password "$HYPERMIND_SURREAL_PASS" \
-  --file hypermind-nested-kv/schema/0004_exact_match_admission.surql
-surreal sql --endpoint http://127.0.0.1:8000 --namespace hypermind --database core \
-  --username "$HYPERMIND_SURREAL_USER" --password "$HYPERMIND_SURREAL_PASS" \
-  --file hypermind-nested-kv/schema/0009_immutable_tensor_kv.surql
-
-# Binary session. Frames are little-endian length-prefixed HMKV blobs
-# (magic HMKV, version 1). Op 1 writes K/V bytes. Op 2 fetches by address
-# and contract. A hit receipt has prefill=skipped and returns the bytes.
-# This process must not create .hypermind, map.atoms.jsonl, or map.snapshot.bin.
 cargo build --locked --offline --manifest-path hypermind-nested-kv/Cargo.toml --bin hypermind-mcp
-./hypermind-nested-kv/target/debug/hypermind-mcp tensor-session < frames.bin > receipts.bin
+BIN=hypermind-nested-kv/target/debug/hypermind-mcp
+ADDR=1
+"$BIN" tensor-frames "$ADDR" /tmp/hmkv-demo
+
+# write one page. Expect status=admitted. Exit 0.
+"$BIN" tensor-session < /tmp/hmkv-demo/write.bin > /tmp/hmkv-demo/write.out
+"$BIN" tensor-show < /tmp/hmkv-demo/write.out
+
+# fetch the same contract. Expect status=hit prefill=skipped. Exit 0.
+"$BIN" tensor-session < /tmp/hmkv-demo/fetch-hit.bin > /tmp/hmkv-demo/hit.out
+"$BIN" tensor-show < /tmp/hmkv-demo/hit.out
+
+# fetch a mismatched model digest. Expect status=closed-miss prefill=refused field=model_digest. Exit 1.
+"$BIN" tensor-session < /tmp/hmkv-demo/fetch-miss.bin > /tmp/hmkv-demo/miss.out
+"$BIN" tensor-show < /tmp/hmkv-demo/miss.out
 ```
 
-`tensor-session` fails closed (exit 2, explained receipt, no query) unless
-`HYPERMIND_SURREAL=on`. An HTTP body with `Content-Type: application/octet-stream`
-on `HYPERMIND_HTTP_PORT` is the same binary frame, not MCP JSON.
-
-Pick an existing atom id from `hypermind/core` when writing the first page.
-The page links to `atom:{id}` and `atom_address:{id}` and is a separate
-retrieval plane from semantic recall.
+`tensor-session` fails closed (exit 2, no SQL) unless `HYPERMIND_SURREAL=on`.
+It does not create `.hypermind`. The same frame is accepted as
+`Content-Type: application/octet-stream` on `HYPERMIND_HTTP_PORT`.
 
 ## Whole-system SQLite traceability foundation (2026-10-29)
 

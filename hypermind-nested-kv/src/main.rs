@@ -6626,20 +6626,7 @@ mod tests {
 
     #[test]
     fn tensor_commit_unreachable_surreal_fails_closed() {
-        let req = tensor_transport::WriteRequest {
-            atom_id: 7,
-            address_revision: 1,
-            h3_lorentz: [1.0, 0.0, 0.0, 0.0],
-            t2_phase: [0.25, -0.5],
-            dtype: tensor_transport::TensorDtype::F32,
-            layout: "row-major".into(),
-            positional_encoding: "toroidal-phase".into(),
-            shape: vec![2, 4],
-            tppe: "toroidal-phase-finite-feature-v1".into(),
-            model_digest: [0x11; 32],
-            key_tensor: (0u8..32).collect(),
-            value_tensor: (32u8..64).collect(),
-        };
+        let req = tensor_transport::demo_request(7);
         let page = tensor_transport::prepare_write(&req).expect("fixture page");
         let mut store = Store::from_env();
         store.mode = surreal::SurrealMode::On;
@@ -7095,13 +7082,44 @@ fn run_http(state: std::sync::Arc<std::sync::Mutex<State>>, port: u16) {
 }
 
 fn main() {
-    if std::env::args().nth(1).as_deref() == Some("tensor-session") {
-        let code = tensor_transport::run_tensor_session(
-            std::io::stdin(),
-            std::io::stdout(),
-            &Store::from_env(),
-        );
-        std::process::exit(code);
+    let mut args = std::env::args().skip(1);
+    match args.next().as_deref() {
+        Some("tensor-session") => {
+            let code = tensor_transport::run_tensor_session(
+                std::io::stdin(),
+                std::io::stdout(),
+                &Store::from_env(),
+            );
+            std::process::exit(code);
+        }
+        Some("tensor-frames") => {
+            let address_id: u64 = args
+                .next()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0);
+            let dir = args.next().unwrap_or_else(|| "/tmp/hmkv-demo".into());
+            if address_id == 0 {
+                eprintln!("usage: hypermind-mcp tensor-frames <atom_address_id> <dir>");
+                std::process::exit(2);
+            }
+            match tensor_transport::write_demo_frames(address_id, std::path::Path::new(&dir)) {
+                Ok(()) => {
+                    eprintln!("wrote {dir}/write.bin {dir}/fetch-hit.bin {dir}/fetch-miss.bin");
+                    std::process::exit(0);
+                }
+                Err(e) => {
+                    eprintln!("tensor-frames: {e}");
+                    std::process::exit(2);
+                }
+            }
+        }
+        Some("tensor-show") => {
+            if tensor_transport::show_receipts(std::io::stdin(), std::io::stdout()).is_err() {
+                std::process::exit(2);
+            }
+            std::process::exit(0);
+        }
+        _ => {}
     }
     if let Ok(port) = std::env::var("HYPERMIND_HTTP_PORT") {
         if let Ok(p) = port.parse::<u16>() {
