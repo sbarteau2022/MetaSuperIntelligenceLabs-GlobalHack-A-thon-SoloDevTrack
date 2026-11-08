@@ -143,6 +143,33 @@ impl WeightManager {
             }
         }
 
+        // Per-module bits and group size from config.json "quantization". For this checkpoint it
+        // is the source of truth: the router (mlp.gate) and shared_expert_gate are 8-bit, the
+        // rest 4-bit. Without it, the 8-bit router is decoded as 4-bit and every gate is wrong.
+        let cfg_path = model_dir.join("config.json");
+        if let Ok(cfg_data) = std::fs::read_to_string(&cfg_path) {
+            if let Ok(cfg) = serde_json::from_str::<serde_json::Value>(&cfg_data) {
+                let quant = cfg
+                    .get("quantization")
+                    .or_else(|| cfg.get("text_config").and_then(|t| t.get("quantization")));
+                if let Some(q) = quant.and_then(|v| v.as_object()) {
+                    if let Some(gs) = q.get("group_size").and_then(|v| v.as_u64()) {
+                        default_group = gs as usize;
+                    }
+                    for (name, info) in q.iter() {
+                        if let Some(obj) = info.as_object() {
+                            if let Some(b) = obj.get("bits").and_then(|v| v.as_u64()) {
+                                bits_map.insert(name.clone(), b as u32);
+                            }
+                            if let Some(g) = obj.get("group_size").and_then(|v| v.as_u64()) {
+                                group_map.insert(name.clone(), g as usize);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         const MSL_SOURCE: &str = include_str!("quant_gemv.metal");
         let metal_gemm = MetalQuantGemm::new(MSL_SOURCE).ok();
         let use_metal = metal_gemm.is_some();
@@ -378,6 +405,72 @@ impl WeightManager {
 
         let w = self.get_weight(name)?;
         Ok(accelerate_matvec_f32(&w, rows, cols, x))
+    }
+
+    /// `y = W[expert] * x` for a stacked MoE tensor `[num_experts, rows, cols]`.
+    /// Reads only the routed expert's packed rows (and its scales and biases), never the
+    /// whole expert tensor, so the cost scales with top-k rather than with num_experts.
+    pub fn expert_matvec(
+        &mut self,
+        name: &str,
+        num_experts: usize,
+        rows: usize,
+        cols: usize,
+        expert: usize,
+        x: &[f32],
+    ) -> Result<Vec<f32>, ModelError> {
+        if expert >= num_experts {
+            return Err(ModelError::MissingWeight(format!("expert {expert} >= {num_experts}")));
+        }
+        let base = name.trim_end_matches(".weight");
+        let scales_name = format!("{}.scales", base);
+        let biases_name = format!("{}.biases", base);
+        if !self.tensor_to_shard.contains_key(&scales_name) {
+            let full = self.get_weight(name)?;
+            let off = expert * rows * cols;
+            return Ok(accelerate_matvec_f32(&full[off..off + rows * cols], rows, cols, x));
+        }
+
+        let (bits, group_size) = self.quant_for(base, name);
+        let w_file = self.shard_for(name)?;
+        let w_info = w_file.tensor_info(name)?;
+        let w_data = w_file.tensor_data(name)?;
+        let s_file = self.shard_for(&scales_name)?;
+        let s_info = s_file.tensor_info(&scales_name)?;
+        let s_data = s_file.tensor_data(&scales_name)?;
+        let b_file = self.shard_for(&biases_name)?;
+        let b_info = b_file.tensor_info(&biases_name)?;
+        let b_data = b_file.tensor_data(&biases_name)?;
+
+        let total_rows = num_experts * rows;
+        if total_rows == 0
+            || w_data.len() % total_rows != 0
+            || s_data.len() % total_rows != 0
+            || b_data.len() % total_rows != 0
+        {
+            return Err(ModelError::MissingWeight(format!("{name}: stacked shape mismatch")));
+        }
+        let (w_row, s_row, b_row) = (
+            w_data.len() / total_rows,
+            s_data.len() / total_rows,
+            b_data.len() / total_rows,
+        );
+        let r0 = expert * rows;
+        qmatvec_fused_zero_copy(
+            &w_data[r0 * w_row..(r0 + rows) * w_row],
+            &w_info.dtype,
+            &s_data[r0 * s_row..(r0 + rows) * s_row],
+            &s_info.dtype,
+            &b_data[r0 * b_row..(r0 + rows) * b_row],
+            &b_info.dtype,
+            None,
+            bits,
+            group_size,
+            rows,
+            cols,
+            x,
+        )
+        .map_err(|e| ModelError::Dequant(DequantError::ShapeMismatch(e)))
     }
 
     pub fn get_f32(&mut self, name: &str) -> Result<Vec<f32>, ModelError> {

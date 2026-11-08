@@ -5,28 +5,39 @@
 //! There are NO k_cache / v_cache tensors in this module.
 
 use crate::cache::geometric::GeometricMemoryMap;
-use crate::geometry::bridge::{f32_to_atom_address, f32_to_lorentz};
-use crate::geometry::lorentz::LorentzVector;
 use crate::model_config::{LayerType, ModelConfig};
-use crate::ops::{apply_rope, matvec, rmsnorm, silu, softmax, top_k_indices};
+use crate::ops::{rmsnorm, silu, softmax, top_k_indices};
 use crate::qwen_model::{ModelError, WeightManager};
 use crate::{ForwardCompliancePermit, ImmuneForwardGate};
 use std::path::Path;
 
 pub struct LinearAttnLayerState {
-    pub conv_history: [[f32; 3]; 2048],
-    pub s_num: Vec<f32>,
-    pub z_den: Vec<f32>,
+    /// Last (kernel-1) qkv inputs per conv channel, oldest first: [conv_dim][kernel-1].
+    pub conv: Vec<f32>,
+    /// Gated DeltaNet recurrent state per value head: [value_heads][Dv][Dk], fp32.
+    pub s: Vec<f32>,
 }
 
 impl LinearAttnLayerState {
-    pub fn new(h: usize) -> Self {
+    pub fn new(conv_dim: usize, kernel: usize, value_heads: usize, dv: usize, dk: usize) -> Self {
         Self {
-            conv_history: [[0.0; 3]; 2048],
-            s_num: vec![0.0; h],
-            z_den: vec![0.0; h],
+            conv: vec![0.0; conv_dim * (kernel - 1)],
+            s: vec![0.0; value_heads * dv * dk],
         }
     }
+}
+
+/// Fresh per-layer linear-attention state, sized from the model config.
+fn new_linear_state(config: &ModelConfig) -> LinearAttnLayerState {
+    let key_dim = config.linear_num_key_heads * config.linear_key_head_dim;
+    let value_dim = config.linear_num_value_heads * config.linear_value_head_dim;
+    LinearAttnLayerState::new(
+        2 * key_dim + value_dim,
+        config.linear_conv_kernel_dim,
+        config.linear_num_value_heads,
+        config.linear_value_head_dim,
+        config.linear_key_head_dim,
+    )
 }
 
 pub struct QwenModel {
@@ -35,6 +46,13 @@ pub struct QwenModel {
     pub geo_maps: Vec<GeometricMemoryMap>,
     pub linear_states: Vec<LinearAttnLayerState>,
     pub immune_gate: ImmuneForwardGate,
+    /// When `Some`, each forward call records the L2 norm of the residual stream after the
+    /// embedding and after every layer. Used by the layer-oracle gate; `None` costs nothing.
+    pub layer_trace: Option<Vec<f32>>,
+    /// Exact per-layer KV cache for full-attention layers (index = layer).
+    pub kv: Vec<KvLayerCache>,
+    /// Diagnostic probe for full attention: when Some, records [qg, v, gated] per call.
+    pub attn_probe: Option<Vec<Vec<f32>>>,
 }
 
 impl QwenModel {
@@ -50,8 +68,9 @@ impl QwenModel {
         }
         let mut linear_states = Vec::with_capacity(config.num_hidden_layers);
         for _ in 0..config.num_hidden_layers {
-            linear_states.push(LinearAttnLayerState::new(config.hidden_size));
+            linear_states.push(new_linear_state(&config));
         }
+        let kv: Vec<KvLayerCache> = (0..config.num_hidden_layers).map(|_| KvLayerCache::default()).collect();
         let fp = (config.hidden_size as u64) << 32 | (config.num_hidden_layers as u64);
         Ok(Self {
             config,
@@ -59,6 +78,9 @@ impl QwenModel {
             geo_maps,
             linear_states,
             immune_gate: ImmuneForwardGate::new(fp),
+            layer_trace: None,
+            kv,
+            attn_probe: None,
         })
     }
 
@@ -75,140 +97,116 @@ impl QwenModel {
         )
     }
 
-    fn full_attention(
-        &mut self,
-        layer: usize,
-        geo_idx: usize,
-        x: &[f32],
-        pos: usize,
-    ) -> Result<Vec<f32>, ModelError> {
+    /// Exact full softmax attention, matching the reference Qwen3NextAttention: q_proj emits
+    /// [query | gate] per head; per-head RMSNorm on q and k; non-traditional (half-split) RoPE over
+    /// the first head_dim*partial_rotary_factor dims; exact causal softmax over an exact KV cache with
+    /// GQA head repetition; then output * sigmoid(gate) through o_proj.
+    fn full_attention(&mut self, layer: usize, x: &[f32], pos: usize) -> Result<Vec<f32>, ModelError> {
         let h = self.config.hidden_size;
         let nh = self.config.num_attention_heads;
         let nkv = self.config.num_key_value_heads.max(1);
         let hd = self.config.head_dim;
         let eps = self.config.rms_norm_eps;
         let theta = self.config.rope_theta;
-        let prf = self.config.partial_rotary_factor;
+        let rot = (hd as f32 * self.config.partial_rotary_factor) as usize;
         let p = self.p(layer);
 
-        let xn = rmsnorm(
-            x,
-            &self
-                .weights
-                .get_f32(&format!("{}.input_layernorm.weight", p))?,
-            eps,
-        )?;
-
-        let q = self.weights.matvec_weight(
-            &format!("{}.self_attn.q_proj.weight", p),
-            nh * hd,
-            h,
-            &xn,
-        )?;
-        let k = self.weights.matvec_weight(
-            &format!("{}.self_attn.k_proj.weight", p),
-            nkv * hd,
-            h,
-            &xn,
-        )?;
-        let v = self.weights.matvec_weight(
-            &format!("{}.self_attn.v_proj.weight", p),
-            nkv * hd,
-            h,
-            &xn,
-        )?;
-
-        let mut q = q;
-        let mut k = k;
-        let rotary_dim = (hd as f32 * prf) as usize;
-        apply_rope(&mut q, hd, rotary_dim, pos, theta)?;
-        apply_rope(&mut k, hd, rotary_dim, pos, theta)?;
-
-        // FLAG-03 & FLAG-04 Resolution + Per-KV-Head Isolation:
-        // 1. Each (full_attention_layer, kv_head) owns its own GeometricMemoryMap at `geo_idx * nkv + kv_h`.
-        // 2. Project k_head via f32_to_atom_address to populate non-zero T^2 Phase.
-        // 3. Store both k_head and v_head (2 * hd * 4 bytes) in atom.payload so retrieved
-        //    candidates are scored via exact hd-dimensional q·k dot products (matching glimmer_forward.rs).
-        for kv_h in 0..nkv {
-            let map_slot = geo_idx * nkv + kv_h;
-            let geo = &mut self.geo_maps[map_slot];
-            let k_head = &k[kv_h * hd..(kv_h + 1) * hd];
-            let v_head = &v[kv_h * hd..(kv_h + 1) * hd];
-            let (lv, phase, _loss) = f32_to_atom_address(k_head)?;
-            let mut kv_bytes = Vec::with_capacity(2 * hd * 4);
-            for f in k_head.iter() {
-                kv_bytes.extend_from_slice(&f.to_le_bytes());
-            }
-            for f in v_head.iter() {
-                kv_bytes.extend_from_slice(&f.to_le_bytes());
-            }
-            geo.write(lv, phase, kv_bytes)?;
+        let ln_w = self.weights.get_f32(&format!("{}.input_layernorm.weight", p))?;
+        let xn = rmsnorm(x, &ln_w, eps)?;
+        let qg = self.weights.matvec_weight(&format!("{}.self_attn.q_proj.weight", p), nh * hd * 2, h, &xn)?;
+        let mut k = self.weights.matvec_weight(&format!("{}.self_attn.k_proj.weight", p), nkv * hd, h, &xn)?;
+        let v = self.weights.matvec_weight(&format!("{}.self_attn.v_proj.weight", p), nkv * hd, h, &xn)?;
+        if let Some(pr) = self.attn_probe.as_mut() {
+            pr.clear();
+            pr.push(qg.clone());
+            pr.push(v.clone());
         }
+        let q_norm_w = self.weights.get_f32(&format!("{}.self_attn.q_norm.weight", p))?;
+        let k_norm_w = self.weights.get_f32(&format!("{}.self_attn.k_norm.weight", p))?;
+
+        // q_proj output is laid out per head as [query hd | gate hd].
+        let mut q = vec![0f32; nh * hd];
+        let mut gate = vec![0f32; nh * hd];
+        for hh in 0..nh {
+            let base = hh * 2 * hd;
+            q[hh * hd..(hh + 1) * hd].copy_from_slice(&qg[base..base + hd]);
+            gate[hh * hd..(hh + 1) * hd].copy_from_slice(&qg[base + hd..base + 2 * hd]);
+        }
+        for hh in 0..nh {
+            let normed = rmsnorm(&q[hh * hd..(hh + 1) * hd], &q_norm_w, eps)?;
+            q[hh * hd..(hh + 1) * hd].copy_from_slice(&normed);
+        }
+        for kh in 0..nkv {
+            let normed = rmsnorm(&k[kh * hd..(kh + 1) * hd], &k_norm_w, eps)?;
+            k[kh * hd..(kh + 1) * hd].copy_from_slice(&normed);
+        }
+        rope_half(&mut q, hd, rot, pos, theta);
+        rope_half(&mut k, hd, rot, pos, theta);
+
+        // Exact KV cache: positions must arrive contiguously from 0 within one sequence.
+        let cache = &mut self.kv[layer];
+        if cache.k.len() != pos * nkv * hd {
+            return Err(ModelError::MissingWeight(format!("non-contiguous position {pos} for layer {layer}")));
+        }
+        cache.k.extend_from_slice(&k);
+        cache.v.extend_from_slice(&v);
+        let t_len = pos + 1;
 
         let repeat = (nh / nkv).max(1);
-        let mut attn_out = vec![0.0f32; nh * hd];
-        let top_k = 64;
-        let inv_sqrt_hd = 1.0 / (hd as f32).sqrt();
-
-        for qh in 0..nh {
-            let kv_h = (qh / repeat).min(nkv - 1);
-            let geo = &self.geo_maps[geo_idx * nkv + kv_h];
-            let q_head = &q[qh * hd..(qh + 1) * hd];
-            let q_lv = f32_to_lorentz(q_head)?;
-
-            let neighbors = geo.retrieve(&q_lv, top_k, false)?;
-            if neighbors.is_empty() {
-                continue;
+        let scale = 1.0 / (hd as f32).sqrt();
+        let mut out = vec![0f32; nh * hd];
+        for hh in 0..nh {
+            let kvh = (hh / repeat).min(nkv - 1);
+            let qh = &q[hh * hd..(hh + 1) * hd];
+            let mut scores = Vec::with_capacity(t_len);
+            for ti in 0..t_len {
+                let kt = &cache.k[(ti * nkv + kvh) * hd..(ti * nkv + kvh + 1) * hd];
+                scores.push(qh.iter().zip(kt).map(|(a, b)| a * b).sum::<f32>() * scale);
             }
-
-            let mut scores = Vec::new();
-            let mut v_list = Vec::new();
-            for atom in neighbors {
-                let payload = &atom.payload;
-                if payload.len() >= 2 * hd * 4 {
-                    let kh: Vec<f32> = payload[0..hd * 4]
-                        .chunks(4)
-                        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                        .collect();
-                    let vh: Vec<f32> = payload[hd * 4..2 * hd * 4]
-                        .chunks(4)
-                        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                        .collect();
-                    let dot: f32 = q_head.iter().zip(kh.iter()).map(|(a, b)| a * b).sum();
-                    scores.push(dot * inv_sqrt_hd);
-                    v_list.push(vh);
-                } else {
-                    let k_lv = atom.lorentz;
-                    let ip = LorentzVector::inner_product(&q_lv, &k_lv).to_f64() as f32;
-                    let vh: Vec<f32> = payload
-                        .chunks(4)
-                        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                        .collect();
-                    scores.push(-ip * inv_sqrt_hd);
-                    v_list.push(vh);
-                }
+            let m = scores.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+            let mut denom = 0f32;
+            for s in scores.iter_mut() {
+                *s = (*s - m).exp();
+                denom += *s;
             }
-
-            let probs = softmax(&scores)?;
-            for d in 0..hd {
-                let mut acc = 0.0f32;
-                for (pi, vh) in probs.iter().zip(v_list.iter()) {
-                    if d < vh.len() {
-                        acc += pi * vh[d];
-                    }
+            let oh = &mut out[hh * hd..(hh + 1) * hd];
+            for ti in 0..t_len {
+                let w = scores[ti] / denom;
+                let vt = &cache.v[(ti * nkv + kvh) * hd..(ti * nkv + kvh + 1) * hd];
+                for d in 0..hd {
+                    oh[d] += w * vt[d];
                 }
-                attn_out[qh * hd + d] = acc;
             }
         }
-
-        let o = self.weights.matvec_weight(
-            &format!("{}.self_attn.o_proj.weight", p),
-            h,
-            nh * hd,
-            &attn_out,
-        )?;
-
+        for i in 0..nh * hd {
+            out[i] *= 1.0 / (1.0 + (-gate[i]).exp());
+        }
+        if let Some(pr) = self.attn_probe.as_mut() {
+            pr.push(out.clone());
+        }
+        let o = self.weights.matvec_weight(&format!("{}.self_attn.o_proj.weight", p), h, nh * hd, &out)?;
         Ok(x.iter().zip(o.iter()).map(|(a, b)| a + b).collect())
+    }
+
+    /// One decoder layer: attention (full or linear) with residual, then the MoE block with residual.
+    /// Public so layer-local oracles can drive a single layer from a reference hidden state.
+    pub fn run_layer(&mut self, layer: usize, x: &[f32], pos: usize) -> Result<Vec<f32>, ModelError> {
+        let attn = self.attention_block(layer, x, pos)?;
+        self.moe_block(layer, &attn)
+    }
+
+    /// Attention block with its residual (full or linear). Public for the split oracle.
+    pub fn attention_block(&mut self, layer: usize, x: &[f32], pos: usize) -> Result<Vec<f32>, ModelError> {
+        if matches!(self.config.layer_types[layer], LayerType::FullAttention) {
+            self.full_attention(layer, x, pos)
+        } else {
+            self.linear_attention(layer, x)
+        }
+    }
+
+    /// MoE block with its residual. Public for the split oracle.
+    pub fn moe_block(&mut self, layer: usize, x: &[f32]) -> Result<Vec<f32>, ModelError> {
+        self.moe_mlp(layer, x)
     }
 
     fn moe_mlp(&mut self, layer: usize, x: &[f32]) -> Result<Vec<f32>, ModelError> {
@@ -237,39 +235,23 @@ impl QwenModel {
         let gate_probs = softmax(&gate_logits)?;
         let top_experts = top_k_indices(&gate_probs, top_k);
 
-        let switch_gate = self
-            .weights
-            .get_weight(&format!("{}.mlp.switch_mlp.gate_proj.weight", p))?;
-        let switch_up = self
-            .weights
-            .get_weight(&format!("{}.mlp.switch_mlp.up_proj.weight", p))?;
-        let switch_down = self
-            .weights
-            .get_weight(&format!("{}.mlp.switch_mlp.down_proj.weight", p))?;
+        // Only the top-k routed experts are read, as quantized row slices. The full
+        // [num_experts, rows, cols] tensors are never dequantized per token.
+        let gate_name = format!("{}.mlp.switch_mlp.gate_proj.weight", p);
+        let up_name = format!("{}.mlp.switch_mlp.up_proj.weight", p);
+        let down_name = format!("{}.mlp.switch_mlp.down_proj.weight", p);
 
         let mut out = vec![0.0f32; h];
 
+        // norm_topk_prob (Qwen3.5 default True): routed weights are renormalised over the top-k.
+        let top_sum: f32 = top_experts.iter().map(|&e| gate_probs[e]).sum();
         for &ei in &top_experts {
-            let prob = gate_probs[ei];
-            let g_base = ei * inter * h;
-            let d_base = ei * h * inter;
-
-            if g_base + inter * h > switch_gate.len() {
-                continue;
-            }
-            if d_base + h * inter > switch_down.len() {
-                continue;
-            }
-
-            let gate_w = &switch_gate[g_base..g_base + inter * h];
-            let up_w = &switch_up[g_base..g_base + inter * h];
-            let down_w = &switch_down[d_base..d_base + h * inter];
-
-            let gate = matvec(gate_w, inter, h, &xn)?;
-            let up = matvec(up_w, inter, h, &xn)?;
+            let prob = gate_probs[ei] / top_sum;
+            let gate = self.weights.expert_matvec(&gate_name, num_experts, inter, h, ei, &xn)?;
+            let up = self.weights.expert_matvec(&up_name, num_experts, inter, h, ei, &xn)?;
             let gated = silu(&gate);
             let hidden: Vec<f32> = gated.iter().zip(up.iter()).map(|(g, u)| g * u).collect();
-            let down = matvec(down_w, h, inter, &hidden)?;
+            let down = self.weights.expert_matvec(&down_name, num_experts, h, inter, ei, &hidden)?;
             for i in 0..h {
                 out[i] += prob * down[i];
             }
@@ -300,86 +282,125 @@ impl QwenModel {
             shared_inter,
             &s_hidden,
         )?;
+        // Shared expert is gated per token by sigmoid(shared_expert_gate(x)) (8-bit gate).
+        let sg = self.weights.matvec_weight(
+            &format!("{}.mlp.shared_expert_gate.weight", p),
+            1,
+            h,
+            &xn,
+        )?[0];
+        let shared_gate = 1.0 / (1.0 + (-sg).exp());
         for i in 0..h {
-            out[i] += s_down[i];
+            out[i] += shared_gate * s_down[i];
         }
 
         Ok(x.iter().zip(out.iter()).map(|(a, b)| a + b).collect())
     }
 
+    /// Gated DeltaNet linear attention, exact to the reference (mlx_lm qwen3_5 / gated_delta):
+    /// depthwise causal conv(k=4) + SiLU, L2-normalised q/k with 1/Dk readout scale,
+    /// beta = sigmoid(b), g = exp(-exp(A_log) * softplus(a + dt_bias)), per-value-head delta rule
+    /// on an fp32 [Dv, Dk] state, RMSNorm(y) * SiLU(z) gate, then out_proj and the residual.
     fn linear_attention(&mut self, layer: usize, x: &[f32]) -> Result<Vec<f32>, ModelError> {
         let h = self.config.hidden_size;
         let eps = self.config.rms_norm_eps;
         let p = self.p(layer);
+        let hk = self.config.linear_num_key_heads;
+        let hv = self.config.linear_num_value_heads;
+        let dk = self.config.linear_key_head_dim;
+        let dv = self.config.linear_value_head_dim;
+        let ksz = self.config.linear_conv_kernel_dim;
+        let key_dim = hk * dk;
+        let value_dim = hv * dv;
+        let conv_dim = 2 * key_dim + value_dim;
 
-        let xn = rmsnorm(
-            x,
-            &self
-                .weights
-                .get_f32(&format!("{}.input_layernorm.weight", p))?,
-            eps,
-        )?;
+        let ln_w = self.weights.get_f32(&format!("{}.input_layernorm.weight", p))?;
+        let xn = rmsnorm(x, &ln_w, eps)?;
+        let qkv = self.weights.matvec_weight(&format!("{}.linear_attn.in_proj_qkv.weight", p), conv_dim, h, &xn)?;
+        let z = self.weights.matvec_weight(&format!("{}.linear_attn.in_proj_z.weight", p), value_dim, h, &xn)?;
+        let b = self.weights.matvec_weight(&format!("{}.linear_attn.in_proj_b.weight", p), hv, h, &xn)?;
+        let a = self.weights.matvec_weight(&format!("{}.linear_attn.in_proj_a.weight", p), hv, h, &xn)?;
+        // Stored sanitized as [conv_dim, ksz, 1] (checked against the index header).
+        let conv_w = self.weights.get_f32(&format!("{}.linear_attn.conv1d.weight", p))?;
+        let a_log = self.weights.get_f32(&format!("{}.linear_attn.A_log", p))?;
+        let dt_bias = self.weights.get_f32(&format!("{}.linear_attn.dt_bias", p))?;
+        let norm_w = self.weights.get_f32(&format!("{}.linear_attn.norm.weight", p))?;
+        if conv_w.len() != conv_dim * ksz || a_log.len() != hv || dt_bias.len() != hv || norm_w.len() != dv {
+            return Err(ModelError::MissingWeight(format!("{p}: linear-attention shape mismatch")));
+        }
+        let state = self
+            .linear_states
+            .get_mut(layer)
+            .ok_or_else(|| ModelError::MissingWeight(format!("linear state {layer}")))?;
 
-        let qkv = self.weights.matvec_weight(
-            &format!("{}.linear_attn.in_proj_qkv.weight", p),
-            h * 3,
-            h,
-            &xn,
-        )?;
-        let z = self.weights.matvec_weight(
-            &format!("{}.linear_attn.in_proj_z.weight", p),
-            h,
-            h,
-            &xn,
-        )?;
-
-        // Causal short depthwise conv1d + Recurrent Linear Attention state update (S_t, Z_t)
-        let mut recurrent_context = vec![0.0f32; h];
-        if let Some(state) = self.linear_states.get_mut(layer) {
-            let gamma = 0.96f32;
-            for d in 0..h {
-                let q_raw = qkv[d];
-                let k_raw = qkv[h + d];
-                let v_raw = qkv[2 * h + d];
-
-                let h_slot = d % 2048;
-                let prev0 = state.conv_history[h_slot][0];
-                let prev1 = state.conv_history[h_slot][1];
-                let prev2 = state.conv_history[h_slot][2];
-                let conv_q = 0.55 * q_raw + 0.25 * prev0 + 0.12 * prev1 + 0.08 * prev2;
-                let conv_k = 0.55 * k_raw + 0.25 * prev0 + 0.12 * prev1 + 0.08 * prev2;
-                state.conv_history[h_slot] = [q_raw, prev0, prev1];
-
-                // Positive ELU+1 feature map phi(x) (Katharopoulos et al., ICML 2020)
-                let phi_q = if conv_q >= 0.0 {
-                    conv_q + 1.0
-                } else {
-                    conv_q.exp()
-                };
-                let phi_k = if conv_k >= 0.0 {
-                    conv_k + 1.0
-                } else {
-                    conv_k.exp()
-                };
-
-                state.s_num[d] = gamma * state.s_num[d] + phi_k * v_raw;
-                state.z_den[d] = gamma * state.z_den[d] + phi_k;
-                let denom = (phi_q * state.z_den[d]).max(1e-6);
-                recurrent_context[d] = (phi_q * state.s_num[d]) / denom;
+        // Causal depthwise conv over [h0, h1, h2, current] per channel, then SiLU.
+        let hist_len = ksz - 1;
+        let mut conv = vec![0f32; conv_dim];
+        for c in 0..conv_dim {
+            let w = &conv_w[c * ksz..(c + 1) * ksz];
+            let hist = &mut state.conv[c * hist_len..(c + 1) * hist_len];
+            let mut acc = w[ksz - 1] * qkv[c];
+            for j in 0..hist_len {
+                acc += w[j] * hist[j];
             }
-        } else {
-            recurrent_context.copy_from_slice(&qkv[..h]);
+            conv[c] = silu_scalar(acc);
+            hist.rotate_left(1);
+            hist[hist_len - 1] = qkv[c];
         }
 
-        let o = self.weights.matvec_weight(
-            &format!("{}.linear_attn.out_proj.weight", p),
-            h,
-            h,
-            &recurrent_context,
-        )?;
+        // q/k heads: L2-normalise with the reference eps; q carries the 1/Dk readout scale.
+        let inv_scale = (dk as f32).powf(-0.5);
+        let rms_eps = eps * inv_scale * inv_scale;
+        let mut q = vec![0f32; key_dim];
+        let mut k = vec![0f32; key_dim];
+        for kh in 0..hk {
+            let qs = &conv[kh * dk..(kh + 1) * dk];
+            let ks = &conv[key_dim + kh * dk..key_dim + (kh + 1) * dk];
+            let (qn, kn) = (rms_inv(qs, rms_eps), rms_inv(ks, rms_eps));
+            for i in 0..dk {
+                q[kh * dk + i] = inv_scale * inv_scale * qs[i] * qn;
+                k[kh * dk + i] = inv_scale * ks[i] * kn;
+            }
+        }
+        let v_all = &conv[2 * key_dim..];
 
-        let gated: Vec<f32> = o.iter().zip(silu(&z).iter()).map(|(a, b)| a * b).collect();
-        Ok(x.iter().zip(gated.iter()).map(|(a, b)| a + b).collect())
+        // Delta-rule recurrence per value head, fp32 state S[dv][dk].
+        let heads_per_k = hv / hk;
+        let mut y = vec![0f32; value_dim];
+        for vh in 0..hv {
+            let kh = vh / heads_per_k;
+            let qh = &q[kh * dk..(kh + 1) * dk];
+            let kvec = &k[kh * dk..(kh + 1) * dk];
+            let vvec = &v_all[vh * dv..(vh + 1) * dv];
+            let beta = sigmoid(b[vh]);
+            let g = (-(a_log[vh].exp()) * softplus(a[vh] + dt_bias[vh])).exp();
+            let s = &mut state.s[vh * dv * dk..(vh + 1) * dv * dk];
+            for i in 0..dv {
+                let row = &mut s[i * dk..(i + 1) * dk];
+                for sv in row.iter_mut() {
+                    *sv *= g;
+                }
+                let kv_mem: f32 = row.iter().zip(kvec).map(|(sv, kk)| sv * kk).sum();
+                let delta = (vvec[i] - kv_mem) * beta;
+                for (sv, kk) in row.iter_mut().zip(kvec) {
+                    *sv += kk * delta;
+                }
+                y[vh * dv + i] = row.iter().zip(qh).map(|(sv, qq)| sv * qq).sum();
+            }
+        }
+
+        // Gated RMSNorm (per value head, shared weight), then out_proj and the residual.
+        let mut out = vec![0f32; value_dim];
+        for vh in 0..hv {
+            let yh = &y[vh * dv..(vh + 1) * dv];
+            let rn = rms_inv(yh, eps);
+            for i in 0..dv {
+                let normed = yh[i] * rn * norm_w[i];
+                out[vh * dv + i] = silu_scalar(z[vh * dv + i]) * normed;
+            }
+        }
+        let attn = self.weights.matvec_weight(&format!("{}.linear_attn.out_proj.weight", p), h, value_dim, &out)?;
+        Ok(x.iter().zip(attn.iter()).map(|(a, b)| a + b).collect())
     }
 
     pub fn forward_with_permit(
@@ -393,17 +414,17 @@ impl QwenModel {
             .map_err(ModelError::MissingWeight)?;
 
         let mut x = self.embed(token_id)?;
-        let mut geo_idx = 0;
+        let nrm = |v: &[f32]| v.iter().map(|a| a * a).sum::<f32>().sqrt();
+        if let Some(t) = self.layer_trace.as_mut() {
+            t.clear();
+            t.push(nrm(&x));
+        }
 
         for layer in 0..self.config.num_hidden_layers {
-            let is_full = matches!(self.config.layer_types[layer], LayerType::FullAttention);
-            if is_full {
-                x = self.full_attention(layer, geo_idx, &x, pos)?;
-                geo_idx += 1;
-            } else {
-                x = self.linear_attention(layer, &x)?;
+            x = self.run_layer(layer, &x, pos)?;
+            if let Some(t) = self.layer_trace.as_mut() {
+                t.push(nrm(&x));
             }
-            x = self.moe_mlp(layer, &x)?;
         }
 
         let norm_w = self.weights.get_f32("language_model.model.norm.weight")?;
@@ -430,9 +451,54 @@ impl QwenModel {
         for geo in self.geo_maps.iter_mut() {
             *geo = GeometricMemoryMap::new(1_000_000);
         }
-        let h = self.config.hidden_size;
         for st in self.linear_states.iter_mut() {
-            *st = LinearAttnLayerState::new(h);
+            *st = new_linear_state(&self.config);
+        }
+        for kv in self.kv.iter_mut() {
+            kv.k.clear();
+            kv.v.clear();
+        }
+    }
+}
+
+fn silu_scalar(x: f32) -> f32 {
+    x / (1.0 + (-x).exp())
+}
+
+fn sigmoid(x: f32) -> f32 {
+    1.0 / (1.0 + (-x).exp())
+}
+
+/// Stable softplus: identity above 20 (exp would overflow near f32 max, and softplus(x) == x to f32 precision there).
+fn softplus(x: f32) -> f32 {
+    if x > 20.0 { x } else { (1.0 + x.exp()).ln() }
+}
+
+/// 1 / sqrt(mean(x^2) + eps), the reference rms_norm denominator.
+fn rms_inv(x: &[f32], eps: f32) -> f32 {
+    let ms = x.iter().map(|v| v * v).sum::<f32>() / x.len() as f32;
+    1.0 / (ms + eps).sqrt()
+}
+
+/// Exact KV cache for one full-attention layer: k and v are [position][kv_head][head_dim], appended per token.
+#[derive(Default)]
+pub struct KvLayerCache {
+    pub k: Vec<f32>,
+    pub v: Vec<f32>,
+}
+
+/// Non-traditional (half-split) RoPE over the first `rot` dims of each head, matching mlx rope(traditional=False):
+/// pairs (i, i + rot/2) with frequency theta^(-2i/rot).
+fn rope_half(x: &mut [f32], hd: usize, rot: usize, pos: usize, theta: f32) {
+    let half = rot / 2;
+    for base in (0..x.len()).step_by(hd) {
+        for i in 0..half {
+            let freq = theta.powf(-(2.0 * i as f32) / rot as f32);
+            let (s, c) = (pos as f32 * freq).sin_cos();
+            let x0 = x[base + i];
+            let x1 = x[base + i + half];
+            x[base + i] = x0 * c - x1 * s;
+            x[base + i + half] = x0 * s + x1 * c;
         }
     }
 }

@@ -1,8 +1,4 @@
 #V2
-DEFINE FIELD IF NOT EXISTS byte_count ON model_artifact_receipt TYPE int ASSERT $value > 0 READONLY;
-DEFINE FIELD IF NOT EXISTS verified_at ON model_artifact_receipt TYPE datetime DEFAULT time::now() READONLY;
-DEFINE INDEX IF NOT EXISTS model_artifact_receipt_unique ON model_artifact_receipt\n  FIELDS model_source, role, absolute_path UNIQUE;
-\nDEFINE FIELD OVERWRITE workspace ON distillation_run TYPE record<workspace> READONLY;
 DEFINE FIELD OVERWRITE sources ON distillation_run TYPE array<record<model_source>> READONLY;
 DEFINE FIELD OVERWRITE method ON distillation_run TYPE string READONLY;
 DEFINE FIELD OVERWRITE configuration_digest ON distillation_run TYPE string READONLY;
@@ -99,3 +95,7 @@ DEFINE FIELD OVERWRITE active ON atom_edge TYPE bool DEFAULT true READONLY;
 DEFINE FIELD OVERWRITE valid_from ON atom_edge TYPE datetime DEFAULT time::now() READONLY;
 DEFINE FIELD OVERWRITE valid_to ON atom_edge TYPE option<datetime> READONLY;
 DEFINE FIELD OVERWRITE created_at ON atom_edge TYPE datetime DEFAULT time::now() READONLY;
+SELECT id FROM atom_address LIMIT 5;
+SELECT count() FROM transformer_kv_page GROUP ALL;
+SELECT count() FROM transformer_kv_session GROUP ALL;
+INFO FOR TABLE transformer_kv_page;

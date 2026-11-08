@@ -1,11 +1,14 @@
 #![allow(clippy::all)]
 pub mod active_inference;
+pub mod action;
+pub mod agent_step;
 pub mod bench;
 pub mod cache;
 pub mod calibration;
 pub mod capability;
 pub mod cordis;
 pub mod cpp_bridge;
+pub mod daemon;
 pub mod distill_judge;
 pub mod distillation;
 pub mod energy;
@@ -19,8 +22,13 @@ pub mod hear;
 pub mod json;
 pub mod judge;
 pub mod lanes;
+pub mod loop_ctl;
+pub mod mathkernel;
+pub mod meta_loop;
 pub mod map_plugin;
 pub mod mcp_client;
+pub mod n3_retriever;
+pub mod qwen_driver;
 pub mod mission;
 pub mod mode;
 pub mod plugins;
@@ -78,7 +86,7 @@ pub use json::{
 };
 pub use judge::{Judge, JudgeKind, JudgeOutcome, JudgeResult};
 pub use lanes::{
-    ContributorLane, ContributorLaneMuse, DualLaneRun, LaneVerdict, NativeLane, TaskPacket,
+    ContributorLane, DualLaneRun, LaneVerdict, NativeLane, TaskPacket,
     TaskReceipt,
 };
 pub use map_plugin::MapPlugin;

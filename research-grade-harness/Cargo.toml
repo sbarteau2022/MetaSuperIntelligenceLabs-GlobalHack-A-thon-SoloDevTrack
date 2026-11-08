@@ -24,6 +24,10 @@ hex = "0.4"
 rand = "0.8"
 rusqlite = { version = "0.37", features = ["bundled"] }
 clap = { version = "4.5", features = ["derive"] }
+# Math kernel (pure Rust, deterministic CPU oracle): high-dim linalg via faer,
+# differential geometry via num-dual autodiff. No JSON: canonical bytes + sha2.
+faer = "0.22"
+num-dual = "0.11"
 
 [build-dependencies]
 cc = "1.0"

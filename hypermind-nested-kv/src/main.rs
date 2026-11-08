@@ -775,16 +775,79 @@ fn shell_project(c: &[f64; 4]) -> [f64; 4] {
     [x0, s[0], s[1], s[2]]
 }
 
+
+/// Chordal T² distance already used by live `score` (not geodesic length).
+fn phase_chord(qp: &[f64; 2], ap: &[f64; 2]) -> f64 {
+    (1.0 - (qp[0] - ap[0]).cos()) + (1.0 - (qp[1] - ap[1]).cos())
+}
+
+/// Frozen C05 cost-form (argmin). Score path is f64; do not bf16 this.
+fn retrieval_cost(q: &Atom, a: &Atom) -> f64 {
+    shell_dist(&q.coord, &a.coord) + 0.25 * phase_chord(&q.phase, &a.phase)
+}
+
+/// Decaying Lorentz / joint kernel: α ∝ exp(−cost/τ).
+/// Forbidden: exp(+lorentz_inner/τ).
+fn decaying_relevance(cost: f64, tau: f64) -> f64 {
+    let tau = if tau.is_finite() && tau > 0.0 { tau } else { 1.0 };
+    (-cost / tau).exp()
+}
+
+/// Softmax of −cost/τ, noise-limited: weights below the f64 floor are zeroed
+/// and the residual/attend mix gate will not revive them.
+const SCORE_NOISE_FLOOR: f64 = 1e-12;
+
+fn decaying_soft_weights(costs: &[f64], tau: f64) -> Vec<f64> {
+    if costs.is_empty() {
+        return Vec::new();
+    }
+    let logs: Vec<f64> = costs.iter().map(|&c| -c / tau.max(1e-12)).collect();
+    let peak = logs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let mut w: Vec<f64> = logs
+        .iter()
+        .map(|&l| {
+            let e = (l - peak).exp();
+            if e < SCORE_NOISE_FLOOR { 0.0 } else { e }
+        })
+        .collect();
+    let sum: f64 = w.iter().sum();
+    if !sum.is_finite() || sum <= 0.0 {
+        return vec![0.0; costs.len()];
+    }
+    for wi in &mut w {
+        *wi /= sum;
+        if *wi < SCORE_NOISE_FLOOR {
+            *wi = 0.0;
+        }
+    }
+    let sum2: f64 = w.iter().sum();
+    if sum2 > 0.0 {
+        for wi in &mut w {
+            *wi /= sum2;
+        }
+    }
+    w
+}
+
+/// Attend mix / residual gate, re-declared as noise-limited under the decaying
+/// kernel. This is not travel `form_residual` and not a Euclidean leftover.
+/// g → 0 when captured mass is empty or every weight sat under the floor.
+fn noise_limited_attend_gate(alpha: &[f64]) -> f64 {
+    let captured: f64 = alpha.iter().copied().filter(|&w| w > SCORE_NOISE_FLOOR).sum();
+    captured.clamp(0.0, 1.0)
+}
+
 fn score(q: &Atom, a: &Atom) -> f64 {
     // Salience-invariant similarity (step 1): compare shell-projected
     // directions, not raw positions. A query at qs=0.5 now matches atoms at
     // ANY salience on content; salience still ranks via the stored radius
     // in tie-breaks (closer shell = higher salience = smaller raw dist).
     // Phase term unchanged (toroidal penalty).
+    // Relevance-form ranking (higher = nearer). Order-equivalent to
+    // −d_shell on the Lorentz half; α / qmass use retrieval_cost, not this.
     let qc = shell_project(&q.coord);
     let ac = shell_project(&a.coord);
-    let phase_dist =
-        (1.0 - (q.phase[0] - a.phase[0]).cos()) + (1.0 - (q.phase[1] - a.phase[1]).cos());
+    let phase_dist = phase_chord(&q.phase, &a.phase);
     -lorentz_inner(&qc, &ac) - 0.25 * phase_dist
 }
 
@@ -3575,23 +3638,34 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .filter_map(|id| state.atoms.get(id).map(|a| (*id, score(&qatom, a))))
                 .collect();
             scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            // Data-dependent depth gate: vary k using actual score mass of the query's
-            // ranked list (not a k-only heuristic). Marginal quality = cumulative score mass.
-            let total_mass: f64 = scored.iter().map(|x| x.1.abs()).sum::<f64>().max(1e-9);
+            // Depth-gate quality mass uses the decaying kernel, not abs(score).
+            // Live score is already negated (typically ≤ −1 and more negative
+            // when farther), so abs(score) rewarded distant neighbors.
+            const ATTEND_TAU: f64 = 1.0;
+            let costs: Vec<f64> = scored
+                .iter()
+                .filter_map(|(id, _)| state.atoms.get(id).map(|a| retrieval_cost(&qatom, a)))
+                .collect();
+            let rel: Vec<f64> = costs
+                .iter()
+                .map(|&c| decaying_relevance(c, ATTEND_TAU))
+                .collect();
+            let total_mass: f64 = rel.iter().sum::<f64>().max(1e-9);
             let mut cum = 0.0f64;
             let mut masses: Vec<f64> = Vec::with_capacity(scored.len());
-            for (_, s) in &scored {
-                cum += s.abs();
+            for r in &rel {
+                cum += *r;
                 masses.push(cum / total_mass);
             }
             // Recall-vs-Recompute Law §3 (F-units): the gate cost IS a free-
             // energy bound. complexity = ln(k)+k (retrieval work in nats),
-            // inaccuracy = -qmass*8 (negated score mass = remaining surprise),
-            // dissipation = k * C_ROW_J (rows touched x per-row joules).
-            // The argmin below minimizes F_recall(k); the receipt exposes
-            // the terms so the session bound can price the SAME decision
-            // (Gap B closed: one minimizer, two readers).
-            const C_ROW_J: f64 = 1e-9; // per-row touch cost, receipted assumption
+            // inaccuracy = -qmass*8 (relevance mass = captured decaying mass).
+            // Dissipation is receipted separately. C_ROW_J = 1e-9 changes k*
+            // only when a smaller depth is already within at most 3.1e-8 of
+            // the C0-minimizer (closed endpoint, smallest-depth tie-break).
+            // Do not mix uncalibrated joules into a nats minimizer, and do not
+            // add dissipation twice into receipt.bound.
+            const C_ROW_J: f64 = 1e-9; // reported only, not in argmin
             let mut best_k = 1usize;
             let mut best_cost = f64::INFINITY;
             let mut best_terms = (0.0f64, 0.0f64, 0.0f64);
@@ -3607,11 +3681,7 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 let complexity = (k as f64).ln().max(1.0) + k as f64;
                 let inaccuracy = -qmass * 8.0;
                 let dissipation = k as f64 * C_ROW_J;
-                // Variational cost: identical arithmetic, now in F units.
-                // Dissipation (per-row touch cost) is part of the free-energy
-                // bound and must participate in the minimization, not just the
-                // reported bound — otherwise the gate ignores its own cost.
-                let cost = complexity + inaccuracy + dissipation;
+                let cost = complexity + inaccuracy;
                 if cost < best_cost {
                     best_cost = cost;
                     best_k = k;
@@ -3625,10 +3695,10 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 .unwrap_or(best_k)
                 .max(1)
                 .min(n);
-            // Retrieved ids = top-k of the gate-scored shortlist; the exact
-            // reference is the same shortlist (exact-prune tree), so overlap
-            // measures shortlist sufficiency, not scan-vs-tree agreement.
             let top_ids: Vec<u64> = scored.iter().take(k).map(|x| x.0).collect();
+            let top_costs: Vec<f64> = costs.iter().take(k).copied().collect();
+            let alpha = decaying_soft_weights(&top_costs, ATTEND_TAU);
+            let attend_gate = noise_limited_attend_gate(&alpha);
             let short_ids_set: Vec<u64> = scored.iter().map(|x| x.0).collect();
             let overlap = top_ids
                 .iter()
@@ -3644,8 +3714,14 @@ fn handle_tool(state: &mut State, name: &str, args: &Value) -> Value {
                 "shortlist_n": short_n,
                 "overlap_with_exact_topk": overlap,
                 "retrieved_ids": top_ids,
+                "lorentz_soft_weights": alpha,
+                "attend_tau": ATTEND_TAU,
+                "kernel": "exp(-cost/tau)",
+                "attend_gate": attend_gate,
+                "score_noise_floor": SCORE_NOISE_FLOOR,
                 "fep_terms": {"complexity_nats": best_terms.0, "inaccuracy_nats": best_terms.1,
-                    "dissipation_j": best_terms.2, "bound": best_cost + best_terms.2},
+                    "dissipation_j": best_terms.2, "bound": best_cost,
+                    "dissipation_in_argmin": false},
             });
             let rcpt = now_receipt("map.attend", args, &out);
             json!({"result":out,"receipt":rcpt})

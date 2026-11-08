@@ -2,7 +2,7 @@
 // Hardware PPC probe: fixed-PPC gate instrument (HARDWARE-GATE-RUNBOOK.md).
 //
 // Runs ProposeProbeCompose::run() with a REAL model probe function against the
-// live oMLX server (OpenAI-compatible /v1/chat/completions on 127.0.0.1:8002)
+// live mlx-dspark server (OpenAI-compatible /v1/chat/completions on 127.0.0.1:8001)
 // and writes a plain-text receipt (no JSON, per the Mac no-JSON receipt rule).
 //
 // std-only HTTP: this crate carries NO serde_json/reqwest (doctrine), so the
@@ -25,8 +25,8 @@
 // - This binary never ships synthetic numbers as measurements. If the model
 //   server is unreachable it exits non-zero WITHOUT writing a pass receipt.
 //
-// Env: OMLX_URL (default http://127.0.0.1:8002/v1/chat/completions),
-//      OMLX_MODEL (default Qwen3.6-MoE-Combined), OMLX_API_KEY (default dummy).
+// Env: DSPARK_URL (default http://127.0.0.1:8001/v1/chat/completions),
+//      DSPARK_MODEL (default Qwen3.6Cyber), DSPARK_API_KEY (default dummy).
 use rgah::energy::EnergyBudget;
 use rgah::rsi::{Bundle, ProposeProbeCompose};
 use std::io::{Read, Write};
@@ -295,7 +295,7 @@ fn chat_once(
     Ok((content, total))
 }
 
-/// Split OMLX_URL into (host, port, path). http localhost only.
+/// Split DSPARK_URL into (host, port, path). http localhost only.
 fn split_url(url: &str) -> Result<(String, u16, String), String> {
     let rest = url
         .strip_prefix("http://")
@@ -326,10 +326,10 @@ fn bundle_system_prompt(b: &Bundle) -> String {
 }
 
 fn main() -> std::process::ExitCode {
-    let url = std::env::var("OMLX_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:8002/v1/chat/completions".into());
-    let model = std::env::var("OMLX_MODEL").unwrap_or_else(|_| "Qwen3.6-MoE-Combined".into());
-    let key = std::env::var("OMLX_API_KEY").unwrap_or_else(|_| "dummy".into());
+    let url = std::env::var("DSPARK_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:8001/v1/chat/completions".into());
+    let model = std::env::var("DSPARK_MODEL").unwrap_or_else(|_| "Qwen3.6Cyber".into());
+    let key = std::env::var("DSPARK_API_KEY").unwrap_or_else(|_| "dummy".into());
     let k: usize = std::env::var("PPC_K")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -338,7 +338,7 @@ fn main() -> std::process::ExitCode {
     let (host, port, path) = match split_url(&url) {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("bad OMLX_URL: {}", e);
+            eprintln!("bad DSPARK_URL: {}", e);
             return std::process::ExitCode::FAILURE;
         }
     };
@@ -354,7 +354,7 @@ fn main() -> std::process::ExitCode {
         "Reply with: FINAL 1",
     ) {
         eprintln!("PREFLIGHT FAIL: model server unreachable: {}", e);
-        eprintln!("Set OMLX_URL/OMLX_MODEL/OMLX_API_KEY or start omlx. No receipt written.");
+        eprintln!("Set DSPARK_URL/DSPARK_MODEL/DSPARK_API_KEY or start dspark. No receipt written.");
         return std::process::ExitCode::FAILURE;
     }
 

@@ -160,7 +160,6 @@ struct Atom {
     text: String,
     worker: usize,
     a: f64,
-    words: BTreeSet<String>,
     /// Server-resident planned-prefill session for this atom (exact K/V stays on the server).
     sid: Option<u64>,
 }
@@ -393,20 +392,15 @@ impl Swarm {
                 text: piece.clone(),
                 worker,
                 a,
-                words: words(&piece),
                 sid,
             });
         }
         Ok(())
     }
 
-    fn route(&self, question: &str) -> Option<(usize, usize)> {
-        let q = words(question);
-        self.atoms
-            .iter()
-            .map(|a| (a.id, a.words.intersection(&q).count()))
-            .filter(|(_, s)| *s > 0)
-            .max_by_key(|(id, s)| (*s, usize::MAX - *id))
+    fn route(&self, question: &str) -> Option<usize> {
+        let texts: Vec<&str> = self.atoms.iter().map(|a| a.text.as_str()).collect();
+        rank_atoms(question, &texts).map(|i| self.atoms[i].id)
     }
 
     /// One turn for `worker`: its exact K/V cache stays resident on the server; feed only NEW tokens.
@@ -564,12 +558,12 @@ impl Swarm {
     }
 
     fn ask(&mut self, question: &str) -> Result<(), String> {
-        let Some((target, score)) = self.route(question) else {
+        let Some(target) = self.route(question) else {
             return Err("no atom shares words with that question; ingest more text".into());
         };
         let worker = self.atoms[target].worker;
         println!(
-            "router: best atom {target} (word overlap {score}) belongs to {}",
+            "router: best atom {target} belongs to {}",
             WORKER_NAMES[worker]
         );
         self.answer(worker, target, question)
@@ -594,6 +588,19 @@ impl Swarm {
             println!("  {name:<12} well {w}: {n} atoms, {q} answers, {t:.1}s");
         }
     }
+}
+
+/// Index of the atom sharing the most stemmed words with `question`; ties go to the lower index.
+fn rank_atoms(question: &str, atoms: &[&str]) -> Option<usize> {
+    let stem = |w: &String| w.strip_suffix('s').unwrap_or(w).to_string();
+    let q: BTreeSet<String> = words(question).iter().map(stem).collect();
+    atoms
+        .iter()
+        .enumerate()
+        .map(|(i, a)| (i, words(a).iter().map(stem).filter(|w| q.contains(w)).count()))
+        .filter(|(_, s)| *s > 0)
+        .max_by_key(|(i, s)| (*s, usize::MAX - *i))
+        .map(|(i, _)| i)
 }
 
 fn hex(b: &[u8]) -> String {
@@ -710,7 +717,7 @@ fn main() -> Result<(), String> {
             }
             "as" => match rest.split_once(' ') {
                 Some((n, q)) => match (n.parse::<usize>(), swarm.route(q)) {
-                    (Ok(w), Some((target, _))) if w < swarm.workers => swarm.answer(w, target, q),
+                    (Ok(w), Some(target)) if w < swarm.workers => swarm.answer(w, target, q),
                     _ => Err("usage: as <worker number> <question> (and the question must match an atom)".into()),
                 },
                 None => Err("usage: as <worker number> <question>".into()),
@@ -746,4 +753,18 @@ fn main() -> Result<(), String> {
     }
     let _ = std::io::stdin().read(&mut []);
     Ok(())
+}
+
+#[cfg(test)]
+mod rank_tests {
+    use super::rank_atoms;
+
+    #[test]
+    fn plural_question_finds_singular_atom_over_distractor() {
+        let atoms = [
+            "The bronze bell has a dark color and a loud sound.",
+            "The village of Brindlemoor paints every door violet in the month of March.",
+        ];
+        assert_eq!(rank_atoms("What color are the doors in Brindlemoor?", &atoms), Some(1));
+    }
 }

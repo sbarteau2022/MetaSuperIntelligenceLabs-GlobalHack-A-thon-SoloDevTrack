@@ -30,6 +30,15 @@ struct RawTokenizer {
     model: RawModel,
     #[serde(default)]
     pre_tokenizer: Option<serde_json::Value>,
+    #[serde(default)]
+    added_tokens: Vec<RawAddedToken>,
+}
+
+/// Special or added tokens (e.g. `<|im_start|>`). They must match atomically before BPE runs.
+#[derive(Debug, Deserialize)]
+struct RawAddedToken {
+    content: String,
+    id: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,6 +61,8 @@ pub struct BpeTokenizer {
     byte_encoder: HashMap<u8, String>,
     byte_decoder: HashMap<String, u8>,
     pre_split: Option<Regex>,
+    /// Added tokens, longest first, so a longer marker wins over a shorter prefix of it.
+    added: Vec<(String, u32)>,
 }
 
 fn split_regex(pre: &serde_json::Value) -> Option<String> {
@@ -154,6 +165,12 @@ impl BpeTokenizer {
             }
             None => None,
         };
+        let mut added: Vec<(String, u32)> = raw
+            .added_tokens
+            .into_iter()
+            .map(|t| (t.content, t.id))
+            .collect();
+        added.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
         Ok(Self {
             vocab: raw.model.vocab,
             inv_vocab,
@@ -161,7 +178,42 @@ impl BpeTokenizer {
             byte_encoder,
             byte_decoder,
             pre_split,
+            added,
         })
+    }
+
+    /// Splits text into added-token ids and plain segments. Earliest match wins; ties go to the longer token.
+    fn split_added<'a>(&self, text: &'a str) -> Vec<Result<u32, &'a str>> {
+        let mut out = Vec::new();
+        let mut rest = text;
+        while !rest.is_empty() {
+            let mut best: Option<(usize, &str, u32)> = None;
+            for (content, id) in &self.added {
+                if let Some(pos) = rest.find(content.as_str()) {
+                    let better = match best {
+                        None => true,
+                        Some((bp, bc, _)) => pos < bp || (pos == bp && content.len() > bc.len()),
+                    };
+                    if better {
+                        best = Some((pos, content.as_str(), *id));
+                    }
+                }
+            }
+            match best {
+                None => {
+                    out.push(Err(rest));
+                    break;
+                }
+                Some((pos, content, id)) => {
+                    if pos > 0 {
+                        out.push(Err(&rest[..pos]));
+                    }
+                    out.push(Ok(id));
+                    rest = &rest[pos + content.len()..];
+                }
+            }
+        }
+        out
     }
     fn bpe(&self, token: &str) -> Vec<String> {
         if token.is_empty() {
@@ -206,6 +258,17 @@ impl BpeTokenizer {
         word
     }
     pub fn encode(&self, text: &str) -> Result<Vec<u32>, TokenizerError> {
+        let mut ids = Vec::new();
+        for seg in self.split_added(text) {
+            match seg {
+                Ok(id) => ids.push(id),
+                Err(plain) => ids.extend(self.encode_plain(plain)?),
+            }
+        }
+        Ok(ids)
+    }
+
+    fn encode_plain(&self, text: &str) -> Result<Vec<u32>, TokenizerError> {
         let mut ids = Vec::new();
         let owned;
         let pieces: Vec<&str> = if let Some(re) = &self.pre_split {

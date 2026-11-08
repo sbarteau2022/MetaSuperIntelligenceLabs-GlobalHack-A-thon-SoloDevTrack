@@ -84,10 +84,20 @@ $$
 \theta_f = \arg(x_1 + i x_2), \quad \theta_s = \arg(\sqrt{x_1^2 + x_2^2} + i x_3)
 $$
 
-**Joint retrieval** (5D) uses combined score:
+**Joint retrieval** (5D) uses a **cost-form** (argmin). The growth-form
+$\langle q,a\rangle_{\mathcal{L}} + \tfrac14 d_{T^2}^2$ is withdrawn: on
+$H^3$, $\langle q,a\rangle_{\mathcal{L}}=\cosh(d_{H^3})$ grows with
+distance, so that expression overweight far neighbors. Live ranking already
+negates the Lorentz term (`hypermind-nested-kv` `score()`, higher = nearer).
+Content retrieval uses shell-normalized hyperbolic distance $d_{\mathrm{shell}}$;
+raw $d_{H^3}$ remains the travel / eviction metric.
 
 $$
-\text{score}(q, a) = \underbrace{\langle q_{H^3}, a_{H^3} \rangle_{\mathcal{L}}}_{\text{hyperbolic}} + \frac{1}{4} \underbrace{d_{T^2}^2(\phi_q, \phi_a)}_{\text{toroidal phase distance}}
+\operatorname{cost}(q, a) = d_{\mathrm{shell}}(q,a) + \frac{1}{4} d_{T^2}^2(\phi_q,\phi_a)
+$$
+
+$$
+\operatorname{relevance}(q,a)=\exp(-\operatorname{cost}(q,a)/\tau)
 $$
 
 where $d_{T^2}^2(\phi, \psi) = (1 - \cos(\theta_f - \psi_f)) + (1 - \cos(\theta_s - \psi_s))$.
@@ -108,14 +118,16 @@ The **Active Inferencing Transformer** replaces the forward pass with **task-sco
 
 $$
 \text{TwisterAttention}(q, K, V) = \sum_{i \in \mathcal{N}_k(q)} \alpha_i V_i, \quad
-\alpha_i = \frac{\exp(\langle q, k_i \rangle_{\mathcal{L}} / \tau)}{\sum_j \exp(\langle q, k_j \rangle_{\mathcal{L}} / \tau)}
+\alpha_i = \frac{\exp(-\operatorname{cost}(q, k_i) / \tau)}{\sum_j \exp(-\operatorname{cost}(q, k_j) / \tau)}
 $$
 
-where $\mathcal{N}_k(q)$ is the **$k$-nearest neighbors in $H^3$** (VP-tree retrieval), not the full context. The **depth gate** $k$ is chosen by **variational free energy minimization**:
+where $\mathcal{N}_k(q)$ is the **$k$-nearest neighbors** under $d_{\mathrm{shell}}$ (VP-tree retrieval), not the full context. The written growing kernel $\exp(+ \langle q,k\rangle_{\mathcal{L}}/\tau)$ is withdrawn (overweights far neighbors). The **depth gate** $k$ is chosen by **variational free energy minimization** using relevance mass $\sum_i \alpha_i$, never $|\mathrm{score}|$:
 
 $$
 k^* = \arg\min_k \left( \underbrace{C_{retrieve}(k)}_{O(\log k)} + \underbrace{C_{attend}(k)}_{O(k)} - \mathbb{E}[\log p(answer \mid context_k)] \right)
 $$
+
+<!-- C05-CORR-2026-11-05: decaying kernel + cost-form retrieval frozen. Do not silently rewrite prereg hashes; re-issue affected preregs (cert B-1/B-2). -->
 
 ### 7. Persistence: Atomic Snapshots + WAL
 

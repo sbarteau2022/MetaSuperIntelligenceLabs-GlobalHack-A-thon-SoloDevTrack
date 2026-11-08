@@ -234,3 +234,125 @@ pub fn deliberate(
         state,
     )
 }
+
+/// Result of folding math-kernel receipts into the held branches.
+#[derive(Clone, Debug, PartialEq)]
+pub struct KernelAgreement {
+    /// The output_hash confirmed by >=2 independent routes, if any.
+    pub verified_hash: Option<String>,
+    /// How many routes agreed on that hash.
+    pub multiplicity: usize,
+}
+
+/// Fold math-kernel receipts into held branches as the EXTERNAL verifier.
+///
+/// The meta-automaton does not re-derive; it compares `output_hash`es across
+/// independent computational routes. A branch whose route is CONFIRMED (its
+/// hash is produced by >=2 independent branches) has its inaccuracy driven
+/// down by `confirm_bonus` (externally verified ⇒ unsurprising) and becomes
+/// `prediction_ready`. A branch with no receipt, a Refused receipt, or a
+/// singleton hash gains `unverified_penalty` nats (can't be confirmed ⇒
+/// surprising) and stays not-ready.
+///
+/// Verification acts ONLY through the free-energy accuracy term — so the same
+/// functional scores everything (H1), and pruning still sees scalar F alone;
+/// the hash's SOURCE is never consulted, only agreement multiplicity (H2).
+/// An unverified winner therefore fails the `prediction_ready` gate in
+/// `deliberate` and mandates iteration (H3).
+pub fn fold_kernel_receipts(
+    branches: &mut [DeliberationBranch],
+    receipts: &[(usize, Option<String>)],
+    confirm_bonus: f64,
+    unverified_penalty: f64,
+) -> KernelAgreement {
+    use std::collections::HashMap;
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for (_, h) in receipts {
+        if let Some(h) = h {
+            *counts.entry(h.clone()).or_insert(0) += 1;
+        }
+    }
+    let verified = counts
+        .iter()
+        .filter(|(_, c)| **c >= 2)
+        .max_by_key(|(_, c)| **c)
+        .map(|(h, c)| (h.clone(), *c));
+
+    for b in branches.iter_mut() {
+        let rh = receipts
+            .iter()
+            .find(|(id, _)| *id == b.branch_id)
+            .and_then(|(_, h)| h.clone());
+        let confirmed = rh
+            .as_ref()
+            .map_or(false, |h| counts.get(h).copied().unwrap_or(0) >= 2);
+        b.prediction_hash = rh.unwrap_or_default();
+        if confirmed {
+            b.terms.inaccuracy_nats = (b.terms.inaccuracy_nats - confirm_bonus).max(0.0);
+            b.prediction_ready = true;
+        } else {
+            b.terms.inaccuracy_nats += unverified_penalty;
+            b.prediction_ready = false;
+        }
+    }
+
+    match verified {
+        Some((h, c)) => KernelAgreement { verified_hash: Some(h), multiplicity: c },
+        None => KernelAgreement { verified_hash: None, multiplicity: 0 },
+    }
+}
+
+#[cfg(test)]
+mod kernel_verify_tests {
+    use super::*;
+    use crate::fep::FreeEnergyTerms;
+
+    fn br(id: usize, src: BranchSource, inacc: f64) -> DeliberationBranch {
+        DeliberationBranch {
+            branch_id: id,
+            source: src,
+            terms: FreeEnergyTerms::new(0.5, inacc, 0.0),
+            prediction_hash: String::new(),
+            prediction_ready: false,
+        }
+    }
+
+    #[test]
+    fn two_routes_agree_confirms_and_readies() {
+        // Branches 1 & 2 computed the SAME hash via different routes; 3 diverged.
+        let mut bs = vec![
+            br(1, BranchSource::FreshDerivation, 3.0),
+            br(2, BranchSource::NeighborAtom, 3.0),
+            br(3, BranchSource::CrossBasinBridge, 3.0),
+        ];
+        let receipts = vec![
+            (1, Some("HASH_A".to_string())),
+            (2, Some("HASH_A".to_string())),
+            (3, Some("HASH_B".to_string())),
+        ];
+        let agree = fold_kernel_receipts(&mut bs, &receipts, 3.0, 5.0);
+        assert_eq!(agree.verified_hash.as_deref(), Some("HASH_A"));
+        assert_eq!(agree.multiplicity, 2);
+        // confirmed routes: ready, inaccuracy driven to ~0 (lower F ⇒ they win)
+        assert!(bs[0].prediction_ready && bs[1].prediction_ready);
+        assert!(bs[0].terms.inaccuracy_nats < 0.001);
+        // diverged singleton: not ready, penalized (higher F ⇒ pruned)
+        assert!(!bs[2].prediction_ready);
+        assert!(bs[2].terms.inaccuracy_nats > 3.0);
+        // the verified routes carry the lowest free energy
+        assert!(bs[0].bound() < bs[2].bound());
+    }
+
+    #[test]
+    fn no_agreement_forces_iteration_path() {
+        // All distinct hashes ⇒ nothing confirmed ⇒ no branch prediction_ready.
+        let mut bs = vec![
+            br(1, BranchSource::FreshDerivation, 1.0),
+            br(2, BranchSource::NeighborAtom, 1.0),
+        ];
+        let receipts = vec![(1, Some("X".into())), (2, Some("Y".into()))];
+        let agree = fold_kernel_receipts(&mut bs, &receipts, 3.0, 5.0);
+        assert!(agree.verified_hash.is_none());
+        assert!(bs.iter().all(|b| !b.prediction_ready));
+    }
+}

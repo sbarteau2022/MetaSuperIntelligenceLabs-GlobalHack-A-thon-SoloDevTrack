@@ -162,9 +162,25 @@ pub fn jstr(s: &str) -> String {
 /// Extract a JSON string value for `key` (first `"key":"..."` occurrence),
 /// honouring backslash escapes. Returns None when absent/malformed.
 pub fn extract_str(body: &str, key: &str) -> Option<String> {
-    let pat = format!("\"{}\":\"", key);
-    let start = body.find(&pat)? + pat.len();
+    // Find the key, then skip ':' and any whitespace before the opening quote.
+    // Tolerates both compact ("k":"v") and pretty-printed ("k": "v") JSON.
+    let kpat = format!("\"{}\"", key);
     let bytes = body.as_bytes();
+    let mut j = body.find(&kpat)? + kpat.len();
+    while j < bytes.len() && matches!(bytes[j], b' ' | b'\t' | b'\n' | b'\r') {
+        j += 1;
+    }
+    if j >= bytes.len() || bytes[j] != b':' {
+        return None;
+    }
+    j += 1;
+    while j < bytes.len() && matches!(bytes[j], b' ' | b'\t' | b'\n' | b'\r') {
+        j += 1;
+    }
+    if j >= bytes.len() || bytes[j] != b'"' {
+        return None;
+    }
+    let start = j + 1;
     let mut out = String::new();
     let mut i = start;
     while i < bytes.len() {
@@ -217,7 +233,7 @@ pub fn extract_u64(body: &str, key: &str) -> Option<u64> {
     tail[..end].parse().ok()
 }
 
-/// Split OMLX_URL into (host, port, path). http localhost only.
+/// Split DSPARK_URL into (host, port, path). http localhost only.
 pub fn split_url(url: &str) -> Result<(String, u16, String), String> {
     let rest = url
         .strip_prefix("http://")
@@ -249,7 +265,7 @@ pub fn chat_once(
     user: &str,
 ) -> Result<(String, u64), String> {
     let body = format!(
-        "{{\"model\":{},\"messages\":[{{\"role\":\"system\",\"content\":{}}},{{\"role\":\"user\",\"content\":{}}}],\"max_tokens\":256,\"temperature\":0}}",
+        "{{\"model\":{},\"messages\":[{{\"role\":\"system\",\"content\":{}}},{{\"role\":\"user\",\"content\":{}}}],\"max_tokens\":4096,\"temperature\":0}}",
         jstr(model),
         jstr(system),
         jstr(user)
@@ -273,6 +289,47 @@ pub fn chat_once(
     stream
         .read_to_end(&mut raw)
         .map_err(|e| format!("read: {}", e))?;
+    let resp = String::from_utf8_lossy(&raw).into_owned();
+    let status_line = resp.lines().next().unwrap_or("");
+    if !status_line.contains("200") {
+        return Err(format!("server status: {}", status_line));
+    }
+    let body_start = resp.find("\r\n\r\n").map(|i| i + 4).unwrap_or(resp.len());
+    let rbody = &resp[body_start..];
+    let content = extract_str(rbody, "content").unwrap_or_default();
+    let total = extract_u64(rbody, "total_tokens").unwrap_or(0);
+    Ok((content, total))
+}
+
+/// Like `chat_once` but with explicit `enable_thinking` control. Route
+/// proposal is a formatting task, not a reasoning one — the kernel does the
+/// reasoning — so the meta loop calls this with `enable_thinking=false` to get
+/// the ROUTE lines directly in `content` instead of buried in the think stream.
+pub fn chat_once_ex(
+    host: &str,
+    port: u16,
+    path: &str,
+    model: &str,
+    key: &str,
+    system: &str,
+    user: &str,
+    enable_thinking: bool,
+) -> Result<(String, u64), String> {
+    let body = format!(
+        "{{\"model\":{},\"messages\":[{{\"role\":\"system\",\"content\":{}}},{{\"role\":\"user\",\"content\":{}}}],\"max_tokens\":2048,\"temperature\":0,\"chat_template_kwargs\":{{\"enable_thinking\":{}}}}}",
+        jstr(model), jstr(system), jstr(user), enable_thinking
+    );
+    let req = format!(
+        "POST {} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nAuthorization: Bearer {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        path, host, key, body.len(), body
+    );
+    let addr = format!("{}:{}", host, port);
+    let mut stream =
+        std::net::TcpStream::connect(&addr).map_err(|e| format!("connect {}: {}", addr, e))?;
+    stream.set_read_timeout(Some(Duration::from_secs(120))).ok();
+    stream.write_all(req.as_bytes()).map_err(|e| format!("write: {}", e))?;
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).map_err(|e| format!("read: {}", e))?;
     let resp = String::from_utf8_lossy(&raw).into_owned();
     let status_line = resp.lines().next().unwrap_or("");
     if !status_line.contains("200") {
