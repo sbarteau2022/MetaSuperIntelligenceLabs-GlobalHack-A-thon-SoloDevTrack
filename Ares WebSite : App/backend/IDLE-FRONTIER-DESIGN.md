@@ -2,6 +2,10 @@
 
 Status: preregistered architecture, 2026-11-10. No autonomous improvement is certified yet.
 
+## Local runtime correction
+
+The local Apple Silicon lane uses a native Rust worker under a macOS sandbox profile. The supervisor pins Git HEAD, extracts a disposable archive under `results/frontier-loop/`, clears inherited credentials, denies network access, and grants writes only to that run directory. The worker must be compiled for macOS and must be an absolute executable. A mission preempts it through the existing frontier barrier. The Linux Docker image remains an optional cloud lane and is not the local model or Metal qualification runtime. The native lane has a separate smoke gate: verify the sandbox denies network and writes outside its run directory, then run a real repository gate. This is CPU gate discovery, not Metal/model qualification. Read access remains broad for build dependencies; do not run untrusted worker binaries.
+
 ## Placement
 
 The backend owns an idle supervisor, not the model seat. It may trigger only when no governed mission holds a run permit, after an idle grace interval, and when no frontier job is already active. It survives a chat ending because it is a server process, not a session hook. Startup must not build an image or modify the repository without an explicit configured frontier worker image. A stopped backend means the loop is stopped, and status must say so.

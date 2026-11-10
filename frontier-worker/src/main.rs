@@ -244,10 +244,15 @@ fn run(snapshot: &Path) -> Result<(), String> {
         }
         let started = Instant::now();
         let mut command = Command::new("cargo");
+        let (subcommand, flags) = target
+            .gate_args
+            .split_first()
+            .ok_or("missing gate command")?;
         command
-            .args(target.gate_args)
+            .arg(subcommand)
             .arg("--manifest-path")
             .arg(&manifest)
+            .args(flags)
             .current_dir(snapshot);
         let (status, evidence) = match run_bounded_gate(command) {
             Ok(result) => result,

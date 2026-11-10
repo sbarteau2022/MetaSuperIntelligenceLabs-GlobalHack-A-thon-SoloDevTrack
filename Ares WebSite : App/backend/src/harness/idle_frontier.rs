@@ -1,9 +1,9 @@
-//! Model-neutral idle supervisor. It launches only an already-built Docker
-//! worker image and streams a committed source snapshot without host mounts.
+//! Model-neutral idle supervisor with a sandboxed macOS worker or Docker lane.
 
 use crate::governor::AppState;
 use sha2::{Digest, Sha256};
 use std::io::Write;
+use std::os::unix::process::CommandExt;
 use std::process::Stdio;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -269,7 +269,12 @@ fn validate_receipt(bytes: &[u8], expected_commit: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn persist_receipt(repo: &str, bytes: &[u8], expected_commit: &str) -> Result<(), String> {
+fn persist_receipt(
+    repo: &str,
+    bytes: &[u8],
+    expected_commit: &str,
+    runtime: &str,
+) -> Result<(), String> {
     validate_receipt(bytes, expected_commit)?;
     let dir = std::path::Path::new(repo).join("results/frontier-loop");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -278,8 +283,8 @@ fn persist_receipt(repo: &str, bytes: &[u8], expected_commit: &str) -> Result<()
         .map_err(|e| e.to_string())?
         .as_nanos();
     let path = dir.join(format!(
-        "docker-discovery-{}-{timestamp}.receipt.tsv",
-        std::process::id()
+        "{runtime}-discovery-{}-{timestamp}.receipt.tsv",
+        std::process::id(),
     ));
     let mut file = std::fs::OpenOptions::new()
         .write(true)
@@ -332,21 +337,118 @@ async fn remove_frontier_container(gateway: &str, name: &str) {
     }
 }
 
+async fn native_job(
+    repo: &str,
+    binary: &str,
+    commit: &str,
+    state: &AppState,
+    request_epoch: u64,
+) -> Result<Option<std::process::Output>, String> {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let run = std::path::Path::new(repo)
+        .join("results/frontier-loop")
+        .join(format!("native-run-{}-{nonce}", std::process::id()));
+    std::fs::create_dir_all(run.parent().ok_or("native run parent missing")?)
+        .map_err(|e| format!("native run parent: {e}"))?;
+    std::fs::create_dir(&run).map_err(|e| format!("native run directory: {e}"))?;
+    let result = async {
+        let snapshot = run.join("source");
+        let target = run.join("target");
+        let temp = run.join("tmp");
+        for path in [&snapshot, &target, &temp] { std::fs::create_dir(path).map_err(|e| e.to_string())?; }
+        let archive = run.join("source.tar");
+        let status = Command::new("git")
+            .args(["-C", repo, "archive", "--format=tar", "--output"])
+            .arg(&archive).arg(commit)
+            .kill_on_drop(true).status().await.map_err(|e| e.to_string())?;
+        if !status.success() { return Err("native frontier archive failed".into()); }
+        let status = Command::new("tar").args(["-xf"]).arg(&archive).arg("-C").arg(&snapshot)
+            .kill_on_drop(true).status().await.map_err(|e| e.to_string())?;
+        if !status.success() { return Err("native frontier extraction failed".into()); }
+        std::fs::remove_file(&archive).map_err(|e| e.to_string())?;
+        let home = std::env::var("HOME").map_err(|_| "HOME unavailable for Cargo cache")?;
+        let cargo_home = std::path::Path::new(&home).join(".cargo");
+        let canonical_run = run.canonicalize().map_err(|e| e.to_string())?;
+        let profile = format!("(version 1)(allow default)(deny network*)(deny file-write* (require-not (subpath \"{}\")))", canonical_run.display());
+        let mut command = Command::new("/usr/bin/sandbox-exec");
+        command.arg("-p").arg(profile).arg(binary).arg("--once").arg(&snapshot)
+            .env_clear().env("PATH", "/opt/homebrew/bin:/usr/bin:/bin:/sbin")
+            .env("HOME", &run).env("CARGO_HOME", cargo_home)
+            .env("CARGO_TARGET_DIR", &target).env("TMPDIR", &temp)
+            .env("CARGO_BUILD_JOBS", "1").env("CARGO_NET_OFFLINE", "true")
+            .env("ARES_FRONTIER_SOURCE_COMMIT", commit)
+            .kill_on_drop(true).stdout(Stdio::piped()).stderr(Stdio::piped());
+        command.as_std_mut().process_group(0);
+        let mut child = command.spawn().map_err(|e| format!("native worker spawn: {e}"))?;
+        let pid = child.id().ok_or("native worker PID unavailable")? as i32;
+        let stdout = child.stdout.take().ok_or("native stdout unavailable")?;
+        let stderr = child.stderr.take().ok_or("native stderr unavailable")?;
+        let stdout_task = tokio::spawn(read_bounded(stdout));
+        let stderr_task = tokio::spawn(read_bounded(stderr));
+        let deadline = tokio::time::sleep(JOB_LIMIT);
+        tokio::pin!(deadline);
+        let status = loop {
+            tokio::select! {
+                result = child.wait() => break Some(result.map_err(|e| e.to_string())?),
+                _ = &mut deadline => break None,
+                _ = tokio::time::sleep(Duration::from_millis(250)) => {
+                    if state.frontier_request_epoch.load(Ordering::Acquire) != request_epoch { break None; }
+                }
+            }
+        };
+        if status.is_none() {
+            // The worker and its Cargo children share a dedicated process group.
+            unsafe { libc::kill(-pid, libc::SIGKILL); }
+            let _ = child.wait().await;
+            stdout_task.abort();
+            stderr_task.abort();
+            return if state.frontier_request_epoch.load(Ordering::Acquire) != request_epoch {
+                Ok(None)
+            } else { Err("native frontier timed out".into()) };
+        }
+        let stdout = stdout_task.await.map_err(|e| e.to_string())??;
+        let stderr = stderr_task.await.map_err(|e| e.to_string())??;
+        Ok(Some(std::process::Output { status: status.expect("checked"), stdout, stderr }))
+    }.await;
+    std::fs::remove_dir_all(&run).map_err(|e| format!("native run cleanup: {e}"))?;
+    result
+}
+
 /// Start at most one isolated frontier worker after an idle grace interval.
 /// Missing configuration disables the supervisor; no host fallback exists.
 pub fn spawn_if_configured(state: Arc<AppState>) -> Result<bool, String> {
+    let runtime = std::env::var("ARES_FRONTIER_RUNTIME").unwrap_or_else(|_| "native".into());
     let image = std::env::var("ARES_FRONTIER_IMAGE");
     let repo = std::env::var("ARES_FRONTIER_REPO");
-    let (image, repo) = match (image, repo) {
-        (Err(std::env::VarError::NotPresent), Err(std::env::VarError::NotPresent)) => {
-            return Ok(false)
-        }
-        (Ok(image), Ok(repo)) => (image, repo),
-        _ => return Err("ARES_FRONTIER_IMAGE and ARES_FRONTIER_REPO must be set together".into()),
+    let repo = match repo {
+        Ok(repo) => repo,
+        Err(std::env::VarError::NotPresent) if image.is_err() => return Ok(false),
+        Err(_) => return Err("ARES_FRONTIER_REPO must be set".into()),
     };
-    if !valid_image(&image) {
+    if runtime != "native" && runtime != "docker" {
+        return Err("ARES_FRONTIER_RUNTIME must be native or docker".into());
+    }
+    let image = if runtime == "docker" {
+        image.map_err(|_| "Docker frontier requires ARES_FRONTIER_IMAGE")?
+    } else {
+        String::new()
+    };
+    if runtime == "docker" && !valid_image(&image) {
         return Err("frontier Docker image configuration invalid".into());
     }
+    let native_bin = if runtime == "native" {
+        let path = std::env::var("ARES_FRONTIER_BIN")
+            .map_err(|_| "native frontier requires ARES_FRONTIER_BIN")?;
+        if !std::path::Path::new(&path).is_absolute() {
+            return Err("frontier worker binary must be absolute".into());
+        }
+        path
+    } else {
+        String::new()
+    };
     if !std::path::Path::new(&repo).is_absolute() {
         return Err("frontier repository path must be absolute".into());
     }
@@ -382,6 +484,9 @@ pub fn spawn_if_configured(state: Arc<AppState>) -> Result<bool, String> {
                 continue;
             }
             let readiness = match &commit {
+                Ok(_) if runtime == "native" => {
+                    Ok(cfg!(target_os = "macos") && std::path::Path::new(&native_bin).is_file())
+                }
                 Ok(_) => match docker_ready(&gateway, &image).await {
                     Ok(true) => enough_colima_memory(&gateway).await,
                     other => other,
@@ -404,6 +509,36 @@ pub fn spawn_if_configured(state: Arc<AppState>) -> Result<bool, String> {
                     }
                     let commit = commit.expect("source pin checked before readiness");
                     state.frontier_status.store(3, Ordering::Release);
+                    if runtime == "native" {
+                        let result =
+                            native_job(&repo, &native_bin, &commit, &state, request_epoch).await;
+                        match result {
+                            Ok(Some(output))
+                                if output.status.success()
+                                    && state.frontier_request_epoch.load(Ordering::Acquire)
+                                        == request_epoch =>
+                            {
+                                match persist_receipt(&repo, &output.stdout, &commit, "native") {
+                                    Ok(()) => {
+                                        last_completed_source = Some(commit);
+                                        state.frontier_status.store(4, Ordering::Release);
+                                    }
+                                    Err(e) => {
+                                        eprintln!("frontier native receipt: {e}");
+                                        state.frontier_status.store(5, Ordering::Release);
+                                    }
+                                }
+                            }
+                            Ok(None) => state.frontier_status.store(6, Ordering::Release),
+                            other => {
+                                eprintln!("frontier native job: {other:?}");
+                                state.frontier_status.store(5, Ordering::Release);
+                            }
+                        }
+                        state.frontier_running.store(false, Ordering::Release);
+                        idle_since = Instant::now();
+                        continue;
+                    }
                     let name = format!("ares-frontier-{}", std::process::id());
                     let script = r#"set -o pipefail
 cd "$1" || exit 1
@@ -448,7 +583,8 @@ git archive "$commit" | "${docker_cmd[@]}" run --rm -i --name "$3" --network non
                                 if output.status.success()
                                     && output.stdout.len() <= MAX_RECEIPT_BYTES
                                 {
-                                    match persist_receipt(&repo, &output.stdout, &commit) {
+                                    match persist_receipt(&repo, &output.stdout, &commit, "docker")
+                                    {
                                         Ok(()) => {
                                             last_completed_source = Some(commit.clone());
                                             state.frontier_status.store(4, Ordering::Release);

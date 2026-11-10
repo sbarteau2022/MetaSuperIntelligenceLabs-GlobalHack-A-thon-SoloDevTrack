@@ -3,17 +3,19 @@
 ## Idle frontier supervisor (candidate)
 
 The server can launch a model-neutral frontier worker after its governed
-missions have been idle for five minutes. Set `ARES_FRONTIER_IMAGE` to an
-already-built Docker image containing `/usr/local/bin/frontier-worker` and
-`ARES_FRONTIER_REPO` to the absolute canonical Git checkout. Both variables
-are required; otherwise the supervisor is disabled. It streams the committed
-`git archive HEAD` to a disposable, resource-capped container with no host
-mount, network, or live database credentials. It never builds an image or
-falls back to host execution.
-On this Mac, set `ARES_FRONTIER_DOCKER_GATEWAY=colima` to use the already
-running Colima Docker daemon without depending on Docker Desktop's socket.
-Docker still consumes Colima VM disk space; this removes only the separate
-Lima frontier VM allocation.
+missions have been idle for five minutes. On macOS, set `ARES_FRONTIER_REPO`
+to the absolute canonical checkout and `ARES_FRONTIER_BIN` to an absolute,
+already-built macOS `frontier-worker` executable. `ARES_FRONTIER_RUNTIME`
+defaults to `native`. The supervisor pins HEAD, extracts a disposable archive,
+and runs the worker with cleared credentials, offline Cargo, a macOS sandbox
+that denies network and writes outside the run directory, and bounded output.
+The worker still has read access to build dependencies; use a trusted binary.
+The native worker and its Cargo children run in a dedicated process group;
+mission cancellation terminates that group before the runtime barrier opens.
+The optional cloud lane uses `ARES_FRONTIER_RUNTIME=docker`,
+`ARES_FRONTIER_IMAGE`, and optionally `ARES_FRONTIER_DOCKER_GATEWAY=colima`.
+Colima remains for SurrealDB, Qdrant, and ClickStack; local model execution
+does not run inside its 2 GiB VM.
 `/api/harness/status` reports active missions and the frontier state. The
 worker discovers failures in portable compile and backend library-test gates and writes a bounded
 receipt under `results/frontier-loop/`. It excludes Apple-only model forward
@@ -27,13 +29,13 @@ candidate or claim an improvement.
 The supervisor pins a commit before archiving and refuses a worker receipt
 whose source, gate set, or decision does not match that snapshot. A receipt
 is discovery evidence only; it cannot approve a code change.
-The Docker job's stdout and stderr are capped while streaming; over-limit
-output terminates the job and cannot be recorded as a partial receipt.
+Both runtime lanes cap stdout and stderr while streaming; over-limit
+output cannot be recorded as a partial receipt. The native worker is
+terminated at its job deadline if it does not exit.
 Governed mission dispatch requests cancellation when a frontier job owns the
-runtime barrier. The job removes its own Docker container before the mission
-can proceed; `/api/harness/status` reports `cancelled_for_mission`. A failed
-cleanup keeps the barrier closed and retries, so the host does not run a
-mission alongside an unaccounted frontier container.
+runtime barrier. The native lane kills its worker process group and removes
+the disposable snapshot before the mission can proceed; Docker removes its
+container. `/api/harness/status` reports `cancelled_for_mission`.
 After a valid discovery receipt, the supervisor skips the same source commit
 for the rest of that backend process and reports `awaiting_source_change`.
 Restarting the backend resets this short-lived deduplication state.
