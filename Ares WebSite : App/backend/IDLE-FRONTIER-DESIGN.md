@@ -10,7 +10,7 @@ The worker is an executable with a model neutral contract. The active model can 
 
 ## One iteration
 
-1. Snapshot the current Git commit and dirty-tree status; refuse an unreviewed dirty snapshot. Inspect registered component and end-to-end gates, relevant receipts, and architecture dependencies. Choose one target with a measured baseline and expected system-level gain. If there is no evidenced target, record `no_target` and sleep.
+1. Snapshot the committed Git HEAD; dirty worktree files are excluded by `git archive`. Inspect registered component and end-to-end gates, relevant receipts, and architecture dependencies. Choose one target with a measured baseline and expected system-level gain. If there is no evidenced target, record `no_target` and sleep.
 2. Before edits, persist a goal receipt naming target, baseline command/data, quality floor, resource metric, exact threshold, drastic bar, and expiry. Neither a worker nor a model may alter the bar after measurements begin.
 3. Stream `git archive HEAD` into a bounded, disposable Docker worker. There is no host mount, live database credential, or Docker socket inside the container. Use a read-only image filesystem and a capped writable tmpfs for the source snapshot. Run the baseline and the failing gate on real data. The worker can iterate inside that container only. Each attempt records source digest, command, output digest, duration, and failure classification. The container is removed after the job; no Lima disk remains.
 4. The same quality gates run on baseline and candidate. Measure task quality, latency/throughput, peak memory, and actual energy when available; label time-derived cost as proxy. A speed improvement that violates correctness, safety, model-boundary, or system-level homogeneity is rejected. Apply the same evidence and scrutiny to every candidate family (isotropic suppression).
@@ -18,7 +18,7 @@ The worker is an executable with a model neutral contract. The active model can 
 
 ## First implementation gate
 
-Expose truthful active-mission count and an idle predicate from the backend. A foreground mission must prevent any frontier trigger; a second frontier job must be refused. A stopped Docker daemon or missing image must show `unavailable`, not a success claim. Worker implementation, model proposal protocol, and promotion remain separate gates.
+Expose truthful active-mission count and an idle predicate from the backend. A foreground mission must prevent any frontier trigger; a second frontier job must be refused. A stopped Docker daemon, missing image, or insufficient Colima memory must show `unavailable`, not a success claim. The Rust worker now discovers targets from portable real compile gates and emits bounded receipts. `core_lm`'s Apple framework gate is explicitly unavailable in Linux Docker; GlobalMind's library gate is portable, while its hardware tests are not. Model proposal, implementation iteration, full quality/energy gates, Apple hardware qualification, and promotion remain separate gates.
 
 ## Falsifiers
 

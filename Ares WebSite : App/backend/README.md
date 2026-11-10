@@ -6,7 +6,7 @@ The server can launch a model-neutral frontier worker after its governed
 missions have been idle for five minutes. Set `ARES_FRONTIER_IMAGE` to an
 already-built Docker image containing `/usr/local/bin/frontier-worker` and
 `ARES_FRONTIER_REPO` to the absolute canonical Git checkout. Both variables
-are required; otherwise the supervisor is disabled. It streams a clean
+are required; otherwise the supervisor is disabled. It streams the committed
 `git archive HEAD` to a disposable, resource-capped container with no host
 mount, network, or live database credentials. It never builds an image or
 falls back to host execution.
@@ -14,10 +14,12 @@ On this Mac, set `ARES_FRONTIER_DOCKER_GATEWAY=colima` to use the already
 running Colima Docker daemon without depending on Docker Desktop's socket.
 Docker still consumes Colima VM disk space; this removes only the separate
 Lima frontier VM allocation.
-`/api/harness/status` reports active missions and whether a frontier job is
-running. The guest worker, measured target selection, receipt export, and
-promotion gates are not implemented yet; enabling the supervisor without
-an image produces an unavailable status, not an improvement claim. The governing
+`/api/harness/status` reports active missions and the frontier state. The
+worker discovers failures in portable compile gates and writes a bounded
+receipt under `results/frontier-loop/`. It excludes Apple-only model forward
+qualification. A Colima run is refused below the memory headroom gate; a
+missing image also reports `unavailable`. The model proposer, implementation
+iteration, full quality/performance gates, and promotion path remain open. The governing
 contract is [IDLE-FRONTIER-DESIGN.md](IDLE-FRONTIER-DESIGN.md).
 
 ## Model agnostic system contract (2026-11-10)

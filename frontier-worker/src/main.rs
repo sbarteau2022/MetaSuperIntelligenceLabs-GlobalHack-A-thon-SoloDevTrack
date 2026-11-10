@@ -11,20 +11,24 @@ const MAX_GATE_OUTPUT: usize = 8 * 1024 * 1024;
 struct Target {
     id: &'static str,
     manifest: &'static str,
+    gate_args: &'static [&'static str],
 }
 
 const TARGETS: [Target; 3] = [
     Target {
         id: "ares-backend",
         manifest: "Ares WebSite : App/backend/Cargo.toml",
+        gate_args: &["check", "--tests", "--offline", "--message-format=short"],
     },
     Target {
         id: "core-lm",
         manifest: "core_lm/Cargo.toml",
+        gate_args: &[], // Metal/CoreGraphics cannot be qualified in Linux Docker.
     },
     Target {
         id: "globalmind-runtime",
         manifest: "globalmind-runtime/Cargo.toml",
+        gate_args: &["check", "--lib", "--offline", "--message-format=short"],
     },
 ];
 
@@ -72,15 +76,17 @@ fn run(snapshot: &Path) -> Result<(), String> {
         if !manifest.is_file() {
             return Err(format!("registered target {} is missing", target.id));
         }
+        if target.gate_args.is_empty() {
+            println!(
+                "gate\tsource={}\ttarget={}\tstatus=unavailable\treason=apple-framework",
+                commit, target.id
+            );
+            continue;
+        }
         let started = Instant::now();
         let output = Command::new("cargo")
-            .args([
-                "check",
-                "--tests",
-                "--offline",
-                "--message-format=short",
-                "--manifest-path",
-            ])
+            .args(target.gate_args)
+            .arg("--manifest-path")
             .arg(&manifest)
             .current_dir(snapshot)
             .output()
@@ -122,9 +128,9 @@ fn run(snapshot: &Path) -> Result<(), String> {
             "decision\tsource={commit}\ttarget={id}\treason={reason}\tevidence_sha256={digest}"
         );
     } else if environment_unavailable {
-        println!("decision\tsource={commit}\ttarget=none\treason=environment-unavailable");
+        println!("decision\tsource={commit}\tscope=portable\ttarget=none\treason=environment-unavailable");
     } else {
-        println!("decision\tsource={commit}\ttarget=none\treason=no-admitted-gate-failure");
+        println!("decision\tsource={commit}\tscope=portable\ttarget=none\treason=no-admitted-gate-failure");
     }
     Ok(())
 }

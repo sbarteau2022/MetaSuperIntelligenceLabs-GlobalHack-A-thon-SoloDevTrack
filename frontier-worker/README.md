@@ -5,6 +5,10 @@ loop. It receives a committed Git snapshot over the Docker container's stdin,
 checks registered Rust components against their actual source, and emits
 bounded gate and target-decision receipts. It does not edit code, claim a
 drastic improvement, or promote anything to the live checkout.
+The Linux container runs backend `cargo check --tests` and GlobalMind library
+`cargo check --lib`. It marks `core_lm` Apple-framework gates unavailable;
+those require a separate macOS hardware run and can never be inferred from
+this Docker receipt. A `target=none` decision covers portable gates only.
 
 Build the image from a committed canonical repo snapshot using the
 `frontier-worker/Dockerfile`. The backend supervisor expects the image to

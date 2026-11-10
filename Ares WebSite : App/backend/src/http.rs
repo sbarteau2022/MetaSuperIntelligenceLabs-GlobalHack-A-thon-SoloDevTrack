@@ -1142,8 +1142,10 @@ async fn harness_status(State(state): State<Arc<AppState>>) -> impl IntoResponse
         "run_concurrency_limit": crate::governor::MAX_GOVERNED_RUNS,
         "active_missions": state.active_missions(),
         "idle_frontier": {
-            "configured": std::env::var("ARES_FRONTIER_IMAGE").is_ok()
-                && std::env::var("ARES_FRONTIER_REPO").is_ok(),
+            "status": crate::harness::idle_frontier::status_label(
+                state.frontier_status.load(std::sync::atomic::Ordering::Acquire)
+            ),
+            "configured": state.frontier_status.load(std::sync::atomic::Ordering::Acquire) != 0,
             "job_running": state.frontier_running.load(std::sync::atomic::Ordering::Acquire),
             "launch_boundary": "docker run with streamed Git archive and no host mount",
         },

@@ -17,7 +17,7 @@ use crate::store::{
     AtomId, BridgeLossReport, CarvedSwarmMap, EphemeralMapDeposit, FrozenBaseWeights,
 };
 use crate::surreal::{sql_escape, SurrealClient};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU8};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -43,6 +43,8 @@ pub struct AppState {
     pub run_semaphore: Arc<tokio::sync::Semaphore>,
     /// Ensures only one idle frontier job is in flight in this process.
     pub frontier_running: AtomicBool,
+    /// 0 disabled, 1 waiting, 2 unavailable, 3 running, 4 receipted, 5 failed.
+    pub frontier_status: AtomicU8,
     pub surreal: Option<SurrealClient>,
     /// Model seat that served the last model call (recorded per call).
     pub last_seat: Mutex<Option<String>>,
@@ -62,6 +64,7 @@ impl AppState {
             sequences: Mutex::new(std::collections::HashMap::new()),
             run_semaphore: Arc::new(tokio::sync::Semaphore::new(MAX_GOVERNED_RUNS)),
             frontier_running: AtomicBool::new(false),
+            frontier_status: AtomicU8::new(0),
             surreal,
             last_seat: Mutex::new(None),
             max_restarts: 3,
