@@ -1,5 +1,14 @@
 # Ares Backend — Phase 0 Core Governance
 
+## Model agnostic system contract (2026-11-10)
+
+The target authority, turn sequence, and real qualification gates for the
+governed native forward, Qdrant checkpoint tail, N3 MCP stream, and
+GlobalMind trajectory writes are specified in
+[MODEL-AGNOSTIC-SYSTEM-DESIGN.md](MODEL-AGNOSTIC-SYSTEM-DESIGN.md).
+The current mission route does not yet join those paths; this design is a
+preregistration and must not be read as a live system pass.
+
 ## 2026-11-04 source recovery and live-pass boundary
 
 This backend source was recovered from Git checkpoint f735d45e after the Ares
