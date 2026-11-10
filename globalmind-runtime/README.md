@@ -215,6 +215,15 @@ stored baseline and 20 single-field identity misses after SurrealDB restart.
 The research harness exposes this through `GlobalMindBridge::fetch_tensor_exact`;
 full-model and deployed harness forward-pass gates remain open.
 
+`GlobalMindStore::lookup_exact_tensor_roster` reconstructs a bounded typed
+session/page roster from the existing immutable SurrealDB tables after a
+client restart. It refuses ambiguous sessions, missing heads, foreign page
+references, invalid shapes, and malformed digests. Callers must compare the
+returned TPPE/address/model contract with their pinned current contract and
+fetch payloads through the exact layer API. The isolated backend K/V test
+uses a fresh empty in-process roster after restart; production mission
+attachment remains a separate gate.
+
 # Problem Statement
 
 The SurrealDB schema had no fresh typed runtime writer. The legacy MCP ingest

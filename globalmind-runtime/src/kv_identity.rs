@@ -1,10 +1,10 @@
 //! Exact, read-only transformer K/V lookup for model-bound forward reuse.
 
-use crate::store::{record, sq};
+use crate::store::{record, record_ref, sq};
 use crate::{Digest, GlobalMindStore, RecordId, TensorDtype, TensorLayout, TensorPayload};
 use serde_json::Value;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExactKvIdentity {
     pub workspace: RecordId,
     pub session: RecordId,
@@ -34,6 +34,52 @@ pub struct ExactKvIdentity {
     pub revision: u32,
     pub key_digest: Digest,
     pub value_digest: Digest,
+}
+
+fn required_str<'a>(row: &'a Value, field: &str) -> Result<&'a str, String> {
+    row.get(field)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("tensor roster missing {field}"))
+}
+
+fn required_u32(row: &Value, field: &str) -> Result<u32, String> {
+    row.get(field)
+        .and_then(Value::as_u64)
+        .and_then(|v| u32::try_from(v).ok())
+        .ok_or_else(|| format!("tensor roster invalid {field}"))
+}
+
+fn required_u64(row: &Value, field: &str) -> Result<u64, String> {
+    row.get(field)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| format!("tensor roster invalid {field}"))
+}
+
+fn required_record(row: &Value, field: &str, table: &str) -> Result<RecordId, String> {
+    let raw = required_str(row, field)?;
+    let id = raw
+        .strip_prefix(&format!("{table}:"))
+        .ok_or_else(|| format!("tensor roster {field} has wrong record table"))?;
+    RecordId::parse(id)
+}
+
+fn parse_dtype(row: &Value) -> Result<TensorDtype, String> {
+    match required_str(row, "dtype")? {
+        "f16" => Ok(TensorDtype::F16),
+        "bf16" => Ok(TensorDtype::Bf16),
+        "f32" => Ok(TensorDtype::F32),
+        "q8_0" => Ok(TensorDtype::Q8_0),
+        "q4_0" => Ok(TensorDtype::Q4_0),
+        _ => Err("tensor roster dtype is unknown".into()),
+    }
+}
+
+fn parse_layout(row: &Value) -> Result<TensorLayout, String> {
+    match required_str(row, "layout")? {
+        "token_major" => Ok(TensorLayout::TokenMajor),
+        "head_dim_major" => Ok(TensorLayout::HeadDimMajor),
+        _ => Err("tensor roster layout is unknown".into()),
+    }
 }
 
 impl ExactKvIdentity {
@@ -71,6 +117,145 @@ fn exactly_one_id(rows: &Value, expected: &str) -> Result<(), String> {
 }
 
 impl GlobalMindStore {
+    /// Reconstruct the immutable exact K/V roster from SurrealDB after a
+    /// process restart. This reads metadata only; the caller must compare
+    /// the returned contract with its currently pinned model and fetch each
+    /// payload through `fetch_complete_tensor_layer_exact`.
+    pub fn lookup_exact_tensor_roster(
+        &self,
+        workspace: &RecordId,
+        model_digest: &Digest,
+        prefix_digest: &Digest,
+    ) -> Result<Option<Vec<ExactKvIdentity>>, String> {
+        let sessions = self.one(&format!(
+            "SELECT * FROM transformer_kv_session WHERE active = true AND workspace = {workspace} AND model_digest = {model} AND prefix_digest = {prefix} LIMIT 2;",
+            workspace = record("workspace", workspace),
+            model = sq(model_digest.as_str()),
+            prefix = sq(prefix_digest.as_str()),
+        ))?;
+        let sessions = sessions
+            .as_array()
+            .ok_or("tensor session lookup is not an array")?;
+        if sessions.is_empty() {
+            return Ok(None);
+        }
+        if sessions.len() != 1 {
+            return Err("ambiguous exact tensor session identity".into());
+        }
+        let s = &sessions[0];
+        if required_str(s, "workspace")? != record_ref("workspace", workspace)
+            || required_str(s, "model_digest")? != model_digest.as_str()
+            || required_str(s, "prefix_digest")? != prefix_digest.as_str()
+        {
+            return Err("tensor session lookup changed identity".into());
+        }
+        let session = required_record(s, "id", "transformer_kv_session")?;
+        let layer_count = required_u32(s, "layer_count")?;
+        let kv_head_count = required_u32(s, "kv_head_count")?;
+        let head_dim = required_u32(s, "head_dim")?;
+        let minimum = usize::try_from(layer_count)
+            .ok()
+            .and_then(|l| {
+                usize::try_from(kv_head_count)
+                    .ok()
+                    .and_then(|h| l.checked_mul(h))
+            })
+            .ok_or("tensor roster dimensions overflow")?;
+        if minimum == 0 || minimum > 4096 || head_dim == 0 {
+            return Err("tensor roster dimensions out of bounds".into());
+        }
+        let dtype = parse_dtype(s)?;
+        let model_id = required_str(s, "model_id")?.to_string();
+        let model_revision = required_str(s, "model_revision")?.to_string();
+        let request_digest = Digest::parse(required_str(s, "request_digest")?)?;
+        let tppe_version = required_str(s, "toroidal_phase_encoder_version")?.to_string();
+        let tppe_configuration_digest =
+            Digest::parse(required_str(s, "tppe_configuration_digest")?)?;
+        let address_contract_digest = Digest::parse(required_str(s, "address_contract_digest")?)?;
+        let tensor_contract_digest = Digest::parse(required_str(s, "tensor_contract_digest")?)?;
+        let geometry_space = required_record(s, "geometry_space", "geometry_space")?;
+        let rows = self.one(&format!(
+            "SELECT id, workspace, session, layer, kv_head, token_start, token_end, tensor_shape, dtype, layout, address, phase_state_digest, revision, key_digest, value_digest FROM transformer_kv_page WHERE active = true AND workspace = {workspace} AND session = {session} ORDER BY layer, kv_head, token_start LIMIT 4097;",
+            workspace = record("workspace", workspace),
+            session = record("transformer_kv_session", &session),
+        ))?;
+        let rows = rows
+            .as_array()
+            .ok_or("tensor page lookup is not an array")?;
+        if rows.len() < minimum || rows.len() > 4096 {
+            return Err("incomplete or oversized tensor page roster".into());
+        }
+        let mut roster = Vec::with_capacity(rows.len());
+        let mut seen = vec![false; minimum];
+        for row in rows {
+            if required_str(row, "workspace")? != record_ref("workspace", workspace)
+                || required_str(row, "session")? != record_ref("transformer_kv_session", &session)
+                || parse_dtype(row)? != dtype
+            {
+                return Err("tensor page roster contains foreign identity".into());
+            }
+            let layer = required_u32(row, "layer")?;
+            let kv_head = required_u32(row, "kv_head")?;
+            if layer >= layer_count || kv_head >= kv_head_count {
+                return Err("tensor page roster contains out-of-range head".into());
+            }
+            seen[layer as usize * kv_head_count as usize + kv_head as usize] = true;
+            let shape = row
+                .get("tensor_shape")
+                .and_then(Value::as_array)
+                .ok_or("tensor page shape missing")?;
+            if shape.len() != 2 {
+                return Err("tensor page shape is not rank two".into());
+            }
+            let tensor_shape = [
+                shape[0]
+                    .as_u64()
+                    .and_then(|v| u32::try_from(v).ok())
+                    .ok_or("tensor page token shape invalid")?,
+                shape[1]
+                    .as_u64()
+                    .and_then(|v| u32::try_from(v).ok())
+                    .ok_or("tensor page head shape invalid")?,
+            ];
+            let q = ExactKvIdentity {
+                workspace: workspace.clone(),
+                session: session.clone(),
+                page: required_record(row, "id", "transformer_kv_page")?,
+                model_id: model_id.clone(),
+                model_revision: model_revision.clone(),
+                model_digest: model_digest.clone(),
+                request_digest: request_digest.clone(),
+                prefix_digest: prefix_digest.clone(),
+                tppe_version: tppe_version.clone(),
+                tppe_configuration_digest: tppe_configuration_digest.clone(),
+                address_contract_digest: address_contract_digest.clone(),
+                tensor_contract_digest: tensor_contract_digest.clone(),
+                geometry_space: geometry_space.clone(),
+                dtype,
+                layer_count,
+                kv_head_count,
+                head_dim,
+                layer,
+                kv_head,
+                token_start: required_u64(row, "token_start")?,
+                token_end: required_u64(row, "token_end")?,
+                tensor_shape,
+                layout: parse_layout(row)?,
+                address: required_record(row, "address", "atom_address")?,
+                phase_state_digest: Digest::parse(required_str(row, "phase_state_digest")?)?,
+                revision: required_u32(row, "revision")?,
+                key_digest: Digest::parse(required_str(row, "key_digest")?)?,
+                value_digest: Digest::parse(required_str(row, "value_digest")?)?,
+            };
+            q.validate()?;
+            roster.push(q);
+        }
+        if seen.iter().any(|present| !present) {
+            return Err("tensor page roster is missing a layer or KV head".into());
+        }
+        Ok(Some(roster))
+    }
+
     /// Return K/V only when every model, request, TPPE, coordinate and payload
     /// digest field matches the caller's immutable witness.
     pub fn fetch_tensor_payload_exact(&self, q: &ExactKvIdentity) -> Result<TensorPayload, String> {

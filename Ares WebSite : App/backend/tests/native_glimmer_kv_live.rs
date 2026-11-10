@@ -384,12 +384,18 @@ impl StoreKv {
 
 impl KvPageStore for StoreKv {
     fn fetch(&mut self, key: &KvKey) -> Result<Option<(Shape, Pages)>, String> {
-        let Some(known) = self
-            .roster
-            .lock()
-            .unwrap()
-            .get(&Self::roster_key(key))
-            .cloned()
+        let model = Digest::parse(
+            key.artifact_composite
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>(),
+        )?;
+        let prefix = digest_ids(&key.prefix_ids);
+        let Some(known) = self.store.lookup_exact_tensor_roster(
+            &RecordId::parse("globalmind")?,
+            &model,
+            &prefix,
+        )?
         else {
             return Ok(None);
         };
@@ -404,13 +410,19 @@ impl KvPageStore for StoreKv {
         };
         let mut identities = Vec::new();
         for old in &known {
-            identities.push(self.identity(
+            let expected = self.identity(
                 key,
                 &shape,
                 old.layer as usize,
                 old.kv_head as usize,
                 (old.key_digest.clone(), old.value_digest.clone()),
-            )?);
+            )?;
+            if expected != *old {
+                return Err(
+                    "persisted K/V roster differs from current model or address contract".into(),
+                );
+            }
+            identities.push(expected);
         }
         let mut pages = Vec::new();
         for layer in 0..shape.layers {
@@ -564,7 +576,8 @@ fn executor_kv_miss_then_restart_hit_equals_plain_forward() -> Result<(), String
     );
 
     db.restart()?;
-    let hit = executor(&db, Some(new_kv(&db, &roster, "v1")?))?
+    let fresh_roster: Roster = Arc::new(Mutex::new(HashMap::new()));
+    let hit = executor(&db, Some(new_kv(&db, &fresh_roster, "v1")?))?
         .call_bound("mind.recall", &args)?
         .bound_receipt;
     let hit_names = names(&hit);

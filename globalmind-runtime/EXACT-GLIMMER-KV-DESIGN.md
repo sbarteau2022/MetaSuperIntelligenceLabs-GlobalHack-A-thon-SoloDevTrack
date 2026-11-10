@@ -1,5 +1,19 @@
 # Exact Glimmer K/V continuation gate
 
+## Durable roster read, 2026-11-10
+
+Use the existing unique `transformer_kv_session` identity and indexed
+`transformer_kv_page` rows as the K/V roster. A lookup by workspace, model
+digest, and prefix digest must find zero or one active session; ambiguity is
+an error. Reconstruct typed page identities only from persisted immutable
+metadata, enforce a bounded page count, and reject duplicate, missing, or
+foreign layer/head rows before any payload reaches attention. The caller
+must compare every reconstructed model, TPPE, address, tensor, shape, and
+payload digest against its current contract. A fresh client after SurrealKV
+restart must hydrate without an in-process page roster. No production
+attachment is certified until this read is joined to the governed mission
+and a restart test crosses that boundary.
+
 ## Preregistered numerical diagnostic, 2026-11-04
 
 The independent MLX oracle found that the current Rust forward first differs

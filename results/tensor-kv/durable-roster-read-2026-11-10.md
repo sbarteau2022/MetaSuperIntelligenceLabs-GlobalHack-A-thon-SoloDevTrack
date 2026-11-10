@@ -1,0 +1,9 @@
+# Durable exact K/V roster read — 2026-11-10
+
+The existing `transformer_kv_session` unique identity and indexed `transformer_kv_page` rows now supply a typed roster through `GlobalMindStore::lookup_exact_tensor_roster`. The read requires one active session for workspace/model/prefix, bounds the page set, reconstructs every immutable page identity, and refuses missing layer/head coverage or foreign metadata. Payloads remain behind the existing exact fetch and digest checks.
+
+The isolated backend hardware test was changed to use this database read. After stopping and restarting its disposable SurrealKV instance, it created a fresh empty in-process roster and got a K/V hit. The hit's generated IDs, logits digest, and K/V digest matched both the pre-restart miss and plain exact forward. A changed TPPE contract was refused. The frozen Glimmer server ran on isolated port 18111 and was stopped afterward. The live persistent mind and backend were untouched.
+
+`globalmind-runtime cargo check --tests --offline` and backend `cargo check --tests --offline` passed. Backend all-target tests and strict Clippy passed. The broader GlobalMind library run reported 104 passed, 6 failed, 3 ignored: five failures require the absent Qwen tokenizer at `/Users/stewartbarteau/models/fused/Qwen3.6-MoE-Combined/tokenizer.json`; one forward-smoke test requires absent artifacts at that same manifest path. These are unsatisfied qualification prerequisites, not a pass. The WD Drive's `models/fused` directory was inspected and did not contain that checkpoint. No substitute tokenizer or synthetic artifacts were used.
+
+This is a durable metadata read and an isolated component proof. The test's write adapter is still a test-only implementation, and the governed mission route does not yet attach a production K/V page store. No production restart or two-model swap is certified.
