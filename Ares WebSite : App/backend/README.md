@@ -29,6 +29,9 @@ runtime barrier. The job removes its own Docker container before the mission
 can proceed; `/api/harness/status` reports `cancelled_for_mission`. A failed
 cleanup keeps the barrier closed and retries, so the host does not run a
 mission alongside an unaccounted frontier container.
+After a valid discovery receipt, the supervisor skips the same source commit
+for the rest of that backend process and reports `awaiting_source_change`.
+Restarting the backend resets this short-lived deduplication state.
 
 ## Model agnostic system contract (2026-11-10)
 

@@ -26,6 +26,7 @@ pub fn status_label(code: u8) -> &'static str {
         4 => "receipt_recorded",
         5 => "failed",
         6 => "cancelled_for_mission",
+        7 => "awaiting_source_change",
         _ => "invalid_status",
     }
 }
@@ -242,6 +243,7 @@ pub fn spawn_if_configured(state: Arc<AppState>) -> Result<bool, String> {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(POLL);
         let mut idle_since = Instant::now();
+        let mut last_completed_source: Option<String> = None;
         loop {
             interval.tick().await;
             if state.active_missions() != 0 {
@@ -258,6 +260,11 @@ pub fn spawn_if_configured(state: Arc<AppState>) -> Result<bool, String> {
             }
             let request_epoch = state.frontier_request_epoch.load(Ordering::Acquire);
             let commit = pinned_commit(&repo).await;
+            if matches!(&commit, Ok(source) if last_completed_source.as_ref() == Some(source)) {
+                state.frontier_status.store(7, Ordering::Release);
+                state.frontier_running.store(false, Ordering::Release);
+                continue;
+            }
             let readiness = match &commit {
                 Ok(_) => match docker_ready(&gateway, &image).await {
                     Ok(true) => enough_colima_memory(&gateway).await,
@@ -326,7 +333,10 @@ git archive "$commit" | "${docker_cmd[@]}" run --rm -i --name "$3" --network non
                                     && output.stdout.len() <= MAX_RECEIPT_BYTES
                                 {
                                     match persist_receipt(&repo, &output.stdout, &commit) {
-                                        Ok(()) => state.frontier_status.store(4, Ordering::Release),
+                                        Ok(()) => {
+                                            last_completed_source = Some(commit.clone());
+                                            state.frontier_status.store(4, Ordering::Release);
+                                        }
                                         Err(e) => {
                                             state.frontier_status.store(5, Ordering::Release);
                                             eprintln!("frontier receipt persistence: {e}");
