@@ -24,6 +24,11 @@ contract is [IDLE-FRONTIER-DESIGN.md](IDLE-FRONTIER-DESIGN.md).
 The supervisor pins a commit before archiving and refuses a worker receipt
 whose source, gate set, or decision does not match that snapshot. A receipt
 is discovery evidence only; it cannot approve a code change.
+Governed mission dispatch requests cancellation when a frontier job owns the
+runtime barrier. The job removes its own Docker container before the mission
+can proceed; `/api/harness/status` reports `cancelled_for_mission`. A failed
+cleanup keeps the barrier closed and retries, so the host does not run a
+mission alongside an unaccounted frontier container.
 
 ## Model agnostic system contract (2026-11-10)
 

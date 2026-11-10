@@ -5,6 +5,7 @@ Status: preregistered architecture, 2026-11-10. No autonomous improvement is cer
 ## Placement
 
 The backend owns an idle supervisor, not the model seat. It may trigger only when no governed mission holds a run permit, after an idle grace interval, and when no frontier job is already active. It survives a chat ending because it is a server process, not a session hook. Startup must not build an image or modify the repository without an explicit configured frontier worker image. A stopped backend means the loop is stopped, and status must say so.
+Mission dispatch and frontier launch share a Tokio read/write barrier. A mission requests frontier cancellation before waiting for a read guard; a worker holds the write guard only while its container is active. The supervisor polls cancellation and removes its own container before releasing the guard. No mission may start its governed work while a frontier container still owns the barrier. Cancellation is a separate, non-success receipt state.
 
 The worker is an executable with a model neutral contract. The active model can propose a target, but proposal text cannot itself choose the gate or mark success. The governor ranks candidates from actual failed gates, real task outcomes, and telemetry. A deterministic tie key is the candidate's canonical identifier. No Qwen path, endpoint, tokenizer, or checkpoint is compiled into the supervisor. Model I/O, when added, uses the binary seat contract.
 

@@ -25,6 +25,7 @@ pub fn status_label(code: u8) -> &'static str {
         3 => "running",
         4 => "receipt_recorded",
         5 => "failed",
+        6 => "cancelled_for_mission",
         _ => "invalid_status",
     }
 }
@@ -195,6 +196,25 @@ async fn pinned_commit(repo: &str) -> Result<String, String> {
     Ok(commit)
 }
 
+async fn remove_frontier_container(gateway: &str, name: &str) {
+    loop {
+        let cleanup = tokio::time::timeout(
+            Duration::from_secs(10),
+            docker_command(gateway).args(["rm", "-f", name]).output(),
+        )
+        .await;
+        if let Ok(Ok(output)) = cleanup {
+            if output.status.success()
+                || String::from_utf8_lossy(&output.stderr).contains("No such container")
+            {
+                break;
+            }
+        }
+        eprintln!("frontier container cleanup pending; governed missions remain gated");
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    }
+}
+
 /// Start at most one isolated frontier worker after an idle grace interval.
 /// Missing configuration disables the supervisor; no host fallback exists.
 pub fn spawn_if_configured(state: Arc<AppState>) -> Result<bool, String> {
@@ -236,6 +256,7 @@ pub fn spawn_if_configured(state: Arc<AppState>) -> Result<bool, String> {
             {
                 continue;
             }
+            let request_epoch = state.frontier_request_epoch.load(Ordering::Acquire);
             let commit = pinned_commit(&repo).await;
             let readiness = match &commit {
                 Ok(_) => match docker_ready(&gateway, &image).await {
@@ -246,6 +267,18 @@ pub fn spawn_if_configured(state: Arc<AppState>) -> Result<bool, String> {
             };
             match readiness {
                 Ok(true) => {
+                    let Ok(_frontier_guard) = state.frontier_gate.try_write() else {
+                        state.frontier_running.store(false, Ordering::Release);
+                        idle_since = Instant::now();
+                        continue;
+                    };
+                    if state.active_missions() != 0
+                        || state.frontier_request_epoch.load(Ordering::Acquire) != request_epoch
+                    {
+                        state.frontier_running.store(false, Ordering::Release);
+                        idle_since = Instant::now();
+                        continue;
+                    }
                     let commit = commit.expect("source pin checked before readiness");
                     state.frontier_status.store(3, Ordering::Release);
                     let name = format!("ares-frontier-{}", std::process::id());
@@ -263,39 +296,66 @@ git archive "$commit" | "${docker_cmd[@]}" run --rm -i --name "$3" --network non
                         .kill_on_drop(true)
                         .stdout(Stdio::piped())
                         .stderr(Stdio::piped());
-                    match tokio::time::timeout(JOB_LIMIT, command.output()).await {
-                        Ok(Ok(output)) => {
-                            let stdout_digest = format!("{:x}", Sha256::digest(&output.stdout));
-                            let stderr_digest = format!("{:x}", Sha256::digest(&output.stderr));
-                            eprintln!(
-                                "frontier Docker job status={} stdout_sha256={stdout_digest} stderr_sha256={stderr_digest}",
-                                output.status
-                            );
-                            if output.status.success() && output.stdout.len() <= MAX_RECEIPT_BYTES {
-                                match persist_receipt(&repo, &output.stdout, &commit) {
-                                    Ok(()) => state.frontier_status.store(4, Ordering::Release),
-                                    Err(e) => {
-                                        state.frontier_status.store(5, Ordering::Release);
-                                        eprintln!("frontier receipt persistence: {e}");
+                    let work = async {
+                        let mut output = Box::pin(command.output());
+                        loop {
+                            tokio::select! {
+                                result = &mut output => return Some(result),
+                                _ = tokio::time::sleep(Duration::from_millis(250)) => {
+                                    if state.frontier_request_epoch.load(Ordering::Acquire) != request_epoch {
+                                        return None;
                                     }
                                 }
-                            } else {
-                                state.frontier_status.store(5, Ordering::Release);
                             }
                         }
-                        Ok(Err(e)) => {
+                    };
+                    match tokio::time::timeout(JOB_LIMIT, work).await {
+                        Ok(Some(Ok(output))) => {
+                            if state.frontier_request_epoch.load(Ordering::Acquire) != request_epoch
+                            {
+                                state.frontier_status.store(6, Ordering::Release);
+                                remove_frontier_container(&gateway, &name).await;
+                            } else {
+                                let stdout_digest = format!("{:x}", Sha256::digest(&output.stdout));
+                                let stderr_digest = format!("{:x}", Sha256::digest(&output.stderr));
+                                eprintln!(
+                                    "frontier Docker job status={} stdout_sha256={stdout_digest} stderr_sha256={stderr_digest}",
+                                    output.status
+                                );
+                                if output.status.success()
+                                    && output.stdout.len() <= MAX_RECEIPT_BYTES
+                                {
+                                    match persist_receipt(&repo, &output.stdout, &commit) {
+                                        Ok(()) => state.frontier_status.store(4, Ordering::Release),
+                                        Err(e) => {
+                                            state.frontier_status.store(5, Ordering::Release);
+                                            eprintln!("frontier receipt persistence: {e}");
+                                        }
+                                    }
+                                } else {
+                                    state.frontier_status.store(5, Ordering::Release);
+                                }
+                            }
+                        }
+                        Ok(Some(Err(e))) => {
                             state.frontier_status.store(5, Ordering::Release);
                             eprintln!("frontier Docker job transport: {e}");
+                            remove_frontier_container(&gateway, &name).await;
                         }
-                        Err(_) => {
-                            state.frontier_status.store(5, Ordering::Release);
-                            let _ = docker_command(&gateway)
-                                .args(["rm", "-f", &name])
-                                .stdout(Stdio::null())
-                                .stderr(Stdio::null())
-                                .status()
-                                .await;
-                            eprintln!("frontier Docker job exceeded time limit");
+                        outcome => {
+                            let cancelled = matches!(outcome, Ok(None));
+                            state
+                                .frontier_status
+                                .store(if cancelled { 6 } else { 5 }, Ordering::Release);
+                            remove_frontier_container(&gateway, &name).await;
+                            eprintln!(
+                                "frontier Docker job stopped: {}",
+                                if cancelled {
+                                    "mission requested"
+                                } else {
+                                    "time limit"
+                                }
+                            );
                         }
                     }
                 }
@@ -318,6 +378,10 @@ git archive "$commit" | "${docker_cmd[@]}" run --rm -i --name "$3" --network non
 #[cfg(test)]
 mod tests {
     use super::validate_receipt;
+    use crate::governor::{default_base_weights, default_policy, AppState};
+    use crate::store::CarvedSwarmMap;
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
 
     const COMMIT: &str = "26dfa6ddf073f986fecb4037b1aa20d9f7b5633c";
 
@@ -365,5 +429,32 @@ mod tests {
             1,
         );
         assert!(validate_receipt(text.as_bytes(), COMMIT).is_err());
+    }
+
+    #[tokio::test]
+    async fn mission_request_waits_for_frontier_barrier_and_changes_epoch() {
+        let base = default_base_weights();
+        let immune = crate::compliance::ImmuneSystem::new(default_policy(), base.fingerprint);
+        let map = CarvedSwarmMap::new(base, crate::fixed::Q32_31::from_f64(1.22));
+        let state = Arc::new(AppState::new(immune, map, None));
+        let held = state.frontier_gate.write().await;
+        let prior_epoch = state.frontier_request_epoch.load(Ordering::Acquire);
+        let (entered_tx, mut entered_rx) = tokio::sync::oneshot::channel();
+        let mission_state = state.clone();
+        let mission = tokio::spawn(async move {
+            let _guard = mission_state.enter_governed_run().await;
+            entered_tx.send(()).expect("receiver remains open");
+        });
+        tokio::task::yield_now().await;
+        assert!(state.frontier_request_epoch.load(Ordering::Acquire) > prior_epoch);
+        assert!(matches!(
+            entered_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ));
+        drop(held);
+        entered_rx
+            .await
+            .expect("mission enters after frontier releases");
+        mission.await.expect("mission task completes");
     }
 }

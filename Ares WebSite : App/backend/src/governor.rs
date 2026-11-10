@@ -17,9 +17,9 @@ use crate::store::{
     AtomId, BridgeLossReport, CarvedSwarmMap, EphemeralMapDeposit, FrozenBaseWeights,
 };
 use crate::surreal::{sql_escape, SurrealClient};
-use std::sync::atomic::{AtomicBool, AtomicU8};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock, RwLockReadGuard};
 
 pub const MAX_GOVERNED_RUNS: usize = 4;
 
@@ -43,7 +43,10 @@ pub struct AppState {
     pub run_semaphore: Arc<tokio::sync::Semaphore>,
     /// Ensures only one idle frontier job is in flight in this process.
     pub frontier_running: AtomicBool,
-    /// 0 disabled, 1 waiting, 2 unavailable, 3 running, 4 receipted, 5 failed.
+    /// Mission requests cancel the frontier before waiting on this barrier.
+    pub frontier_request_epoch: AtomicU64,
+    pub frontier_gate: RwLock<()>,
+    /// 0 disabled, 1 waiting, 2 unavailable, 3 running, 4 receipted, 5 failed, 6 cancelled.
     pub frontier_status: AtomicU8,
     pub surreal: Option<SurrealClient>,
     /// Model seat that served the last model call (recorded per call).
@@ -64,6 +67,8 @@ impl AppState {
             sequences: Mutex::new(std::collections::HashMap::new()),
             run_semaphore: Arc::new(tokio::sync::Semaphore::new(MAX_GOVERNED_RUNS)),
             frontier_running: AtomicBool::new(false),
+            frontier_request_epoch: AtomicU64::new(0),
+            frontier_gate: RwLock::new(()),
             frontier_status: AtomicU8::new(0),
             surreal,
             last_seat: Mutex::new(None),
@@ -73,6 +78,12 @@ impl AppState {
 
     pub fn active_missions(&self) -> usize {
         MAX_GOVERNED_RUNS - self.run_semaphore.available_permits()
+    }
+
+    pub async fn enter_governed_run(&self) -> RwLockReadGuard<'_, ()> {
+        self.frontier_request_epoch
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        self.frontier_gate.read().await
     }
 }
 
@@ -152,6 +163,7 @@ pub async fn dispatch_mission_live(
     ),
     String,
 > {
+    let _frontier_guard = state.enter_governed_run().await;
     let _permit_slot = state
         .run_semaphore
         .clone()
@@ -584,6 +596,7 @@ pub async fn dispatch_mcp_execute(
     ),
     String,
 > {
+    let _frontier_guard = state.enter_governed_run().await;
     let _permit_slot = state
         .run_semaphore
         .clone()
@@ -663,6 +676,7 @@ pub async fn dispatch_mission(
     input: crate::harness::mission::MissionInput,
     budget_j: f64,
 ) -> Result<(CompliancePermit, crate::harness::mission::MissionReceipt), ComplianceViolation> {
+    let _frontier_guard = state.enter_governed_run().await;
     // Bounded concurrency (doctrine): one of at most N governed runs.
     let _permit_slot = state
         .run_semaphore
