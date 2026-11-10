@@ -27,6 +27,8 @@ pub const TOKEN_REQUEST_MAGIC: &[u8; 4] = b"GTK2";
 pub const TOKEN_RESPONSE_MAGIC: &[u8; 4] = b"GTO2";
 pub const FORWARD_REQUEST_MAGIC: &[u8; 4] = b"GFX2";
 pub const FORWARD_RESPONSE_MAGIC: &[u8; 4] = b"GFO2";
+pub const DETOK_REQUEST_MAGIC: &[u8; 4] = b"GDT2";
+pub const DETOK_RESPONSE_MAGIC: &[u8; 4] = b"GDR2";
 pub const MAX_TEXT_BYTES: usize = 16 * 1024;
 pub const MAX_TOKEN_IDS: usize = 4096;
 pub const MAX_OUTPUT_TOKENS: usize = 128;
@@ -62,6 +64,36 @@ fn le_ids(bytes: &[u8]) -> Vec<u32> {
     (0..bytes.len() / 4)
         .map(|i| u32::from_le_bytes(bytes[4 * i..4 * i + 4].try_into().unwrap()))
         .collect()
+}
+
+pub fn encode_detok_request(ids: &[u32]) -> Result<Vec<u8>, String> {
+    if ids.is_empty() || ids.len() > MAX_TOKEN_IDS {
+        return Err("native detokenize id count invalid".into());
+    }
+    let mut out = Vec::with_capacity(8 + ids.len() * 4);
+    out.extend_from_slice(DETOK_REQUEST_MAGIC);
+    out.extend_from_slice(&(ids.len() as u32).to_le_bytes());
+    out.extend_from_slice(&ids_le(ids));
+    Ok(out)
+}
+
+pub fn decode_detok_response(request: &[u8], bytes: &[u8]) -> Result<String, String> {
+    if bytes.len() < 40 || &bytes[..4] != DETOK_RESPONSE_MAGIC {
+        return Err("native detokenize response header invalid".into());
+    }
+    let len = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+    if len > MAX_TEXT_BYTES * 4 || bytes.len() != 40 + len {
+        return Err("native detokenize response length invalid".into());
+    }
+    let split = bytes.len() - 32;
+    let mut bound = request.to_vec();
+    bound.extend_from_slice(&bytes[..split]);
+    if sha(&bound) != bytes[split..] {
+        return Err("native detokenize receipt mismatch".into());
+    }
+    std::str::from_utf8(&bytes[8..split])
+        .map(str::to_string)
+        .map_err(|e| format!("native detokenize UTF-8: {e}"))
 }
 
 fn composite(weights: &[u8; 32], tokenizer: &[u8; 32], config: &[u8; 32]) -> [u8; 32] {
@@ -378,7 +410,7 @@ impl NativeModelExecutor {
 
         let token_req = encode_token_request(&text, true)?;
         let token_bytes = self.post(
-            "/v1/tokenize",
+            "/v1/tokenize-native",
             &token_req,
             "application/vnd.model.tokenize-v1",
         )?;
@@ -491,6 +523,19 @@ impl NativeModelExecutor {
             result_sha256: hex(&sha(&ids_le(&fwd.output_ids))),
             receipt_sha256: hex(&fwd.receipt),
         });
+        let detok_req = encode_detok_request(&fwd.output_ids)?;
+        let detok_bytes = self.post(
+            "/v1/detokenize-native",
+            &detok_req,
+            "application/vnd.model.detokenize-v1",
+        )?;
+        let generated_text = decode_detok_response(&detok_req, &detok_bytes)?;
+        tool_results.push(ToolResultDigest {
+            tool: "native.detokenize".into(),
+            args_sha256: hex(&sha(&detok_req)),
+            result_sha256: hex(&sha(generated_text.as_bytes())),
+            receipt_sha256: hex(&detok_bytes[detok_bytes.len() - 32..]),
+        });
         let mut receipt = BoundOutputReceipt {
             generated_token_ids: fwd.output_ids,
             logits_digest: hex(&fwd.logits),
@@ -504,9 +549,7 @@ impl NativeModelExecutor {
         receipt.chain_hash = BoundOutputReceipt::compute_chain_hash(None, &receipt);
         receipt.validate()?;
         Ok(BoundCallOutcome {
-            // Tool evidence only: no detokenizer route exists yet, so the
-            // generated tokens are not rendered as text here.
-            inner_text: mcp.inner_text,
+            inner_text: generated_text,
             bound_receipt: receipt,
         })
     }
@@ -533,6 +576,26 @@ impl Executor for NativeModelExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detokenize_receipt_binds_generated_ids_and_text() {
+        let request = encode_detok_request(&[17, 23]).unwrap();
+        let mut response = DETOK_RESPONSE_MAGIC.to_vec();
+        response.extend_from_slice(&5u32.to_le_bytes());
+        response.extend_from_slice(b"Paris");
+        let mut bound = request.clone();
+        bound.extend_from_slice(&response);
+        response.extend_from_slice(&sha(&bound));
+        assert_eq!(decode_detok_response(&request, &response).unwrap(), "Paris");
+        assert!(
+            decode_detok_response(&encode_detok_request(&[17, 24]).unwrap(), &response).is_err()
+        );
+        let mut changed = response.clone();
+        changed[8] ^= 1;
+        assert!(decode_detok_response(&request, &changed).is_err());
+        assert!(decode_detok_response(&request, &response[..response.len() - 1]).is_err());
+        assert!(encode_detok_request(&[]).is_err());
+    }
 
     fn recall(text: &str, digest: &str) -> String {
         serde_json::json!({"members": [{"content_text": text, "content_digest": digest}]})

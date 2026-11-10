@@ -49,6 +49,13 @@ GlobalMind trajectory writes are specified in
 The current mission route does not yet join those paths; this design is a
 preregistration and must not be read as a live system pass.
 
+The native executor now sends generated IDs through the model seat's binary
+`/v1/detokenize-native` route, checks the request-bound receipt, and submits
+that decoded model output to mission judges. The MCP recall text remains
+input evidence. This corrects the prior path that judged recall text while
+the model's generated IDs were ignored. It does not attach the persistent
+Surreal K/V adapter or complete the automaton and Qdrant session join.
+
 ## 2026-11-04 source recovery and live-pass boundary
 
 This backend source was recovered from Git checkpoint f735d45e after the Ares

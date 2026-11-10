@@ -17,6 +17,11 @@ token IDs from the model-owned tokenizer, optional BOS from `config.bos_token_id
 the pinned tokenizer digest, and a request-bound receipt. Malformed, truncated,
 empty, and invalid-flag frames are HTTP 400. Probe with `smoke_token_wire`.
 The JSON `/v1/tokenize` route remains a different, non-receipted path.
+`POST /v1/detokenize-native` accepts bounded GDT2 generated token IDs and
+returns GDR2 decoded text with a request-bound receipt. The harness judges
+that decoded output, not the recalled atom text. The artifact composite uses
+the shared `model-artifact-v1` hash domain; this changes the server identity
+from older Glimmer receipts and invalidates their model-bound K/V cache keys.
 
 `exact_kv::ExactKvCache` is a native, full-context K/V backend for Glimmer's
 `AttentionBackend` seam. It stores post-position-transform K/V in token order,

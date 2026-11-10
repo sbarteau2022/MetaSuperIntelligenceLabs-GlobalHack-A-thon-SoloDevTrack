@@ -144,12 +144,12 @@ pub async fn dispatch_spawn(
     Ok(permit)
 }
 
-/// Live dispatch currently uses an MCP-only executor. It does not
-/// generate model tokens or certify a Glimmer forward. The permit
+/// Live dispatch uses the configured native binary model seat, or an
+/// MCP-only executor that refuses bound model calls. The permit
 /// gate still runs first. Gate nodes are NOT
 /// auto-registered here: a `map.*` call with no judged-atom gate node
 /// is denied by the engine, and an unreachable automaton escalates —
-/// both by design, never papered over. Returns (permit, receipt, seat).
+/// both by design, never papered over. Returns (permit, receipt, seat, executor kind).
 pub async fn dispatch_mission_live(
     state: &Arc<AppState>,
     role: RoleId,
@@ -160,6 +160,7 @@ pub async fn dispatch_mission_live(
         CompliancePermit,
         crate::harness::mission::MissionReceipt,
         String,
+        &'static str,
     ),
     String,
 > {
@@ -195,16 +196,18 @@ pub async fn dispatch_mission_live(
         crate::harness::mind_recall_executor::MindRecallExecutor::from_state(authority, creds)?;
     // ARES_MODEL_NATIVE_URL selects the native model-agnostic executor (bound
     // receipts); otherwise the MCP-only executor runs and bound calls refuse.
-    let (mut executor, seat): (Box<dyn crate::harness::runtime::Executor>, String) =
-        if std::env::var("ARES_MODEL_NATIVE_URL").is_ok() {
-            let native =
-                crate::harness::native_glimmer_executor::NativeModelExecutor::from_env(mind)?;
-            let seat = native.seat_identity();
-            (Box::new(native), seat)
-        } else {
-            let seat = mind.seat_identity();
-            (Box::new(mind), seat)
-        };
+    let (mut executor, seat, executor_kind): (
+        Box<dyn crate::harness::runtime::Executor>,
+        String,
+        &'static str,
+    ) = if std::env::var("ARES_MODEL_NATIVE_URL").is_ok() {
+        let native = crate::harness::native_glimmer_executor::NativeModelExecutor::from_env(mind)?;
+        let seat = native.seat_identity();
+        (Box::new(native), seat, "native-model-bound")
+    } else {
+        let seat = mind.seat_identity();
+        (Box::new(mind), seat, "mind-mcp-only")
+    };
     let mut engine = crate::harness::runtime::Engine::new();
     for judge in input.judges {
         engine.register_judge(judge);
@@ -244,7 +247,7 @@ pub async fn dispatch_mission_live(
         );
         let _ = client.sql(&stmt).await;
     }
-    Ok((permit, receipt, seat))
+    Ok((permit, receipt, seat, executor_kind))
 }
 
 /// Gate 3 dispatch: inter-role handoff carrying an atom.

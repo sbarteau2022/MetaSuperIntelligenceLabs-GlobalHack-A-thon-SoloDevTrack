@@ -544,9 +544,16 @@ fn executor_kv_miss_then_restart_hit_equals_plain_forward() -> Result<(), String
             .collect::<Vec<_>>()
     };
 
-    let plain = executor(&db, None)?
-        .call_bound("mind.recall", &args)?
-        .bound_receipt;
+    let plain_out = executor(&db, None)?.call_bound("mind.recall", &args)?;
+    if plain_out.inner_text.is_empty()
+        || plain_out.inner_text == ATOM_TEXT
+        || plain_out.inner_text.starts_with('{')
+    {
+        return Err(
+            "native executor returned recall evidence instead of decoded model output".into(),
+        );
+    }
+    let plain = plain_out.bound_receipt;
     let miss = executor(&db, Some(new_kv(&db, &roster, "v1")?))?
         .call_bound("mind.recall", &args)?
         .bound_receipt;

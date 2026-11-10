@@ -29,7 +29,7 @@ fn file_digest(path: &Path) -> Result<[u8; 32], String> {
 impl ArtifactDigest {
     pub fn from_parts(weights: [u8; 32], tokenizer: [u8; 32], config: [u8; 32]) -> Self {
         let mut composite = Sha256::new();
-        composite.update(b"glimmer-artifact-v1\0");
+        composite.update(b"model-artifact-v1\0");
         composite.update(weights);
         composite.update(tokenizer);
         composite.update(config);
@@ -43,7 +43,7 @@ impl ArtifactDigest {
 
     pub fn verify_composite(&self) -> Result<(), String> {
         let mut composite = Sha256::new();
-        composite.update(b"glimmer-artifact-v1\0");
+        composite.update(b"model-artifact-v1\0");
         composite.update(self.weights);
         composite.update(self.tokenizer);
         composite.update(self.config);

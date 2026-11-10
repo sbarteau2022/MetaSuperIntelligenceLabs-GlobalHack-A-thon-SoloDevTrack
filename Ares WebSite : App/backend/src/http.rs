@@ -671,7 +671,7 @@ async fn harness_mission_geometry(
     }
 }
 
-// Live mission route currently has an MCP-only executor. The
+// Live mission route reports the selected executor. The
 // built-in geometry plan uses a non-map tool, so it escalates
 // fail-closed even on a live run by design ("execution unavailable:
 // no admitted map.* output") — it proves the wiring path, not a
@@ -690,8 +690,8 @@ async fn harness_mission_live(
         _ => crate::harness::mission::geometry_mission(),
     };
     match crate::governor::dispatch_mission_live(&state, role, input, req.budget_j.unwrap_or(100.0)).await {
-        Ok((permit, receipt, seat)) => Json(serde_json::json!({
-            "executor": "mind-mcp-only",
+        Ok((permit, receipt, seat, executor_kind)) => Json(serde_json::json!({
+            "executor": executor_kind,
             "seat_identity": seat,
             "permit": {
                 "sequence": permit.sequence(),
