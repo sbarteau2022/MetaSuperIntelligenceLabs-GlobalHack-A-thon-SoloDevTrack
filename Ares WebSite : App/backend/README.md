@@ -24,6 +24,8 @@ contract is [IDLE-FRONTIER-DESIGN.md](IDLE-FRONTIER-DESIGN.md).
 The supervisor pins a commit before archiving and refuses a worker receipt
 whose source, gate set, or decision does not match that snapshot. A receipt
 is discovery evidence only; it cannot approve a code change.
+The Docker job's stdout and stderr are capped while streaming; over-limit
+output terminates the job and cannot be recorded as a partial receipt.
 Governed mission dispatch requests cancellation when a frontier job owns the
 runtime barrier. The job removes its own Docker container before the mission
 can proceed; `/api/harness/status` reports `cancelled_for_mission`. A failed

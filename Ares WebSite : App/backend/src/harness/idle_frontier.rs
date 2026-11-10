@@ -9,6 +9,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
 
 const IDLE_GRACE: Duration = Duration::from_secs(300);
@@ -49,6 +50,42 @@ fn docker_command(gateway: &str) -> Command {
     };
     command.kill_on_drop(true);
     command
+}
+
+async fn read_bounded<R: AsyncRead + Unpin>(reader: R) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    reader
+        .take(MAX_RECEIPT_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .await
+        .map_err(|e| format!("frontier pipe read: {e}"))?;
+    if bytes.len() > MAX_RECEIPT_BYTES {
+        return Err("frontier pipe exceeded receipt bound".into());
+    }
+    Ok(bytes)
+}
+
+async fn bounded_command_output(mut command: Command) -> Result<std::process::Output, String> {
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("frontier command spawn: {e}"))?;
+    let stdout = child.stdout.take().ok_or("frontier stdout unavailable")?;
+    let stderr = child.stderr.take().ok_or("frontier stderr unavailable")?;
+    let (status, stdout, stderr) = tokio::try_join!(
+        async {
+            child
+                .wait()
+                .await
+                .map_err(|e| format!("frontier wait: {e}"))
+        },
+        read_bounded(stdout),
+        read_bounded(stderr)
+    )?;
+    Ok(std::process::Output {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 async fn docker_ready(gateway: &str, image: &str) -> Result<bool, String> {
@@ -304,7 +341,7 @@ git archive "$commit" | "${docker_cmd[@]}" run --rm -i --name "$3" --network non
                         .stdout(Stdio::piped())
                         .stderr(Stdio::piped());
                     let work = async {
-                        let mut output = Box::pin(command.output());
+                        let mut output = Box::pin(bounded_command_output(command));
                         loop {
                             tokio::select! {
                                 result = &mut output => return Some(result),
@@ -387,11 +424,13 @@ git archive "$commit" | "${docker_cmd[@]}" run --rm -i --name "$3" --network non
 
 #[cfg(test)]
 mod tests {
-    use super::validate_receipt;
+    use super::{bounded_command_output, validate_receipt};
     use crate::governor::{default_base_weights, default_policy, AppState};
     use crate::store::CarvedSwarmMap;
     use std::sync::atomic::Ordering;
     use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::process::Command;
 
     const COMMIT: &str = "26dfa6ddf073f986fecb4037b1aa20d9f7b5633c";
 
@@ -466,5 +505,19 @@ mod tests {
             .await
             .expect("mission enters after frontier releases");
         mission.await.expect("mission task completes");
+    }
+
+    #[tokio::test]
+    async fn docker_output_is_bounded_during_read() {
+        let mut command = Command::new("sh");
+        command
+            .args(["-c", "head -c 65537 /dev/zero"])
+            .kill_on_drop(true)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let result = tokio::time::timeout(Duration::from_secs(5), bounded_command_output(command))
+            .await
+            .expect("bounded reader returns promptly");
+        assert!(matches!(result, Err(reason) if reason == "frontier pipe exceeded receipt bound"));
     }
 }
