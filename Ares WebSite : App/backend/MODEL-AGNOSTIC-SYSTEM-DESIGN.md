@@ -20,7 +20,8 @@ Status: design and preregistration, 2026-11-10. No certification claim.
 
 ## Qualification gates
 
-- Swap two real model adapters: same research and semantic atom IDs remain reachable; incompatible tensor K/V is refused. Assert each encoder's dimension and digest before Qdrant vector search.
+- The two swap targets are **Qwen 3.6 Cyber** and **Nemotron 3 Nano Omni 30B A3B MXFP4**. Admit each as a distinct artifact-pinned adapter. Run the same real task corpus through both: the same research documents and admitted semantic atom IDs must remain reachable, while a tensor K/V page from one seat is refused by the other. Assert the research encoder's own identity and vector dimension before Qdrant search; neither model's hidden width defines the RAG vector width.
+- For each seat, record the tokenizer, execution contract, weights/config identity, output mode, and available forward/K/V evidence. A text-only API adapter may prove semantic recall and task quality, but cannot claim exact logits, exact tensor K/V, speculative verification, or native binary model-boundary compliance. Those gates require an actual native forward adapter, not a fabricated receipt.
 - Restart the harness: checkpoint chain and summary tail hydrate before forward; corrupt or missing checkpoints produce an explicit refusal. Verify no duplicate point overwrites.
 - Run one real N3 MCP stream and GlobalMind read through the governed port. A malformed, out-of-scope, or stale receipt must be refused.
 - Compare uninterrupted and restarted exact K/V continuation against the same model. Compare speculation on/off output, rollback, quality, throughput, and resource receipts across a real task set. Do not promote an optimizer from throughput alone.
@@ -29,3 +30,5 @@ Status: design and preregistration, 2026-11-10. No certification claim.
 ## Current code gap to close
 
 `dispatch_mission_live` selects `NativeModelExecutor` but does not call `load_session_context` or run the Meta Automaton around its forward. `load_session_context` exists only as a memory API route. `globalmind-mcp` recall is read-only; it does not write judged atoms or trajectory outcomes. The N3 MCP stream is not joined into this mission route. These are separate integration gates, not a live system pass.
+
+Local inspection on 2026-11-10 found Nemotron's checkpoint under `~/models/Nemotron-3-Nano-Omni-30B-A3B-MXFP4`, served at `127.0.0.1:8003` by `serve_omni.py`; `/v1/models` answered, but no native binary forward route was shown. Qwen Cyber has a DSpark configuration in `research-grade-harness/qwen-cyber.env` targeting reserved port 8001; that port had no listener, and no local Cyber checkpoint was found under `~/models`. Neither observation is a model-swap pass. Do not repoint port 8001 or print the environment file's credential values.
