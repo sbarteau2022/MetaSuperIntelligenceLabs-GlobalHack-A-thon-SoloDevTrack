@@ -1,7 +1,7 @@
 //! Hardware gate for the automaton-governed speculative loop on the frozen
 //! Muse Glimmer: the speculative arm must produce EXACTLY the control arm's
 //! greedy tokens, with the model's own forward as the only judge.
-//! Needs ARES_GLIMMER_NATIVE_URL (isolated server) and ARES_GLIMMER_WEIGHTS_SHA256.
+//! Needs ARES_MODEL_NATIVE_URL (isolated server) and ARES_MODEL_WEIGHTS_SHA256.
 //! Run: cargo test --release --test speculative_live -- --ignored --nocapture
 
 use ares_backend::fixed::Q32_31;
@@ -22,7 +22,7 @@ const OFF_TOPIC: &str =
 fn tokenize(url: &str, text: &str, bos: bool) -> Vec<u32> {
     let req = encode_token_request(text, bos).unwrap();
     let resp = reqwest::blocking::Client::new()
-        .post(format!("{url}/v1/tokenize-native"))
+        .post(format!("{url}/v1/tokenize"))
         .body(req.clone())
         .send()
         .unwrap()
@@ -47,10 +47,10 @@ fn state(pin: &ArtifactPin) -> StrategyState {
 #[test]
 #[ignore = "isolated frozen-Glimmer server with /v1/verify-exact"]
 fn speculative_equals_control_on_real_glimmer() {
-    let url = std::env::var("ARES_GLIMMER_NATIVE_URL").unwrap();
+    let url = std::env::var("ARES_MODEL_NATIVE_URL").unwrap();
     assert!(!url.contains(":8011") && !url.contains(":8000"));
     let pin = ArtifactPin::from_hex(
-        &std::env::var("ARES_GLIMMER_WEIGHTS_SHA256").unwrap(),
+        &std::env::var("ARES_MODEL_WEIGHTS_SHA256").unwrap(),
         "c9dbee66967b58f31a7c27f723c3760da3526ccd0427578e8905b0abb0031c4d",
         "3ce829f4654d2f5f5f43acca424fe17d72e74015d375d385a86b7fff24d4a031",
     )

@@ -22,6 +22,7 @@
 pub mod automaton;
 pub mod baseline;
 pub mod glimmer_tokenizer;
+pub mod idle_frontier;
 pub mod mcp;
 pub mod mcp_server;
 pub mod mind_recall_executor;

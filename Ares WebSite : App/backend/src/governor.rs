@@ -17,8 +17,11 @@ use crate::store::{
     AtomId, BridgeLossReport, CarvedSwarmMap, EphemeralMapDeposit, FrozenBaseWeights,
 };
 use crate::surreal::{sql_escape, SurrealClient};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+pub const MAX_GOVERNED_RUNS: usize = 4;
 
 pub struct AppState {
     pub immune: Mutex<ImmuneSystem>,
@@ -38,6 +41,8 @@ pub struct AppState {
         Mutex<std::collections::HashMap<String, crate::harness::tppe_memory::TppeSequence>>,
     /// Bounded-concurrency doctrine: at most this many governed runs at once.
     pub run_semaphore: Arc<tokio::sync::Semaphore>,
+    /// Ensures only one idle frontier job is in flight in this process.
+    pub frontier_running: AtomicBool,
     pub surreal: Option<SurrealClient>,
     /// Model seat that served the last model call (recorded per call).
     pub last_seat: Mutex<Option<String>>,
@@ -55,11 +60,16 @@ impl AppState {
             capability_gate: Mutex::new(crate::harness::runtime::CapabilityGate::default()),
             carved_scopes: Mutex::new(crate::harness::scope::ScopeRegistry::default()),
             sequences: Mutex::new(std::collections::HashMap::new()),
-            run_semaphore: Arc::new(tokio::sync::Semaphore::new(4)),
+            run_semaphore: Arc::new(tokio::sync::Semaphore::new(MAX_GOVERNED_RUNS)),
+            frontier_running: AtomicBool::new(false),
             surreal,
             last_seat: Mutex::new(None),
             max_restarts: 3,
         }
+    }
+
+    pub fn active_missions(&self) -> usize {
+        MAX_GOVERNED_RUNS - self.run_semaphore.available_permits()
     }
 }
 
@@ -168,12 +178,12 @@ pub async fn dispatch_mission_live(
     let creds = surreal.credentials();
     let mind =
         crate::harness::mind_recall_executor::MindRecallExecutor::from_state(authority, creds)?;
-    // ARES_GLIMMER_NATIVE_URL selects the native Glimmer executor (bound
+    // ARES_MODEL_NATIVE_URL selects the native model-agnostic executor (bound
     // receipts); otherwise the MCP-only executor runs and bound calls refuse.
     let (mut executor, seat): (Box<dyn crate::harness::runtime::Executor>, String) =
-        if std::env::var("ARES_GLIMMER_NATIVE_URL").is_ok() {
+        if std::env::var("ARES_MODEL_NATIVE_URL").is_ok() {
             let native =
-                crate::harness::native_glimmer_executor::NativeGlimmerExecutor::from_env(mind)?;
+                crate::harness::native_glimmer_executor::NativeModelExecutor::from_env(mind)?;
             let seat = native.seat_identity();
             (Box::new(native), seat)
         } else {

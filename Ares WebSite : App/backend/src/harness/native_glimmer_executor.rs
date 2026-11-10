@@ -1,13 +1,15 @@
-//! Native Glimmer mission executor: one bound invocation =
+//! Native model-agnostic executor: one bound invocation =
 //! MCP `mind.recall` -> verified atom text -> binary GTK2/GTO2 tokenize ->
 //! binary GFX2/GFO2 exact forward, bound into one `BoundOutputReceipt`.
 //!
 //! JSON appears only on the MCP control plane. The model boundary carries
 //! bounded binary frames; no prose `tool/args` prompt and no separate
-//! generate-plus-forward digest. This module links no Glimmer tokenizer.
-//! Every artifact digest is pinned by the caller and checked against the
-//! server's response, and each wire receipt is recomputed over the exact
-//! request bytes before it is accepted.
+//! generate-plus-forward digest. This module links no model-specific tokenizer.
+//! No model name, version, layer count, head count, or vocabulary size is
+//! compiled into this executor; the pinned artifact digests are the sole
+//! model identity. Every artifact digest is pinned by the caller and checked
+//! against the server's response, and each wire receipt is recomputed over
+//! the exact request bytes before it is accepted.
 
 use crate::harness::mind_recall_executor::MindRecallExecutor;
 use crate::harness::native_pages_client::{
@@ -64,14 +66,14 @@ fn le_ids(bytes: &[u8]) -> Vec<u32> {
 
 fn composite(weights: &[u8; 32], tokenizer: &[u8; 32], config: &[u8; 32]) -> [u8; 32] {
     let mut h = Sha256::new();
-    h.update(b"glimmer-artifact-v1\0");
+    h.update(b"model-artifact-v1\0");
     h.update(weights);
     h.update(tokenizer);
     h.update(config);
     h.finalize().into()
 }
 
-/// Caller-pinned frozen Glimmer artifact identity.
+/// Caller-pinned frozen model artifact identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ArtifactPin {
     pub weights: [u8; 32],
@@ -268,7 +270,7 @@ fn pages_digest(pages: &Pages) -> [u8; 32] {
     h.finalize().into()
 }
 
-pub struct NativeGlimmerExecutor {
+pub struct NativeModelExecutor {
     kv: Option<Box<dyn KvPageStore>>,
     mind: MindRecallExecutor,
     base_url: String,
@@ -288,7 +290,7 @@ fn is_loopback(url: &str) -> bool {
     url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:")
 }
 
-impl NativeGlimmerExecutor {
+impl NativeModelExecutor {
     pub fn new(
         mind: MindRecallExecutor,
         base_url: &str,
@@ -296,7 +298,7 @@ impl NativeGlimmerExecutor {
         max_tokens: usize,
     ) -> Result<Self, String> {
         if !is_loopback(base_url) {
-            return Err("native glimmer URL must be loopback".into());
+            return Err("native model URL must be loopback".into());
         }
         if !(1..=MAX_OUTPUT_TOKENS).contains(&max_tokens) {
             return Err("max_tokens out of range".into());
@@ -313,20 +315,21 @@ impl NativeGlimmerExecutor {
         })
     }
 
-    /// Requires `ARES_GLIMMER_NATIVE_URL` and `ARES_GLIMMER_WEIGHTS_SHA256`;
-    /// tokenizer and config digests default to the frozen checkpoint pins.
+    /// Requires `ARES_MODEL_NATIVE_URL`, `ARES_MODEL_WEIGHTS_SHA256`,
+    /// `ARES_MODEL_TOKENIZER_SHA256`, and `ARES_MODEL_CONFIG_SHA256`.
+    /// No model name, version, layer count, head count, or vocabulary size
+    /// is compiled into this executor; the pinned artifact digests are the
+    /// sole model identity.
     pub fn from_env(mind: MindRecallExecutor) -> Result<Self, String> {
-        let url = std::env::var("ARES_GLIMMER_NATIVE_URL")
-            .map_err(|_| "ARES_GLIMMER_NATIVE_URL required".to_string())?;
-        let weights = std::env::var("ARES_GLIMMER_WEIGHTS_SHA256")
-            .map_err(|_| "ARES_GLIMMER_WEIGHTS_SHA256 required".to_string())?;
-        let tokenizer = std::env::var("ARES_GLIMMER_TOKENIZER_SHA256").unwrap_or_else(|_| {
-            "c9dbee66967b58f31a7c27f723c3760da3526ccd0427578e8905b0abb0031c4d".into()
-        });
-        let config = std::env::var("ARES_GLIMMER_CONFIG_SHA256").unwrap_or_else(|_| {
-            "3ce829f4654d2f5f5f43acca424fe17d72e74015d375d385a86b7fff24d4a031".into()
-        });
-        let max_tokens = std::env::var("ARES_GLIMMER_MAX_TOKENS")
+        let url = std::env::var("ARES_MODEL_NATIVE_URL")
+            .map_err(|_| "ARES_MODEL_NATIVE_URL required".to_string())?;
+        let weights = std::env::var("ARES_MODEL_WEIGHTS_SHA256")
+            .map_err(|_| "ARES_MODEL_WEIGHTS_SHA256 required".to_string())?;
+        let tokenizer = std::env::var("ARES_MODEL_TOKENIZER_SHA256")
+            .map_err(|_| "ARES_MODEL_TOKENIZER_SHA256 required".to_string())?;
+        let config = std::env::var("ARES_MODEL_CONFIG_SHA256")
+            .map_err(|_| "ARES_MODEL_CONFIG_SHA256 required".to_string())?;
+        let max_tokens = std::env::var("ARES_MODEL_MAX_TOKENS")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(8);
@@ -358,9 +361,9 @@ impl NativeGlimmerExecutor {
             .header("content-type", content_type)
             .body(body.to_vec())
             .send()
-            .map_err(|e| format!("glimmer {path} transport: {e}"))?;
+            .map_err(|e| format!("model {path} transport: {e}"))?;
         if !resp.status().is_success() {
-            return Err(format!("glimmer {path} status {}", resp.status()));
+            return Err(format!("model {path} status {}", resp.status()));
         }
         Ok(resp.bytes().map_err(|e| e.to_string())?.to_vec())
     }
@@ -368,13 +371,16 @@ impl NativeGlimmerExecutor {
     fn call_blocking(&mut self, tool: &str, args_json: &str) -> Result<BoundCallOutcome, String> {
         let started = Instant::now();
         let mcp = self.mind.call(tool, args_json)?;
+        // The recall inner_text JSON binds the atom content digests (content_digest fields
+        // on each member); the result_sha256 below commits to the full inner_text, which
+        // in turn binds those individual digests so they cannot be altered without detection.
         let text = verified_recall_text(&mcp.inner_text)?;
 
         let token_req = encode_token_request(&text, true)?;
         let token_bytes = self.post(
-            "/v1/tokenize-native",
+            "/v1/tokenize",
             &token_req,
-            "application/vnd.glimmer.tokenize-v1",
+            "application/vnd.model.tokenize-v1",
         )?;
         let tokens = decode_token_response(&token_req, &token_bytes)?;
         if tokens.tokenizer != self.pin.tokenizer {
@@ -424,7 +430,7 @@ impl NativeGlimmerExecutor {
                     let pbytes = self.post(
                         "/v1/prefill-exact",
                         &preq,
-                        "application/vnd.glimmer.prefill-v1",
+                        "application/vnd.model.prefill-v1",
                     )?;
                     let pre = decode_prefill_response(&preq, &pbytes)?;
                     if (pre.weights, pre.tokenizer, pre.config, pre.composite)
@@ -455,7 +461,7 @@ impl NativeGlimmerExecutor {
             let cbytes = self.post(
                 "/v1/continue-exact",
                 &creq,
-                "application/vnd.glimmer.continue-v1",
+                "application/vnd.model.continue-v1",
             )?;
             let fwd = decode_forward_response(&creq, &cbytes)?;
             (creq, "native.continue-exact", fwd)
@@ -464,7 +470,7 @@ impl NativeGlimmerExecutor {
             let fbytes = self.post(
                 "/v1/forward-exact",
                 &freq,
-                "application/vnd.glimmer.forward-exact-v1",
+                "application/vnd.model.forward-exact-v1",
             )?;
             let fwd = decode_forward_response(&freq, &fbytes)?;
             (freq, "native.forward-exact", fwd)
@@ -506,7 +512,7 @@ impl NativeGlimmerExecutor {
     }
 }
 
-impl Executor for NativeGlimmerExecutor {
+impl Executor for NativeModelExecutor {
     fn call(&mut self, tool: &str, args_json: &str) -> Result<CallOutcome, String> {
         let bound = self.call_bound(tool, args_json)?;
         Ok(CallOutcome {

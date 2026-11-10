@@ -1,0 +1,27 @@
+# Idle frontier loop: model neutral system contract
+
+Status: preregistered architecture, 2026-11-10. No autonomous improvement is certified yet.
+
+## Placement
+
+The backend owns an idle supervisor, not the model seat. It may trigger only when no governed mission holds a run permit, after an idle grace interval, and when no frontier job is already active. It survives a chat ending because it is a server process, not a session hook. Startup must not build an image or modify the repository without an explicit configured frontier worker image. A stopped backend means the loop is stopped, and status must say so.
+
+The worker is an executable with a model neutral contract. The active model can propose a target, but proposal text cannot itself choose the gate or mark success. The governor ranks candidates from actual failed gates, real task outcomes, and telemetry. A deterministic tie key is the candidate's canonical identifier. No Qwen path, endpoint, tokenizer, or checkpoint is compiled into the supervisor. Model I/O, when added, uses the binary seat contract.
+
+## One iteration
+
+1. Snapshot the current Git commit and dirty-tree status; refuse an unreviewed dirty snapshot. Inspect registered component and end-to-end gates, relevant receipts, and architecture dependencies. Choose one target with a measured baseline and expected system-level gain. If there is no evidenced target, record `no_target` and sleep.
+2. Before edits, persist a goal receipt naming target, baseline command/data, quality floor, resource metric, exact threshold, drastic bar, and expiry. Neither a worker nor a model may alter the bar after measurements begin.
+3. Stream `git archive HEAD` into a bounded, disposable Docker worker. There is no host mount, live database credential, or Docker socket inside the container. Use a read-only image filesystem and a capped writable tmpfs for the source snapshot. Run the baseline and the failing gate on real data. The worker can iterate inside that container only. Each attempt records source digest, command, output digest, duration, and failure classification. The container is removed after the job; no Lima disk remains.
+4. The same quality gates run on baseline and candidate. Measure task quality, latency/throughput, peak memory, and actual energy when available; label time-derived cost as proxy. A speed improvement that violates correctness, safety, model-boundary, or system-level homogeneity is rejected. Apply the same evidence and scrutiny to every candidate family (isotropic suppression).
+5. Export a patch plus full receipts; never auto-merge into the live tree. The backend may schedule another attempt only after recording the decision. A gate pass below the preregistered drastic bar means continue; a failed gate requires a reflection before another attempt. A promotion needs a separate governed review and real post-merge gate.
+
+## First implementation gate
+
+Expose truthful active-mission count and an idle predicate from the backend. A foreground mission must prevent any frontier trigger; a second frontier job must be refused. A stopped Docker daemon or missing image must show `unavailable`, not a success claim. Worker implementation, model proposal protocol, and promotion remain separate gates.
+
+## Falsifiers
+
+- Any Qwen-specific path in the supervisor, a proposal that can set its own gate, or a fabricated measurement fails the model-neutral requirement.
+- Running while a mission is active, after a failed authority check, or against the host's live database fails isolation.
+- Replaying a result without immutable source and command digests, or claiming a drastic gain from a unit test alone, fails qualification.

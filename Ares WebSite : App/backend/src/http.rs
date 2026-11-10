@@ -1139,7 +1139,14 @@ async fn harness_status(State(state): State<Arc<AppState>>) -> impl IntoResponse
     let gate = state.capability_gate.lock().await;
     Json(serde_json::json!({
         "runtime": "rust-tokio (bounded-concurrency, spawn_blocking for blocking IO)",
-        "run_concurrency_limit": 4,
+        "run_concurrency_limit": crate::governor::MAX_GOVERNED_RUNS,
+        "active_missions": state.active_missions(),
+        "idle_frontier": {
+            "configured": std::env::var("ARES_FRONTIER_IMAGE").is_ok()
+                && std::env::var("ARES_FRONTIER_REPO").is_ok(),
+            "job_running": state.frontier_running.load(std::sync::atomic::Ordering::Acquire),
+            "launch_boundary": "docker run with streamed Git archive and no host mount",
+        },
         "telemetry": telemetry,
         "memory": memory,
         "capability_nodes": gate.nodes.len(),

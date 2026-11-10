@@ -8,7 +8,7 @@
 //! continuing from the cached pages on the shared server. Disposable in-memory
 //! Surreal; the persistent mind (8000) is never used.
 //!
-//! Env: ARES_GLIMMER_NATIVE_URL (isolated server), ARES_MCP_MIND_BIN, ARES_MCP_MIND_ROOT,
+//! Env: ARES_MODEL_NATIVE_URL (isolated server), ARES_MCP_MIND_BIN, ARES_MCP_MIND_ROOT,
 //!      GLOBALMIND_SCHEMA_DIR; optional SWARM_WORKERS (default 4), SWARM_MAX_TOKENS (24),
 //!      SWARM_PRELOAD=demo|<file> (carve + planned-prefill before the demo starts).
 //! Run:  cargo run --release --example swarm_live   (type `help`)
@@ -597,7 +597,12 @@ fn rank_atoms(question: &str, atoms: &[&str]) -> Option<usize> {
     atoms
         .iter()
         .enumerate()
-        .map(|(i, a)| (i, words(a).iter().map(stem).filter(|w| q.contains(w)).count()))
+        .map(|(i, a)| {
+            (
+                i,
+                words(a).iter().map(stem).filter(|w| q.contains(w)).count(),
+            )
+        })
         .filter(|(_, s)| *s > 0)
         .max_by_key(|(i, s)| (*s, usize::MAX - *i))
         .map(|(i, _)| i)
@@ -609,7 +614,7 @@ fn hex(b: &[u8]) -> String {
 
 fn main() -> Result<(), String> {
     let env = |k: &str| std::env::var(k).map_err(|_| format!("{k} required"));
-    let url = env("ARES_GLIMMER_NATIVE_URL")?;
+    let url = env("ARES_MODEL_NATIVE_URL")?;
     if url.contains(":8000") || url.contains(":8011") {
         return Err("use an isolated Glimmer server".into());
     }
@@ -765,6 +770,9 @@ mod rank_tests {
             "The bronze bell has a dark color and a loud sound.",
             "The village of Brindlemoor paints every door violet in the month of March.",
         ];
-        assert_eq!(rank_atoms("What color are the doors in Brindlemoor?", &atoms), Some(1));
+        assert_eq!(
+            rank_atoms("What color are the doors in Brindlemoor?", &atoms),
+            Some(1)
+        );
     }
 }

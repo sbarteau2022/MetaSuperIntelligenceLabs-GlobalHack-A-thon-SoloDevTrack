@@ -1,15 +1,15 @@
-//! Hardware gate for `NativeGlimmerExecutor`: real `globalmind-mcp` child over a
+//! Hardware gate for `NativeModelExecutor`: real `globalmind-mcp` child over a
 //! disposable in-memory Surreal (never port 8000), then real binary tokenize and
-//! exact forward against a running frozen-Glimmer `serve_glimmer`.
+//! exact forward against a running frozen model server.
 //!
-//! Requires env: ARES_GLIMMER_NATIVE_URL (isolated server, not 8011),
-//! ARES_GLIMMER_WEIGHTS_SHA256, ARES_MCP_MIND_BIN (built `globalmind-mcp`),
+//! Requires env: ARES_MODEL_NATIVE_URL (isolated server, not 8011),
+//! ARES_MODEL_WEIGHTS_SHA256, ARES_MCP_MIND_BIN (built `globalmind-mcp`),
 //! GLOBALMIND_SCHEMA_DIR (`hypermind-nested-kv/schema`).
 //! Run: cargo test --test native_glimmer_live -- --ignored --nocapture
 
 use ares_backend::harness::mcp::McpAuthority;
 use ares_backend::harness::mind_recall_executor::MindRecallExecutor;
-use ares_backend::harness::native_glimmer_executor::NativeGlimmerExecutor;
+use ares_backend::harness::native_glimmer_executor::NativeModelExecutor;
 use ares_backend::harness::runtime::Executor;
 use sha2::{Digest, Sha256};
 use std::net::{TcpListener, TcpStream};
@@ -114,7 +114,7 @@ impl Drop for Surreal {
     }
 }
 
-fn executor(db: &Surreal) -> NativeGlimmerExecutor {
+fn executor(db: &Surreal) -> NativeModelExecutor {
     let authority = McpAuthority {
         base: format!("http://127.0.0.1:{}", db.port),
         ns: NS.into(),
@@ -122,13 +122,13 @@ fn executor(db: &Surreal) -> NativeGlimmerExecutor {
     };
     let mind = MindRecallExecutor::from_state(authority, ("root".into(), db.pass.clone()))
         .expect("mind executor");
-    NativeGlimmerExecutor::from_env(mind).expect("native executor")
+    NativeModelExecutor::from_env(mind).expect("native executor")
 }
 
 #[test]
 #[ignore = "real globalmind-mcp child, disposable Surreal, frozen-Glimmer binary server"]
 fn native_executor_binds_recall_tokenize_forward() {
-    let url = std::env::var("ARES_GLIMMER_NATIVE_URL").expect("ARES_GLIMMER_NATIVE_URL");
+    let url = std::env::var("ARES_MODEL_NATIVE_URL").expect("ARES_MODEL_NATIVE_URL");
     assert!(
         !url.contains(":8000") && !url.contains(":8011"),
         "use an isolated server"
@@ -171,14 +171,14 @@ fn native_executor_binds_recall_tokenize_forward() {
     println!("chain_hash={}", r.chain_hash);
 
     // Negative control 1: wrong pinned weights digest -> refuse.
-    let good_pin = std::env::var("ARES_GLIMMER_WEIGHTS_SHA256").unwrap();
-    std::env::set_var("ARES_GLIMMER_WEIGHTS_SHA256", "0".repeat(64));
+    let good_pin = std::env::var("ARES_MODEL_WEIGHTS_SHA256").unwrap();
+    std::env::set_var("ARES_MODEL_WEIGHTS_SHA256", "0".repeat(64));
     let mut exec = executor(&db);
     assert!(
         exec.call_bound("mind.recall", &args).is_err(),
         "wrong weights pin must be rejected"
     );
-    std::env::set_var("ARES_GLIMMER_WEIGHTS_SHA256", good_pin);
+    std::env::set_var("ARES_MODEL_WEIGHTS_SHA256", good_pin);
     println!("negative control: wrong weights pin refused");
 
     // Negative control 2: an in-range atom whose text does not match its

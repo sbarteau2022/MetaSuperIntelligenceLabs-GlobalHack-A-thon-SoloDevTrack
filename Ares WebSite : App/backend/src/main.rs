@@ -155,6 +155,9 @@ async fn run() -> Result<(), String> {
         app_state.capability_gate = tokio::sync::Mutex::new(gate);
     }
     let state = Arc::new(app_state);
+    let frontier_enabled =
+        ares_backend::harness::idle_frontier::spawn_if_configured(state.clone())?;
+    println!("idle frontier supervisor configured={frontier_enabled}");
     let app = ares_backend::http::router(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:4810")

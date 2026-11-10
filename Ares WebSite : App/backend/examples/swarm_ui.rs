@@ -6,7 +6,7 @@
 //! inside the repo only (no `.git`, `target`, `node_modules`; 400 KB cap).
 //!
 //! Env: REPO_ROOT (repo to expose), SWARM_LIVE_BIN (path to the swarm_live binary),
-//!      SWARM_UI_PORT (default 4820); the swarm_live env (ARES_GLIMMER_NATIVE_URL etc.) is inherited.
+//!      SWARM_UI_PORT (default 4820); the swarm_live env (ARES_MODEL_NATIVE_URL etc.) is inherited.
 
 use std::io::{BufRead, Read, Write};
 use std::net::{TcpListener, TcpStream};

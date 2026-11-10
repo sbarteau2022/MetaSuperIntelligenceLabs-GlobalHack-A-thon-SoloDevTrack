@@ -1,8 +1,8 @@
 //! Hardware gate for the executor's exact-K/V path: call 1 misses (prefill ->
 //! persist to disposable SurrealKV -> continue), Surreal restarts, call 2 hits
 //! (hydrate by exact identity -> continue). Both must equal a plain forward-exact
-//! executor bit for bit. Needs ARES_GLIMMER_NATIVE_URL (isolated server),
-//! ARES_GLIMMER_WEIGHTS_SHA256, ARES_MCP_MIND_BIN, GLOBALMIND_SCHEMA_DIR.
+//! executor bit for bit. Needs ARES_MODEL_NATIVE_URL (isolated server),
+//! ARES_MODEL_WEIGHTS_SHA256, ARES_MCP_MIND_BIN, GLOBALMIND_SCHEMA_DIR.
 //! Run: cargo test --test native_glimmer_kv_live -- --ignored --nocapture
 
 use ares_backend::harness::mcp::McpAuthority;
@@ -13,7 +13,7 @@ use ares_backend::harness::mission::{
 };
 use ares_backend::harness::native_glimmer_executor::{
     decode_forward_response, decode_token_response, encode_forward_request, encode_token_request,
-    verified_recall_text, KvKey, KvPageStore, NativeGlimmerExecutor,
+    verified_recall_text, KvKey, KvPageStore, NativeModelExecutor,
 };
 use ares_backend::harness::native_pages_client::{
     decode_prefill_response, decode_session_reply, decode_session_response,
@@ -491,14 +491,14 @@ impl KvPageStore for StoreKv {
     }
 }
 
-fn executor(db: &IsolatedSurreal, kv: Option<StoreKv>) -> Result<NativeGlimmerExecutor, String> {
+fn executor(db: &IsolatedSurreal, kv: Option<StoreKv>) -> Result<NativeModelExecutor, String> {
     let authority = McpAuthority {
         base: db.endpoint(),
         ns: NS.into(),
         db: DB.into(),
     };
     let mind = MindRecallExecutor::from_state(authority, ("root".into(), db.pass.clone()))?;
-    let exec = NativeGlimmerExecutor::from_env(mind)?;
+    let exec = NativeModelExecutor::from_env(mind)?;
     Ok(match kv {
         Some(kv) => exec.with_kv_store(Box::new(kv)),
         None => exec,
@@ -511,7 +511,7 @@ fn executor_kv_miss_then_restart_hit_equals_plain_forward() -> Result<(), String
     let schema_dir = PathBuf::from(
         std::env::var("GLOBALMIND_SCHEMA_DIR").map_err(|_| "GLOBALMIND_SCHEMA_DIR required")?,
     );
-    let url = std::env::var("ARES_GLIMMER_NATIVE_URL").map_err(|_| "ARES_GLIMMER_NATIVE_URL")?;
+    let url = std::env::var("ARES_MODEL_NATIVE_URL").map_err(|_| "ARES_MODEL_NATIVE_URL")?;
     if url.contains(":8000") || url.contains(":8011") {
         return Err("use an isolated Glimmer server".into());
     }
@@ -612,7 +612,7 @@ struct Recorded {
 /// Records every executor call/outcome for the post-run audit and restarts the
 /// disposable Surreal once, mid-run, so persistence is exercised under load.
 struct Recording {
-    inner: NativeGlimmerExecutor,
+    inner: NativeModelExecutor,
     log: Arc<Mutex<Vec<Recorded>>>,
     db: Arc<Mutex<IsolatedSurreal>>,
     restart_at: usize,
@@ -721,7 +721,7 @@ async fn governed_run_30_steps_audit() -> Result<(), String> {
     let schema_dir = PathBuf::from(
         std::env::var("GLOBALMIND_SCHEMA_DIR").map_err(|_| "GLOBALMIND_SCHEMA_DIR required")?,
     );
-    let url = std::env::var("ARES_GLIMMER_NATIVE_URL").map_err(|_| "ARES_GLIMMER_NATIVE_URL")?;
+    let url = std::env::var("ARES_MODEL_NATIVE_URL").map_err(|_| "ARES_MODEL_NATIVE_URL")?;
     if url.contains(":8000") || url.contains(":8011") {
         return Err("use an isolated Glimmer server".into());
     }
@@ -737,7 +737,7 @@ async fn governed_run_30_steps_audit() -> Result<(), String> {
         "HYPERDX_OTLP_ENDPOINT",
         format!("http://127.0.0.1:{sink_port}"),
     );
-    std::env::set_var("ARES_GLIMMER_MAX_TOKENS", "4");
+    std::env::set_var("ARES_MODEL_MAX_TOKENS", "4");
     let telemetry = HyperdxTelemetry::new(HyperdxConfig::from_env())?;
     // The key is read once at config time; Surreal and the MCP child need the real HOME.
     std::env::set_var("HOME", real_home);
@@ -1107,7 +1107,7 @@ fn recalled_atoms_improve_answers_on_novel_facts() -> Result<(), String> {
     let schema_dir = PathBuf::from(
         std::env::var("GLOBALMIND_SCHEMA_DIR").map_err(|_| "GLOBALMIND_SCHEMA_DIR required")?,
     );
-    let url = std::env::var("ARES_GLIMMER_NATIVE_URL").map_err(|_| "ARES_GLIMMER_NATIVE_URL")?;
+    let url = std::env::var("ARES_MODEL_NATIVE_URL").map_err(|_| "ARES_MODEL_NATIVE_URL")?;
     if url.contains(":8000") || url.contains(":8011") {
         return Err("use an isolated Glimmer server".into());
     }
@@ -1238,7 +1238,7 @@ fn proof1_planned_prefill_recall_vs_full_recompute() -> Result<(), String> {
     let schema_dir = PathBuf::from(
         std::env::var("GLOBALMIND_SCHEMA_DIR").map_err(|_| "GLOBALMIND_SCHEMA_DIR required")?,
     );
-    let url = std::env::var("ARES_GLIMMER_NATIVE_URL").map_err(|_| "ARES_GLIMMER_NATIVE_URL")?;
+    let url = std::env::var("ARES_MODEL_NATIVE_URL").map_err(|_| "ARES_MODEL_NATIVE_URL")?;
     if url.contains(":8000") || url.contains(":8011") {
         return Err("use an isolated Glimmer server".into());
     }
@@ -1442,7 +1442,7 @@ fn carved_swarm_four_workers_one_weight_set() -> Result<(), String> {
     let schema_dir = PathBuf::from(
         std::env::var("GLOBALMIND_SCHEMA_DIR").map_err(|_| "GLOBALMIND_SCHEMA_DIR required")?,
     );
-    let url = std::env::var("ARES_GLIMMER_NATIVE_URL").map_err(|_| "ARES_GLIMMER_NATIVE_URL")?;
+    let url = std::env::var("ARES_MODEL_NATIVE_URL").map_err(|_| "ARES_MODEL_NATIVE_URL")?;
     if url.contains(":8000") || url.contains(":8011") {
         return Err("use an isolated Glimmer server".into());
     }
@@ -1577,7 +1577,7 @@ fn carved_swarm_four_workers_one_weight_set() -> Result<(), String> {
 #[test]
 #[ignore = "isolated frozen-Glimmer server with session routes"]
 fn resident_sessions_equal_page_shipping_and_cut_transfer() -> Result<(), String> {
-    let url = std::env::var("ARES_GLIMMER_NATIVE_URL").map_err(|_| "ARES_GLIMMER_NATIVE_URL")?;
+    let url = std::env::var("ARES_MODEL_NATIVE_URL").map_err(|_| "ARES_MODEL_NATIVE_URL")?;
     if url.contains(":8000") || url.contains(":8011") {
         return Err("use an isolated Glimmer server".into());
     }
