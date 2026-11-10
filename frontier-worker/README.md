@@ -13,6 +13,9 @@ Each gate's stdout and stderr are bounded while the process runs. An output
 overflow kills that gate and records it as unavailable rather than selecting
 it as a source defect. Backend library-test failures can become discovery
 targets; those tests do not certify model-forward quality.
+Failed gate receipts include a byte-exact hex tail of the observed output and
+the digest of the full bounded output. Dependency, Apple-framework, and
+resource failures are classified as unavailable; they are not code targets.
 
 Build the image from a committed canonical repo snapshot using the
 `frontier-worker/Dockerfile`. The backend supervisor expects the image to

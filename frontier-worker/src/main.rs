@@ -8,6 +8,7 @@ use std::sync::mpsc;
 use std::time::Instant;
 
 const MAX_GATE_OUTPUT: usize = 8 * 1024 * 1024;
+const EXCERPT_BYTES: usize = 2048;
 
 struct Target {
     id: &'static str,
@@ -65,6 +66,17 @@ fn sha256(bytes: &[u8]) -> Result<String, String> {
         return Err("sha256sum returned invalid digest".into());
     }
     Ok(digest.to_string())
+}
+
+fn hex_tail(bytes: &[u8]) -> String {
+    let alphabet = b"0123456789abcdef";
+    let tail = &bytes[bytes.len().saturating_sub(EXCERPT_BYTES)..];
+    let mut result = String::with_capacity(tail.len() * 2);
+    for byte in tail {
+        result.push(alphabet[(byte >> 4) as usize] as char);
+        result.push(alphabet[(byte & 0x0f) as usize] as char);
+    }
+    result
 }
 
 fn run_bounded_gate(mut command: Command) -> Result<(ExitStatus, Vec<u8>), String> {
@@ -162,32 +174,45 @@ fn run(snapshot: &Path) -> Result<(), String> {
         };
         let digest = sha256(&evidence)?;
         let exit = status.code().unwrap_or(255);
+        let reason = if status.success() {
+            "pass"
+        } else if status.code().is_none() || matches!(status.code(), Some(137 | 143)) {
+            "resource-unavailable"
+        } else if evidence
+            .windows(b"failed to download".len())
+            .any(|w| w == b"failed to download")
+            || evidence
+                .windows(b"no matching package named".len())
+                .any(|w| w == b"no matching package named")
+        {
+            "dependency-unavailable"
+        } else if evidence.windows(b"E0455".len()).any(|w| w == b"E0455") {
+            "platform-unavailable"
+        } else {
+            "gate-failure"
+        };
+        let excerpt = if status.success() {
+            String::new()
+        } else {
+            hex_tail(&evidence)
+        };
         println!(
-            "gate\tsource={}\ttarget={}\texit={}\toutput_sha256={}\tduration_ms={}",
+            "gate\tsource={}\ttarget={}\texit={}\treason={}\toutput_sha256={}\tduration_ms={}\texcerpt_hex={}",
             commit,
             target.id,
             exit,
+            reason,
             digest,
-            started.elapsed().as_millis()
+            started.elapsed().as_millis(),
+            excerpt,
         );
         if !status.success() {
-            let reason = if evidence
-                .windows(b"failed to download".len())
-                .any(|w| w == b"failed to download")
-                || evidence
-                    .windows(b"no matching package named".len())
-                    .any(|w| w == b"no matching package named")
-            {
-                "dependency-unavailable"
-            } else {
-                "gate-failure"
-            };
             failures.push((target.id, reason, digest));
         }
     }
     failures.sort_by(|a, b| a.0.cmp(b.0));
     let environment_unavailable =
-        portable_gate_unavailable || failures.iter().any(|f| f.1 == "dependency-unavailable");
+        portable_gate_unavailable || failures.iter().any(|f| f.1 != "gate-failure");
     if let Some((id, reason, digest)) = failures.into_iter().find(|f| f.1 == "gate-failure") {
         println!(
             "decision\tsource={commit}\ttarget={id}\treason={reason}\tevidence_sha256={digest}"
@@ -214,7 +239,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::run_bounded_gate;
+    use super::{hex_tail, run_bounded_gate, EXCERPT_BYTES};
     use std::process::Command;
 
     #[test]
@@ -232,5 +257,14 @@ mod tests {
         command.args(["-c", "head -c 8388609 /dev/zero"]);
         let result = run_bounded_gate(command);
         assert!(matches!(result, Err(reason) if reason == "gate output exceeded bound"));
+    }
+
+    #[test]
+    fn failure_excerpt_is_byte_exact_and_bounded() {
+        assert_eq!(hex_tail(&[0, 10, 255]), "000aff");
+        let bytes = vec![0xab; EXCERPT_BYTES + 1];
+        let excerpt = hex_tail(&bytes);
+        assert_eq!(excerpt.len(), EXCERPT_BYTES * 2);
+        assert!(excerpt.bytes().all(|byte| byte == b'a' || byte == b'b'));
     }
 }
