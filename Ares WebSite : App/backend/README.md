@@ -21,6 +21,9 @@ qualification. A Colima run is refused below the memory headroom gate; a
 missing image also reports `unavailable`. The model proposer, implementation
 iteration, full quality/performance gates, and promotion path remain open. The governing
 contract is [IDLE-FRONTIER-DESIGN.md](IDLE-FRONTIER-DESIGN.md).
+The supervisor pins a commit before archiving and refuses a worker receipt
+whose source, gate set, or decision does not match that snapshot. A receipt
+is discovery evidence only; it cannot approve a code change.
 
 ## Model agnostic system contract (2026-11-10)
 
