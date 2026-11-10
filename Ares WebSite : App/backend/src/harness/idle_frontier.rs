@@ -143,7 +143,7 @@ fn validate_receipt(bytes: &[u8], expected_commit: &str) -> Result<(), String> {
         return Err("frontier receipt size invalid".into());
     }
     let text = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
-    let mut gates = std::collections::HashSet::new();
+    let mut gates = std::collections::HashMap::new();
     let mut decision = None;
     for line in text.lines() {
         let mut fields = line.split('\t');
@@ -153,6 +153,13 @@ fn validate_receipt(bytes: &[u8], expected_commit: &str) -> Result<(), String> {
         }
         let mut source = None;
         let mut target = None;
+        let mut reason = None;
+        let mut exit = None;
+        let mut output_digest = None;
+        let mut evidence_digest = None;
+        let mut selection = None;
+        let mut identity_claim = None;
+        let mut rationale_hex = None;
         for field in fields {
             let (key, value) = field
                 .split_once('=')
@@ -164,6 +171,27 @@ fn validate_receipt(bytes: &[u8], expected_commit: &str) -> Result<(), String> {
                 "target" if target.replace(value).is_some() => {
                     return Err("frontier receipt repeats target".into());
                 }
+                "reason" if reason.replace(value).is_some() => {
+                    return Err("frontier receipt repeats reason".into());
+                }
+                "exit" if exit.replace(value).is_some() => {
+                    return Err("frontier receipt repeats exit".into());
+                }
+                "output_sha256" if output_digest.replace(value).is_some() => {
+                    return Err("frontier receipt repeats output digest".into());
+                }
+                "evidence_sha256" if evidence_digest.replace(value).is_some() => {
+                    return Err("frontier receipt repeats evidence digest".into());
+                }
+                "selection" if selection.replace(value).is_some() => {
+                    return Err("frontier receipt repeats selection".into());
+                }
+                "model_identity_claim" if identity_claim.replace(value).is_some() => {
+                    return Err("frontier receipt repeats model identity claim".into());
+                }
+                "rationale_hex" if rationale_hex.replace(value).is_some() => {
+                    return Err("frontier receipt repeats rationale".into());
+                }
                 "source" | "target" => {}
                 _ => {}
             }
@@ -173,16 +201,67 @@ fn validate_receipt(bytes: &[u8], expected_commit: &str) -> Result<(), String> {
         }
         let target = target.ok_or("frontier receipt lacks target")?;
         if kind == "gate" {
-            if !gates.insert(target) {
+            if gates
+                .insert(target, (reason, exit, output_digest))
+                .is_some()
+            {
                 return Err("frontier receipt repeats gate".into());
             }
-        } else if decision.replace(target).is_some() {
+        } else if decision
+            .replace((
+                target,
+                reason,
+                selection,
+                identity_claim,
+                rationale_hex,
+                evidence_digest,
+            ))
+            .is_some()
+        {
             return Err("frontier receipt repeats decision".into());
         }
     }
-    let selected = decision.ok_or("frontier receipt lacks decision")?;
-    if selected != "none" && !gates.contains(selected) {
-        return Err("frontier decision lacks matching gate".into());
+    let (selected, reason, selection, identity_claim, rationale_hex, evidence_digest) =
+        decision.ok_or("frontier receipt lacks decision")?;
+    if selected != "none" {
+        let (gate_reason, gate_exit, gate_digest) = gates
+            .get(selected)
+            .ok_or("frontier decision lacks matching gate")?;
+        if *gate_reason != Some("gate-failure")
+            || reason != Some("gate-failure")
+            || gate_digest != &evidence_digest
+            || !gate_digest.is_some_and(|digest| {
+                digest.len() == 64
+                    && digest
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            })
+            || !gate_exit
+                .and_then(|value| value.parse::<i32>().ok())
+                .is_some_and(|value| value != 0)
+        {
+            return Err("frontier decision target lacks a failed gate".into());
+        }
+    }
+    if selection == Some("proposer") {
+        let identity = identity_claim.ok_or("frontier proposer identity claim missing")?;
+        let rationale = rationale_hex.ok_or("frontier proposer rationale missing")?;
+        if selected == "none"
+            || identity.len() != 64
+            || !identity
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            || rationale.is_empty()
+            || rationale.len() > 2048
+            || !rationale.len().is_multiple_of(2)
+            || !rationale
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err("frontier proposer evidence invalid".into());
+        }
+    } else if !matches!(selection, None | Some("canonical")) {
+        return Err("frontier selection type invalid".into());
     }
     if gates.is_empty() {
         return Err("frontier receipt has no gates".into());
@@ -433,11 +512,12 @@ mod tests {
     use tokio::process::Command;
 
     const COMMIT: &str = "26dfa6ddf073f986fecb4037b1aa20d9f7b5633c";
+    const DIGEST: &str = "539f1567994ecf9ed3926c30157d851df79fe092e516380d7f3710f9cdf46a49";
 
     fn receipt(gate_source: &str, decision_source: &str, decision_target: &str) -> String {
         format!(
-            "gate\tsource={gate_source}\ttarget=ares-backend\texit=0\toutput_sha256=abc\tduration_ms=1\n\
-             decision\tsource={decision_source}\ttarget={decision_target}\treason=gate-failure\n"
+            "gate\tsource={gate_source}\ttarget=ares-backend\texit=1\treason=gate-failure\toutput_sha256={DIGEST}\tduration_ms=1\n\
+             decision\tsource={decision_source}\ttarget={decision_target}\treason=gate-failure\tevidence_sha256={DIGEST}\n"
         )
     }
 
@@ -478,6 +558,38 @@ mod tests {
             1,
         );
         assert!(validate_receipt(text.as_bytes(), COMMIT).is_err());
+    }
+
+    #[test]
+    fn refuses_selection_of_passing_gate() {
+        let text = receipt(COMMIT, COMMIT, "ares-backend").replacen(
+            "exit=1\treason=gate-failure",
+            "exit=0\treason=pass",
+            1,
+        );
+        assert!(validate_receipt(text.as_bytes(), COMMIT).is_err());
+    }
+
+    #[test]
+    fn refuses_decision_with_different_gate_digest() {
+        let text = receipt(COMMIT, COMMIT, "ares-backend").replacen(
+            &format!("evidence_sha256={DIGEST}"),
+            "evidence_sha256=0000000000000000000000000000000000000000000000000000000000000000",
+            1,
+        );
+        assert!(validate_receipt(text.as_bytes(), COMMIT).is_err());
+    }
+
+    #[test]
+    fn proposer_decision_requires_claim_and_rationale() {
+        let invalid = receipt(COMMIT, COMMIT, "ares-backend")
+            .replace("decision\tsource=", "decision\tselection=proposer\tsource=");
+        assert!(validate_receipt(invalid.as_bytes(), COMMIT).is_err());
+        let valid = invalid.replace(
+            "selection=proposer",
+            "selection=proposer\tmodel_identity_claim=539f1567994ecf9ed3926c30157d851df79fe092e516380d7f3710f9cdf46a49\trationale_hex=6f6b",
+        );
+        assert!(validate_receipt(valid.as_bytes(), COMMIT).is_ok());
     }
 
     #[tokio::test]

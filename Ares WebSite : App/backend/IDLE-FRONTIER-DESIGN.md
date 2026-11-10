@@ -10,6 +10,12 @@ Mission dispatch and frontier launch share a Tokio read/write barrier. A mission
 
 The worker is an executable with a model neutral contract. The active model can propose a target, but proposal text cannot itself choose the gate or mark success. The governor ranks candidates from actual failed compile and library-test gates, real task outcomes, and telemetry. A deterministic tie key is the candidate's canonical identifier. No Qwen path, endpoint, tokenizer, or checkpoint is compiled into the supervisor. Model I/O, when added, uses the binary seat contract. A library-test failure is a target-discovery signal, not a hardware or task-quality verdict.
 
+## Optional binary proposer, selection only
+
+A custom worker image may set `ARES_FRONTIER_PROPOSER_BIN` to an absolute executable inside that image. The worker sends a bounded `FRQ1` frame over stdin: 40 ASCII lowercase source-commit hex bytes, an 8-bit candidate count, then for each failed gate an 8-bit target-name length and bytes, 64 lowercase output-digest hex bytes, a 16-bit little-endian excerpt length, and the raw bounded failure excerpt. The proposer returns one `FRS1` frame on stdout: the same 40-byte source, one admitted target name, a 64-byte lowercase model-identity claim, a 16-bit little-endian rationale length, and UTF-8 rationale bytes. Each frame begins with its four-byte magic. Candidate count, names, excerpts, rationale, total output, and runtime are bounded by the worker. Extra bytes, stale source, an unknown target, invalid identity, or a failed process refuse the proposal.
+
+The proposer chooses among gate-failure candidates only. The worker owns candidate eligibility, and the backend independently requires the selected target's gate row to carry `reason=gate-failure`, a nonzero exit, and the same 64-hex output digest named by the decision. The response identity is a claim until separately attested by a native model seat. If no proposer is configured, selection remains deterministic by canonical target ID. This protocol does not edit source, set a success bar, or certify self-improvement.
+
 ## One iteration
 
 1. Snapshot the committed Git HEAD; dirty worktree files are excluded by `git archive`. Inspect registered component and end-to-end gates, relevant receipts, and architecture dependencies. Choose one target with a measured baseline and expected system-level gain. If there is no evidenced target, record `no_target` and sleep.

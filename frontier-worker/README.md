@@ -17,6 +17,17 @@ Failed gate receipts include a byte-exact hex tail of the observed output and
 the digest of the full bounded output. Dependency, Apple-framework, and
 resource failures are classified as unavailable; they are not code targets.
 
+An image may set `ARES_FRONTIER_PROPOSER_BIN` to a native Linux executable.
+The worker sends a bounded binary `FRQ1` frame over stdin and validates a
+binary `FRS1` selection frame from stdout. See
+[the idle frontier design](<../Ares WebSite : App/backend/IDLE-FRONTIER-DESIGN.md>)
+for the wire fields.
+Only a target with a recorded gate failure may be selected. The returned model
+identity is labeled a claim; this path does not attest weights or apply code.
+An invalid or timed-out proposer yields `target=none` with an explicit reason.
+Without a proposer, the worker chooses the first failing target by canonical
+ID. No Python or JSON enters the proposer boundary.
+
 Build the image from a committed canonical repo snapshot using the
 `frontier-worker/Dockerfile`. The backend supervisor expects the image to
 contain `/usr/local/bin/frontier-worker`. The worker runs without network,

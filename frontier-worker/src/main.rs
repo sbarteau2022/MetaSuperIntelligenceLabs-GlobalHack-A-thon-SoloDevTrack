@@ -5,10 +5,20 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+use frontier_worker::proposal::{self, Candidate};
 
 const MAX_GATE_OUTPUT: usize = 8 * 1024 * 1024;
 const EXCERPT_BYTES: usize = 2048;
+const MAX_PROPOSER_OUTPUT: usize = 4096;
+
+struct Failure {
+    id: &'static str,
+    reason: &'static str,
+    digest: String,
+    excerpt: Vec<u8>,
+}
 
 struct Target {
     id: &'static str,
@@ -125,6 +135,90 @@ fn run_bounded_gate(mut command: Command) -> Result<(ExitStatus, Vec<u8>), Strin
     Ok((status, evidence))
 }
 
+fn invoke_proposer(path: &Path, snapshot: &Path, request: Vec<u8>) -> Result<Vec<u8>, String> {
+    if !path.is_absolute() || !path.is_file() {
+        return Err("proposer executable path invalid".into());
+    }
+    let mut header = [0u8; 4];
+    std::fs::File::open(path)
+        .and_then(|mut file| file.read_exact(&mut header))
+        .map_err(|e| format!("proposer binary header: {e}"))?;
+    if header != *b"\x7fELF" {
+        return Err("proposer must be a native Linux executable".into());
+    }
+    let mut child = Command::new(path)
+        .arg("--frontier-proposal-v1")
+        .arg(snapshot)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("proposer spawn: {e}"))?;
+    let stdin = child.stdin.take().ok_or("proposer stdin unavailable")?;
+    let stdout = child.stdout.take().ok_or("proposer stdout unavailable")?;
+    let stderr = child.stderr.take().ok_or("proposer stderr unavailable")?;
+    let (tx, rx) = mpsc::channel::<Result<(usize, Vec<u8>), String>>();
+    let sender = tx.clone();
+    std::thread::spawn(move || {
+        let mut stdin = stdin;
+        let result = stdin
+            .write_all(&request)
+            .map_err(|e| format!("proposer input: {e}"))
+            .map(|()| (2, Vec::new()));
+        let _ = sender.send(result);
+    });
+    let readers: [Box<dyn Read + Send>; 2] = [Box::new(stdout), Box::new(stderr)];
+    for (index, mut reader) in readers.into_iter().enumerate() {
+        let sender = tx.clone();
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let result = reader
+                .by_ref()
+                .take(MAX_PROPOSER_OUTPUT as u64 + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|e| format!("proposer output: {e}"))
+                .map(|_| (index, bytes));
+            let _ = sender.send(result);
+        });
+    }
+    drop(tx);
+    let deadline = Instant::now() + Duration::from_secs(120);
+    let mut streams = [Vec::new(), Vec::new()];
+    for _ in 0..3 {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let received = rx.recv_timeout(remaining);
+        let (index, bytes) = match received {
+            Ok(Ok(result)) => result,
+            Ok(Err(e)) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(e);
+            }
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("proposer timed out or lost pipe".into());
+            }
+        };
+        if bytes.len() > MAX_PROPOSER_OUTPUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("proposer output exceeded bound".into());
+        }
+        if index < 2 {
+            streams[index] = bytes;
+        }
+    }
+    let status = child.wait().map_err(|e| format!("proposer wait: {e}"))?;
+    if !status.success() {
+        return Err(format!("proposer exited with {status}"));
+    }
+    if !streams[1].is_empty() {
+        return Err("proposer wrote diagnostic stderr".into());
+    }
+    Ok(std::mem::take(&mut streams[0]))
+}
+
 fn run(snapshot: &Path) -> Result<(), String> {
     if !snapshot.is_dir() {
         return Err("source snapshot directory missing".into());
@@ -207,16 +301,57 @@ fn run(snapshot: &Path) -> Result<(), String> {
             excerpt,
         );
         if !status.success() {
-            failures.push((target.id, reason, digest));
+            failures.push(Failure {
+                id: target.id,
+                reason,
+                digest,
+                excerpt: evidence[evidence.len().saturating_sub(EXCERPT_BYTES)..].to_vec(),
+            });
         }
     }
-    failures.sort_by(|a, b| a.0.cmp(b.0));
+    failures.sort_by(|a, b| a.id.cmp(b.id));
     let environment_unavailable =
-        portable_gate_unavailable || failures.iter().any(|f| f.1 != "gate-failure");
-    if let Some((id, reason, digest)) = failures.into_iter().find(|f| f.1 == "gate-failure") {
-        println!(
-            "decision\tsource={commit}\ttarget={id}\treason={reason}\tevidence_sha256={digest}"
-        );
+        portable_gate_unavailable || failures.iter().any(|f| f.reason != "gate-failure");
+    let candidates: Vec<_> = failures
+        .iter()
+        .filter(|failure| failure.reason == "gate-failure")
+        .map(|failure| Candidate {
+            target: failure.id,
+            evidence_sha256: &failure.digest,
+            excerpt: &failure.excerpt,
+        })
+        .collect();
+    if let Some(first) = candidates.first() {
+        match std::env::var("ARES_FRONTIER_PROPOSER_BIN") {
+            Err(std::env::VarError::NotPresent) => {
+                println!("decision\tsource={commit}\ttarget={}\treason=gate-failure\tevidence_sha256={}\tselection=canonical", first.target, first.evidence_sha256);
+            }
+            Ok(path) => {
+                let proposal = proposal::encode_request(&commit, &candidates)
+                    .and_then(|request| invoke_proposer(Path::new(&path), snapshot, request))
+                    .and_then(|bytes| proposal::decode_response(&bytes, &commit, &candidates));
+                match proposal {
+                    Ok(choice) => {
+                        let failure = failures
+                            .iter()
+                            .find(|failure| failure.id == choice.target)
+                            .ok_or("admitted proposal target disappeared")?;
+                        println!("decision\tsource={commit}\ttarget={}\treason=gate-failure\tevidence_sha256={}\tselection=proposer\tmodel_identity_claim={}\trationale_hex={}", choice.target, failure.digest, choice.model_identity_claim, hex_tail(choice.rationale.as_bytes()));
+                    }
+                    Err(e) => {
+                        eprintln!("frontier proposer refused: {e}");
+                        println!(
+                            "decision\tsource={commit}\ttarget=none\treason=proposer-unavailable"
+                        );
+                    }
+                }
+            }
+            Err(std::env::VarError::NotUnicode(_)) => {
+                println!(
+                    "decision\tsource={commit}\ttarget=none\treason=proposer-configuration-invalid"
+                );
+            }
+        }
     } else if environment_unavailable {
         println!("decision\tsource={commit}\tscope=portable\ttarget=none\treason=environment-unavailable");
     } else {
