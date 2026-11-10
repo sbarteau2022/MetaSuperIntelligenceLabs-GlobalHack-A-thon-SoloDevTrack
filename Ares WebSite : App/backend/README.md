@@ -15,7 +15,7 @@ running Colima Docker daemon without depending on Docker Desktop's socket.
 Docker still consumes Colima VM disk space; this removes only the separate
 Lima frontier VM allocation.
 `/api/harness/status` reports active missions and the frontier state. The
-worker discovers failures in portable compile gates and writes a bounded
+worker discovers failures in portable compile and backend library-test gates and writes a bounded
 receipt under `results/frontier-loop/`. It excludes Apple-only model forward
 qualification. A Colima run is refused below the memory headroom gate; a
 missing image also reports `unavailable`. The model proposer, implementation

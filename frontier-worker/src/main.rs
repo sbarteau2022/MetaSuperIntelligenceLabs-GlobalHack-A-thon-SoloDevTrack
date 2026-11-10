@@ -1,9 +1,10 @@
 //! Isolated target discovery over a committed source snapshot.
 //! No model, checkpoint, live store, or host checkout is opened here.
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
+use std::sync::mpsc;
 use std::time::Instant;
 
 const MAX_GATE_OUTPUT: usize = 8 * 1024 * 1024;
@@ -14,11 +15,16 @@ struct Target {
     gate_args: &'static [&'static str],
 }
 
-const TARGETS: [Target; 3] = [
+const TARGETS: [Target; 4] = [
     Target {
         id: "ares-backend",
         manifest: "Ares WebSite : App/backend/Cargo.toml",
         gate_args: &["check", "--tests", "--offline", "--message-format=short"],
+    },
+    Target {
+        id: "ares-backend-tests",
+        manifest: "Ares WebSite : App/backend/Cargo.toml",
+        gate_args: &["test", "--lib", "--offline", "--", "--test-threads=1"],
     },
     Target {
         id: "core-lm",
@@ -61,6 +67,52 @@ fn sha256(bytes: &[u8]) -> Result<String, String> {
     Ok(digest.to_string())
 }
 
+fn run_bounded_gate(mut command: Command) -> Result<(ExitStatus, Vec<u8>), String> {
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("gate spawn: {e}"))?;
+    let stdout = child.stdout.take().ok_or("gate stdout unavailable")?;
+    let stderr = child.stderr.take().ok_or("gate stderr unavailable")?;
+    let readers: [Box<dyn Read + Send>; 2] = [Box::new(stdout), Box::new(stderr)];
+    let (tx, rx) = mpsc::channel();
+    for (index, mut reader) in readers.into_iter().enumerate() {
+        let sender = tx.clone();
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let result = reader
+                .by_ref()
+                .take(MAX_GATE_OUTPUT as u64 + 1)
+                .read_to_end(&mut bytes);
+            let _ = sender.send((index, result, bytes));
+        });
+    }
+    drop(tx);
+    let mut streams = [Vec::new(), Vec::new()];
+    let mut exceeded = false;
+    for _ in 0..2 {
+        let (index, result, bytes) = rx.recv().map_err(|e| format!("gate reader: {e}"))?;
+        if let Err(e) = result {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("gate read: {e}"));
+        }
+        if bytes.len() > MAX_GATE_OUTPUT {
+            exceeded = true;
+            let _ = child.kill();
+        }
+        streams[index] = bytes;
+    }
+    let status = child.wait().map_err(|e| format!("gate wait: {e}"))?;
+    if exceeded || streams[0].len() + streams[1].len() > MAX_GATE_OUTPUT {
+        return Err("gate output exceeded bound".into());
+    }
+    let mut evidence = std::mem::take(&mut streams[0]);
+    evidence.extend_from_slice(&streams[1]);
+    Ok((status, evidence))
+}
+
 fn run(snapshot: &Path) -> Result<(), String> {
     if !snapshot.is_dir() {
         return Err("source snapshot directory missing".into());
@@ -71,6 +123,7 @@ fn run(snapshot: &Path) -> Result<(), String> {
         return Err("source commit identity invalid".into());
     }
     let mut failures = Vec::new();
+    let mut portable_gate_unavailable = false;
     for target in TARGETS {
         let manifest = snapshot.join(target.manifest);
         if !manifest.is_file() {
@@ -84,20 +137,31 @@ fn run(snapshot: &Path) -> Result<(), String> {
             continue;
         }
         let started = Instant::now();
-        let output = Command::new("cargo")
+        let mut command = Command::new("cargo");
+        command
             .args(target.gate_args)
             .arg("--manifest-path")
             .arg(&manifest)
-            .current_dir(snapshot)
-            .output()
-            .map_err(|e| format!("cargo check {}: {e}", target.id))?;
-        let mut evidence = output.stdout;
-        evidence.extend_from_slice(&output.stderr);
-        if evidence.len() > MAX_GATE_OUTPUT {
-            return Err(format!("gate output exceeded bound for {}", target.id));
-        }
+            .current_dir(snapshot);
+        let (status, evidence) = match run_bounded_gate(command) {
+            Ok(result) => result,
+            Err(e) => {
+                portable_gate_unavailable = true;
+                let reason = if e == "gate output exceeded bound" {
+                    "output-bound"
+                } else {
+                    "gate-io"
+                };
+                eprintln!("cargo gate {} unavailable: {e}", target.id);
+                println!(
+                    "gate\tsource={}\ttarget={}\tstatus=unavailable\treason={reason}",
+                    commit, target.id
+                );
+                continue;
+            }
+        };
         let digest = sha256(&evidence)?;
-        let exit = output.status.code().unwrap_or(255);
+        let exit = status.code().unwrap_or(255);
         println!(
             "gate\tsource={}\ttarget={}\texit={}\toutput_sha256={}\tduration_ms={}",
             commit,
@@ -106,7 +170,7 @@ fn run(snapshot: &Path) -> Result<(), String> {
             digest,
             started.elapsed().as_millis()
         );
-        if !output.status.success() {
+        if !status.success() {
             let reason = if evidence
                 .windows(b"failed to download".len())
                 .any(|w| w == b"failed to download")
@@ -122,7 +186,8 @@ fn run(snapshot: &Path) -> Result<(), String> {
         }
     }
     failures.sort_by(|a, b| a.0.cmp(b.0));
-    let environment_unavailable = failures.iter().any(|f| f.1 == "dependency-unavailable");
+    let environment_unavailable =
+        portable_gate_unavailable || failures.iter().any(|f| f.1 == "dependency-unavailable");
     if let Some((id, reason, digest)) = failures.into_iter().find(|f| f.1 == "gate-failure") {
         println!(
             "decision\tsource={commit}\ttarget={id}\treason={reason}\tevidence_sha256={digest}"
@@ -144,5 +209,28 @@ fn main() {
     if let Err(e) = run(Path::new(&args[2])) {
         eprintln!("frontier worker refused: {e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::run_bounded_gate;
+    use std::process::Command;
+
+    #[test]
+    fn bounded_gate_preserves_small_output() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "printf 'ok' && printf 'err' >&2"]);
+        let (status, evidence) = run_bounded_gate(command).expect("small output is admitted");
+        assert!(status.success());
+        assert_eq!(evidence, b"okerr");
+    }
+
+    #[test]
+    fn bounded_gate_kills_output_over_limit() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "head -c 8388609 /dev/zero"]);
+        let result = run_bounded_gate(command);
+        assert!(matches!(result, Err(reason) if reason == "gate output exceeded bound"));
     }
 }
