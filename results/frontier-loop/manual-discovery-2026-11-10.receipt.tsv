@@ -1,0 +1,4 @@
+gate	source=26dfa6ddf073f986fecb4037b1aa20d9f7b5633c	target=ares-backend	exit=0	output_sha256=539f1567994ecf9ed3926c30157d851df79fe092e516380d7f3710f9cdf46a49	duration_ms=25860
+gate	source=26dfa6ddf073f986fecb4037b1aa20d9f7b5633c	target=core-lm	status=unavailable	reason=apple-framework
+gate	source=26dfa6ddf073f986fecb4037b1aa20d9f7b5633c	target=globalmind-runtime	exit=0	output_sha256=04b13db48ff07c8b5eed5c2c0deffba97c2c5f612210b024373f9f351bf1abcd	duration_ms=3635
+decision	source=26dfa6ddf073f986fecb4037b1aa20d9f7b5633c	scope=portable	target=none	reason=no-admitted-gate-failure
