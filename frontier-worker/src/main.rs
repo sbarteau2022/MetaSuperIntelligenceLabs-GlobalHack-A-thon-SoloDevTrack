@@ -116,10 +116,13 @@ fn run(snapshot: &Path) -> Result<(), String> {
         }
     }
     failures.sort_by(|a, b| a.0.cmp(b.0));
+    let environment_unavailable = failures.iter().any(|f| f.1 == "dependency-unavailable");
     if let Some((id, reason, digest)) = failures.into_iter().find(|f| f.1 == "gate-failure") {
         println!(
             "decision\tsource={commit}\ttarget={id}\treason={reason}\tevidence_sha256={digest}"
         );
+    } else if environment_unavailable {
+        println!("decision\tsource={commit}\ttarget=none\treason=environment-unavailable");
     } else {
         println!("decision\tsource={commit}\ttarget=none\treason=no-admitted-gate-failure");
     }
