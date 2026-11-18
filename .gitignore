@@ -11,3 +11,28 @@ node_modules/
 dist/
 build/
 *.log
+
+# macOS metadata (AppleDouble resource forks)
+._*
+.AppleDouble/
+
+# Downloaded third-party site snapshots and archives: keep on disk, never version
+**/browser-download-*/
+**/browser-download-*.zip
+*.framer.app-full/
+*.framer.app-full.zip
+
+# Python tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Model weights and large binary artifacts
+*.safetensors
+*.gguf
+*.pt
+*.pth
+*.ckpt
+*.npz
