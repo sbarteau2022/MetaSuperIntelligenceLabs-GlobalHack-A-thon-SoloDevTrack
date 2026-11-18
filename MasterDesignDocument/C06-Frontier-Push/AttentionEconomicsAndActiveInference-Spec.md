@@ -1,6 +1,6 @@
 # AttentionEconomicsAndActiveInference-Spec — The Agent-Plane Resource Contract
 
-**Date.** 2026-10-27. **Status.** PROPOSED specification. **Parent.** C30.8 MetaSoftBudgetAndProfitability (Meta-plane pricing), C06 TPE spec (encoder), HNPA Atlas (three-gap structure, REPORTED).
+**Date.** 2026-10-27. **Status.** PROPOSED specification. **Parent.** C30.8 MetaSoftBudgetAndProfitability (Meta-plane pricing), C06 TPPE spec (encoder), HNPA Atlas (three-gap structure, REPORTED).
 **Standards.** Documentation-standards (labels); C03.3 (no freeze/vault modification — corrections live here as entries).
 
 ---
@@ -93,7 +93,7 @@ Each independently certifiable, Q32.31-integer, deterministic, composable over f
 
 Each role carries its F-term assignment (an implementer satisfying only efficiency with wrong outputs fails certification — per-role ablation, gate 4):
 
-1. **`phase`** → accuracy: TPE step (bitwise vs oracle; the certified `tpe_phase` kernel path, CORDIC retrofit pending). Better representations = higher Q per joule.
+1. **`phase`** → accuracy: TPPE step (bitwise vs oracle; the certified `tppe_phase` kernel path, CORDIC retrofit pending). Better representations = higher Q per joule.
 2. **`carrier`** → accuracy-per-joule: harmonic/phi/weight MACs (bitwise after CORDIC swap; exact-T reduction proven). Maximizes the numerator of R per MAC dissipated.
 3. **`reduce`** → complexity: TBIK tree (bitwise; intra-kernel topology = inter-device topology). Minimizes joules per query at fixed accuracy.
 4. **`route`** → complexity-per-query: AttentionEconomics allocator (§§2–3 of this doc; integer budgets, deterministic tie-breaks, declared-reference tables). Minimizes queries' total dissipation for the task's Q target.
@@ -125,7 +125,7 @@ The Constraint Network is executable predicates (§6 role 5), not prose. Intelli
 
 ## 8. Spirals, not corkscrews (hard gate, from steward record)
 
-The rejected implementation replaced RoPE 1:1 at constant radius. This spec **requires** radius expansion per the TPE spec §4 laws (`r(w)` strictly increasing, sublinear-asymptotic; `η` monotone in `(w, amp)`; amplitude accumulates drive energy). Gate 12 (no-corkscrew: radius variance ≥ 1000× fixed-point noise floor) is adopted as a kernel gate, not just a spec gate. A constant-radius implementation FAILS certification regardless of its other numbers.
+The rejected implementation replaced RoPE 1:1 at constant radius. This spec **requires** radius expansion per the TPPE spec §4 laws (`r(w)` strictly increasing, sublinear-asymptotic; `η` monotone in `(w, amp)`; amplitude accumulates drive energy). Gate 12 (no-corkscrew: radius variance ≥ 1000× fixed-point noise floor) is adopted as a kernel gate, not just a spec gate. A constant-radius implementation FAILS certification regardless of its other numbers.
 
 ---
 
@@ -151,3 +151,7 @@ The rejected implementation replaced RoPE 1:1 at constant radius. This spec **re
 ## What was NOT checked
 
 RoPE paper beyond excerpts; full HNPA Atlas theory (structure adopted as REPORTED); bakeoff for triple-channel; the unfound Q2.30/BKM kernel and toroidal_q32 sources (steward record says they exist off-disk — ingest on sight); live A/B numbers for the reward falsifier (unrun by design — spec precedes silicon).
+
+## Correction entry 2026-11-02: reward/free-energy equivalence refuted
+
+The claim that maximizing `Q/(H+cN)` necessarily minimizes `F=complexity−accuracy` is false. With `complexity=H+cN` and `accuracy=Q`, action A `(Q,C)=(0.9,3)` has higher reward than B `(0.2,1)`, yet B has lower free energy. The exact-integer counterexample and bounded enumeration are in `results/forward-recall-math/report.tex` and `scripts/verify.rs`. This specification remains PROPOSED, not certified as policy. The ratio may be tested as a separate objective; policy promotion requires a declared quality floor, resource budget, and measured-cost calibration. Landauer's lower bound alone does not establish an alignment guarantee.

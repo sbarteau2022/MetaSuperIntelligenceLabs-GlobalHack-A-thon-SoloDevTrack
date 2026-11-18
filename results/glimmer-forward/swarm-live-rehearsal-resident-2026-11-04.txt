@@ -1,0 +1,50 @@
+booting disposable mind (Surreal + schemas + 4 wells)... ready.
+carving 8 atoms across 4 workers...
+  atom 0 -> scout [planned prefill 18 tokens in 13.6s, resident session 2]: The Zorblax reactor at Quillan Station vents coolant every 47 minutes.
+  atom 1 -> analyst [planned prefill 16 tokens in 11.9s, resident session 3]: Captain Elowen Marsh named her ship the Tern of Halvard.
+  atom 2 -> archivist [planned prefill 18 tokens in 13.5s, resident session 4]: The village of Brindlemoor paints every door violet in the month of March.
+  atom 3 -> engineer [planned prefill 20 tokens in 15.2s, resident session 5]: Professor Okonkwo-Reyes discovered the mineral talvorite in the Kesh Mountains.
+  atom 4 -> scout [planned prefill 18 tokens in 13.9s, resident session 6]: The annual Gantry Lantern Festival is held on the ninth day of Harvest Moon.
+  atom 5 -> analyst [planned prefill 20 tokens in 15.8s, resident session 7]: Vessel Q-17 carries exactly 312 crates of saffron to Port Alderon.
+  atom 6 -> archivist [planned prefill 17 tokens in 13.4s, resident session 8]: The lighthouse keeper at Cape Merrow rings a bronze bell at every low tide.
+  atom 7 -> engineer [planned prefill 17 tokens in 13.4s, resident session 9]: Dr. Ilsabet Fenn invented the pressure loom that weaves glass thread.
+CARVED SWARM on one frozen Muse Glimmer. Type `help`.
+swarm> router: best atom 0 (word overlap 3) belongs to scout
+  worker    : scout (scope: well 0 only)
+  recalled  : live_atom_0 "The Zorblax reactor at Quillan Station vents coolant every 47 minutes."
+  state     : turn 1 — resident K/V state 18 -> 42 tokens; only 15 new tokens sent, no pages shipped
+  answer    : Every 47 minutes.
+  receipt   : weights dbe78c78f207…  kv 312b945a2b82…  (18.7s)
+swarm>   worker    : scout (no recall this turn; only its K/V state)
+  state     : turn 2 — resident K/V state 42 -> 64 tokens; only 13 new tokens sent, no pages shipped
+  answer    : 47
+  receipt   : weights dbe78c78f207…  kv 613783ad64c0…  (17.6s)
+swarm> router: best atom 2 (word overlap 1) belongs to archivist
+  worker    : archivist (scope: well 2 only)
+  recalled  : live_atom_2 "The village of Brindlemoor paints every door violet in the month of March."
+  state     : turn 1 — resident K/V state 18 -> 42 tokens; only 15 new tokens sent, no pages shipped
+  answer    : Violet.
+  receipt   : weights dbe78c78f207…  kv d0085cf8aa42…  (19.5s)
+swarm> router: best atom 2 (word overlap 2) belongs to archivist
+  worker    : archivist (scope: well 2 only)
+  recalled  : live_atom_2 "The village of Brindlemoor paints every door violet in the month of March."
+  state     : turn 2 — resident K/V state 42 -> 69 tokens; only 18 new tokens sent, no pages shipped
+  answer    : March.
+  receipt   : weights dbe78c78f207…  kv 2f2c17b9fb53…  (25.0s)
+swarm>   worker    : archivist (no recall this turn; only its K/V state)
+  state     : turn 3 — resident K/V state 69 -> 92 tokens; only 14 new tokens sent, no pages shipped
+  answer    : Violet.
+  receipt   : weights dbe78c78f207…  kv 15dcace1e7b1…  (18.2s)
+swarm>   worker    : scout (scope: well 0 only)
+  BLOCKED   : the best-matching atom 1 lives in analyst's well; scout can only recall its own
+  recalled  : live_atom_0 "The Zorblax reactor at Quillan Station vents coolant every 47 minutes."
+  state     : turn 3 — resident K/V state 64 -> 89 tokens; only 16 new tokens sent, no pages shipped
+  answer    : The ship was named the "Starlight Seren
+  receipt   : weights dbe78c78f207…  kv b0f8066385c7…  (20.6s)
+swarm> one weight set: dbe78c78f2072bd53add370dcce8d39bd9779c477af79cab8797747683941a7e
+atoms: 8  kv hits: 6  full forwards: 0
+  scout        well 0: 2 atoms, 3 answers, 56.9s
+  analyst      well 1: 2 atoms, 0 answers, 0.0s
+  archivist    well 2: 2 atoms, 3 answers, 62.7s
+  engineer     well 3: 2 atoms, 0 answers, 0.0s
+swarm> 

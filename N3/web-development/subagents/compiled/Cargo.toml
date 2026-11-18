@@ -1,0 +1,29 @@
+[package]
+name = "kimi_subagents_b"
+version = "0.1.0"
+edition = "2021"
+description = "Kimi subagents slice B (graph/workbench/critic) compiled lifecycles — Agent A6 Wave 2"
+
+[[bin]]
+name = "kimi_webgl_graph_coder"
+path = "kimi_webgl_graph_coder.rs"
+
+[[bin]]
+name = "kimi_workbench_ide_coder"
+path = "kimi_workbench_ide_coder.rs"
+
+[[bin]]
+name = "kimi_visual_qa_critic"
+path = "kimi_visual_qa_critic.rs"
+
+[[bin]]
+name = "kimi_ui_explorer"
+path = "kimi_ui_explorer.rs"
+
+[[bin]]
+name = "kimi_state_dag_architect"
+path = "kimi_state_dag_architect.rs"
+
+[[bin]]
+name = "kimi_surface_motion_coder"
+path = "kimi_surface_motion_coder.rs"

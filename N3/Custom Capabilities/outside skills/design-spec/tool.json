@@ -1,0 +1,13 @@
+{
+  "name": "spec-gate",
+  "description": "Validate a design spec: purpose + non-goals, numbered rules, edge table, failure behavior, invariants, >=3 hand-computed examples; claims sealed before build.",
+  "parameters": {
+    "purpose_set": { "type": "boolean", "description": "true: purpose paragraph written" },
+    "non_goals_set": { "type": "boolean", "description": "true: non-goals listed" },
+    "rules_numbered": { "type": "boolean", "description": "true: one-sentence numbered rules with precedence" },
+    "edge_table_done": { "type": "boolean", "description": "true: t-1/t/t+1 edge table present" },
+    "examples_count": { "type": "number", "description": ">= 3 hand-computed worked examples" },
+    "sealed": { "type": "boolean", "description": "true: CLAIMS.md sealed before implementation" }
+  },
+  "required": ["purpose_set", "non_goals_set", "rules_numbered", "edge_table_done", "examples_count"]
+}

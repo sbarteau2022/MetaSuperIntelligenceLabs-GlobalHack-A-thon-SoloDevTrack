@@ -1,0 +1,34 @@
+Lane 3 — Candidate extractor — end-of-lane report
+Date: 2026-11-02
+Hardware: Apple M5 Pro, arm64, macOS 27.0.1
+Files (lane-owned only): src/extract/mod.rs (+ lib.rs registration)
+
+WHAT LANDED
+extract() consumes lane-1 envelopes and emits typed rank-0/1/2/8
+candidates. Atom identity (atom_key) binds kind/dtype/shape/layer/head/
+payload digest only: teacher identity and token position never enter a
+candidate digest, coordinate, novelty input, or ranking. Rank-0 coalesces
+per atom key; rank-1 from consecutive distinct walk atoms; rank-2 when the
+walk revisits an atom; rank-8 from weight traces with checked tangent
+bytes. KeyValue traces never enter semantic extraction. Coordinates derive
+from the teacher-neutral atom key on the unit hyperboloid; well = key
+byte mod 12 (specified topology, not certified).
+
+COMMANDS AND RESULTS
+cargo test --lib -> 25 passed, 0 failed (includes 4 extractor tests)
+  twin_teachers_coalesce_to_identical_candidates (digests, coordinates,
+  phases, wells byte-identical across two model digests)
+  walk_emits_rank0_rank1_and_loop (rank0=2, rank1=1, rank2=1 on [A,A,B])
+  kv_traces_never_enter_semantic_extraction
+  weight_trace_emits_rank8_chart
+
+FAILURES FOUND AND FIXED DURING THE LANE
+1. Walk dedup destroyed revisits -> walk retains revisits; rank-0 set
+   coalesces separately.
+2. Atom identity bound token position, making loop closure impossible
+   against trajectory_step_transition_unique -> atom_key excludes position.
+
+UNTOUCHED GATES
+No real forward-pass extraction has run; the extractor is proven on
+constructed envelopes and consumed end-to-end by lane 5. Real activation
+capture remains upstream.

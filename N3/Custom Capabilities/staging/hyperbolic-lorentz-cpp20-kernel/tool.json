@@ -1,0 +1,9 @@
+{
+  "name": "lorentz-kernel-gate",
+  "description": "Validate the C++20 Lorentz kernel contract: constexpr Q32.31 Minkowski inner product via __int128_t, static_assert proof, clang++ -std=c++20 -fsyntax-only clean.",
+  "parameters": {
+    "constexpr_ok": { "type": "boolean", "description": "true: constexpr evaluation + static_assert proof hold" },
+    "syntax_ok": { "type": "boolean", "description": "true: clang++ -std=c++20 -fsyntax-only clean" }
+  },
+  "required": ["constexpr_ok", "syntax_ok"]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "brain-action-gate",
+  "description": "Validate an atoma-brain action: checkpoint-status status/save_note withnote gating, carve-specialist domain allowlist, checkpoint path constant.",
+  "parameters": {
+    "action": { "type": "string", "description": "'status' or 'save_note'" },
+    "domain": { "type": "string", "description": "'coding_intensive'|'security_cyber'|'physics_math'|'legal_statutory'|'medical_clinical'" },
+    "note_present": { "type": "boolean", "description": "true: save_note carries non-empty milestone note" }
+  },
+  "required": ["action", "domain"]
+}

@@ -1,0 +1,93 @@
+Capability Atlas minimum vertical slice: end-of-lane audit report
+Date: 2026-11-02 (UTC). Owner: capability-lane agent (this session).
+Scope: globalmind-runtime/src/capability/vertical_slice.rs (new),
+  one-line module registration in src/capability/mod.rs, this report, README rows.
+No other lane's files were edited. No writes outside the canonical repo.
+Nothing staged, committed, or pushed.
+
+1. What was built
+- Minimum vertical slice fixture (13 profiles, 17 edges) for one real problem:
+  read-only verification of the isolated SurrealDB contract before the model
+  forward-pass smoke. Contents: 1 problem_pattern, 2 solution_family (near +
+  remote distractor), 1 capability, 1 qualified runbook, 1 mcp_server, 1 live
+  read-only tool, 1 unavailable conflicting tool (LocalWrite, absent from the
+  registry, conflicts_with the live tool, failed_on a failure_pattern),
+  1 evidence-backed fallback tool (fallback_for + verified_by), 1 benched
+  tool, 1 mandatory policy_rule (enforced_by), 1 evidence_receipt,
+  1 failure_pattern. A deliberate runbook<->tool composes_with cycle proves
+  the execution DAG stays acyclic when Atlas neighborhoods cycle.
+- 15 audit tests covering every pre-smoke gate provable in this lane
+  (16th capability test pre-existed).
+
+2. Exact digests (SHA-256)
+- globalmind-runtime/src/capability/vertical_slice.rs:
+  717dd762e34a06148f547495329915d08b73975730bd89e78d18ff0adaf8a10e
+- globalmind-runtime/src/capability/mod.rs:
+  718f412c568c0c40df40bed8d58ddd370a649a6ff149902642dbac7773b4e0ce
+- hypermind-nested-kv/schema/0012_capability_atlas.surql:
+  f68797eac29558099d2a9933fda05c13b1ce4c60b7c85ad3964a0c849b5ac1f6
+- No model/config/tokenizer artifacts loaded in this lane (planner + schema
+  scope only). SurrealDB 3.3.5 macos/aarch64, ephemeral isolated instance on a
+  random 127.0.0.1 port, namespace vs_cap_audit / database atlas_audit,
+  surrealkv temp storage, destroyed after the test. Live hypermind/core and
+  port 8000 never contacted.
+
+3. Runtime / hardware
+- rustc 1.99.0 (Homebrew), Apple M5 Pro arm64, macOS 27.0.1.
+- Full lib suite: 40 passed in ~7.6s (DB audit test ~7.3s). Latency/memory/
+  power bakeoffs are not in this lane's scope; no resource claim is made.
+
+4. Commands (run in globalmind-runtime/)
+- cargo fmt --check                        -> PASS
+- cargo check --lib                        -> PASS
+- cargo check --tests                      -> PASS
+- cargo clippy --lib -- -D warnings        -> PASS
+- cargo test --lib                         -> 40 passed, 0 failed
+- cargo test --lib capability              -> 16 passed, 0 failed
+
+5. Audit gate results (one line per pre-smoke gate)
+- one authority / no duplicate maps: slice attaches every profile to one
+  workspace + semantic atom/address/well; zero tensor-K/V references. PASS
+- 12 kinds / 13 edge kinds schema-enforced: Rust parse/tag roundtrips plus
+  live INFO FOR TABLE listing all kinds as READONLY. PASS
+- untyped/missing/duplicate/overwrite fail closed atomically: 5 live
+  negatives rejected; counts 2 profiles / 0 edges, summary byte-identical
+  afterward. PASS
+- 2-hop retrieval reaches a qualified composition: nearest family selected,
+  live tool ranked first within the 2-hop neighborhood. PASS
+- live-registry reconciliation: 8 mismatch classes (missing, not-installed,
+  unhealthy, version, arg/result/config digest, permission) each rejected
+  with its exact variant. PASS
+- unavailable/unauthorized/conflicting/benched/digest-mismatched excluded
+  before planning: excluded_profiles records each reason; none ranked. PASS
+- DAG acyclic despite Atlas cycle: raw cycle asserted present;
+  verify_acyclic passes. PASS
+- mandatory rules enforced with Atlas offline: gate blocks write effects,
+  oversize timeout/memory, JSON/Python/text-tensor payloads, missing GMBI
+  header; allows valid binary. PASS
+- only selected contracts enter context: frame projection set exactly
+  {live tool, runbook, mcp}; binary roundtrip clean. PASS
+- no JSON/Python/text-tensor in model I/O: GMBI header + payload-scan
+  enforcement at request and response boundaries. PASS
+- restart replay identical: envelope-persisted snapshot re-plans to
+  identical ranked IDs, neighborhood, DAG digest, and frame bytes. PASS
+- real read-only tool call Atlas->registry->planner->harness: executor
+  performed a REAL disk read of migration 0012 and returned a GMBI
+  envelope; policy/execution/utility receipts recorded; drifted-registry
+  replay failed closed. PASS (harness executor supplied by this lane's
+  test; full research-harness plugin wiring remains lane 7.)
+
+6. Failures during development (all fixed before this report)
+- Second audit profile reused one atom: schema's 1-to-1 unique index
+  correctly rejected it; gave it its own atom/address. Schema behaved.
+- Test-only imports tripped clippy -D warnings; moved into tests module.
+- macOS has no setsid: drove the audit DB from in-process spawned
+  `surreal start` (own helper, ephemeral port, temp storage, Drop guard).
+  No stray processes or storage remain.
+
+7. Untouched gates (explicitly NOT claimed)
+- Broad Atlas population beyond the slice; fixed real task-set benchmark.
+- Research-harness plugin wiring and forward-pass smoke (lane 7).
+- Surreal backup/restore, concurrency, and corruption gates for 0012.
+- Model distillation/trace/judge/replay progress (other lanes).
+- No certification claimed; this is slice + schema + planner evidence only.

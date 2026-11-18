@@ -51,6 +51,21 @@ fn cache_exact_coverage() {
 }
 
 #[test]
+fn radix_key_separates_parent_token_and_model_lane() {
+    let cache = Cache::new("model", "tokenizer", "q4", 10);
+    assert_ne!(cache.key(Some("a"), "b"), cache.key(None, "ab"));
+    assert_ne!(cache.key(Some("ab"), "c"), cache.key(Some("a"), "bc"));
+    assert_eq!(cache.key(Some("a"), "b"), cache.key(Some("a"), "b"));
+    for other in [
+        Cache::new("other-model", "tokenizer", "q4", 10),
+        Cache::new("model", "other-tokenizer", "q4", 10),
+        Cache::new("model", "tokenizer", "q8", 10),
+    ] {
+        assert_ne!(cache.key(Some("a"), "b"), other.key(Some("a"), "b"));
+    }
+}
+
+#[test]
 fn rsi_keep_base_when_no_gain() {
     // Deterministic stub probe (unit-test only, NOT ship evidence): base and
     // candidates all pass equally -> gain 0.0 inside the 0.02 band -> KEEP_BASE.
@@ -165,10 +180,12 @@ fn receipt_resume() {
         attempt: 1,
         outcome: "PASS".into(),
         judge_ids: vec![],
-        evidence_hash: "h".into(),
+        evidence_hash: String::new(),
         energy_joules: 1.0,
         erased_bits: 4,
         timestamp_ms: 0,
+        prev_hash: String::new(),
+        n3_receipts: vec![],
     });
     assert!(log.resume_skips("x"));
 }

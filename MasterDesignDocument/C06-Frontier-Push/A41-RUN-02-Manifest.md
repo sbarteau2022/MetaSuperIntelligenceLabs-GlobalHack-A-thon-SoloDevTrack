@@ -28,8 +28,8 @@
 ## 3. Scripts (frozen for this run)
 
 - `a41_task_run.py` — instrument (2AFC, content-coupled drives, windowed readout). **RUN-02 delta (preregistered here, not a silent change):** `--taus` grid flag + `--omega` stall arm + per-item `B` ledger already present; no J1/threshold edits.
-- `tpe_rope_sidebyside.py` — analytic confirmation (unchanged from RUN-01).
-- `tpe_fep_budget.py` — budget law (unchanged; P6 5/5).
+- `tppe_rope_sidebyside.py` — analytic confirmation (unchanged from RUN-01).
+- `tppe_fep_budget.py` — budget law (unchanged; P6 5/5).
 
 ## 4. Decision mapping (binds the report before it exists)
 

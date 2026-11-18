@@ -1,0 +1,13 @@
+{
+  "name": "debug-gate",
+  "description": "Validate a debug run: smallest repro, failing test first, cause (not symptom) fixed, suite green; deploy only with rollback + secrets confirmed.",
+  "parameters": {
+    "reproduced": { "type": "boolean", "description": "true: smallest failing input reproduced" },
+    "failing_test": { "type": "boolean", "description": "true: failing test written first" },
+    "cause_fixed": { "type": "boolean", "description": "true: root cause fixed, not symptom-patched" },
+    "suite_green": { "type": "boolean", "description": "true: new test + old suite pass" },
+    "rollback_ready": { "type": "boolean", "description": "true: rollback written and tried" },
+    "secrets_ok": { "type": "boolean", "description": "true: config/secrets present, none in repo" }
+  },
+  "required": ["reproduced", "failing_test", "cause_fixed", "suite_green"]
+}

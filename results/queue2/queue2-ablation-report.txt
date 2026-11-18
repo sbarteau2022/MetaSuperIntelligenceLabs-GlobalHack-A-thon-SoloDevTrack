@@ -1,0 +1,80 @@
+Queue 2 causal ablations: execution report
+Date: 2026-11-02 (UTC). Owner: queue-2 agent (this session).
+
+CORRECTION 2026-11-02: A4 is INVALIDATED_BY_AUDIT, not complete. Its previous
+quality/control metric was structurally incapable of supporting a bench verdict.
+No positional encoder is benched or promoted. A3 is MEASURED_COMPONENT_ONLY and
+does not select a geometry. See `ADVERSARIAL-AUDIT-2026-11-02.md` and
+`tppe-bench-v2-smoke.txt`. All original raw numbers remain below for provenance.
+
+Frozen baseline (shared by all leaves): Qwen3.6-MoE-Combined,
+input_digest=cf80d582fa1528b356586d71ca221c69af1a935e9e1159f8409e83b3992d4c08,
+Apple M5 Pro arm64, macOS 27.0.1, rustc 1.99.0, SurrealDB 3.3.5.
+Nothing staged, committed, or pushed. No other lane's files edited.
+
+G0 — REAL FORWARD E2E (prerequisite leaf): PASS (VERIFIED)
+- Constructed GMTT tape (5 arbitrary ids < 248320; operator shell
+  tooling, Rust-validated on decode), release `trace` CLI.
+- token_tape_digest=939717953eaa81cefa5fee75a8a19fa81d133cf25ee91db08a3be5302787aa5b
+- control_logits_digest == observed_logits_digest
+  (89a659238af6e918889b38fc12d2f69003a4911a585d95d9d085636157db20ff),
+  max_logit_abs_diff=0 (bit-exact nonperturbation).
+- 9 envelopes, 10691 bytes; wall 37.2s (20GB rehash + dual forward).
+
+A4 — POSITION ENCODER (Q2.4): INVALIDATED_BY_AUDIT — RERUN REQUIRED
+- The v1 qualifier verdict formerly recorded here is VOID (see header
+  correction and ADVERSARIAL-AUDIT-2026-11-02.md Q2-M1..Q2-M4). The
+  historical raw rows below are provenance only and do not measure
+  encoder quality:
+  trace_set_digest=d5e3fbf0f3582ab9df9382cc80b288835d3a821d907055fb06fb850f63f7b659
+  linear_log_v1 0.088435 / log_v1 0.088435 / angle_only 0.088435 /
+  rope_control 0.085108 / full_forward ceiling 0.000000. [ALL VOID]
+- Corrected runner (globalmind-tppe-qualify v2) installs native RoPE,
+  angle-only toroidal, linear_log_v1, and log_v1 at the same real
+  Layer-3 Q/K boundary (rope_theta=10,000,000,
+  partial_rotary_factor=0.25, head_dim=256) and measures actual
+  next-token NLL over 248,320 logits, real wall time, and logit
+  divergence, with execution order rotated across repeats.
+- Corrected smoke (1 repeat, 2 predictions; NOT decision-grade):
+  native_rope NLL=16.281320702 wall=829.6ms; angle_only
+  NLL=16.281293674 wall=841.4ms; tppe_linear_log_v1 NLL=16.281336114
+  wall=850.3ms; tppe_log_v1 NLL=16.281337291 wall=877.1ms.
+  See tppe-bench-v2-smoke.txt.
+- Q2.4 must be rerun completely on a contamination-checked held-out
+  task/token suite with counterbalanced repeats before any encoder
+  is promoted or benched. Status: OPEN_REQUIRES_HELD_OUT_TASK_TAPE.
+
+A3-slice — GEOMETRY RETRIEVAL (Q2.3, retrieval level only): MEASURED
+- 200 deterministic on-sheet atoms, 5 queries, k=10, both metrics,
+  isolated SurrealDB (new probe test in owned retrieval file).
+- Hyperbolic 273ms / flat 252ms for 10 retrievals each (~27/~25
+  ms per retrieval incl. HTTP); top-10 overlap q0 = 5/10;
+  rerun ranking digests identical. NO task-quality claim: the
+  ablation stays open until a forward task harness exists.
+
+FAIL-EXPLAINED (blocked, named missing piece, no blind retry):
+- A1 memory value / A2 trajectory value: no recall-into-forward
+  injection (forward harness must consume the GMRC bundle).
+- A5 retrieval depth: 1-shot kNN only; no multi-hop traversal.
+- A6 forward allocation: ForwardMode is enum-only; no TIT or
+  partial-forward executor exists.
+- A7 model swap: one loadable model (Qwen3.6 safetensors; engine
+  is Qwen3.6-specific, other checkouts are MLX format).
+- A8 judge independence: single judge implementation; no
+  separate frozen judge, no adversarial disagreement set.
+- A9 K/V contribution: semantic arm blocked (injection); K/V
+  miss proof exists as REPORTED lane-6 receipt (20/20).
+- A10 surprise controller: no controller implementation.
+
+BENCHED: none. The v1 bench verdict is void; no encoder was validly
+benched on any input.
+PROMOTED: none.
+HELD-OUT TASK SUITE REQUIRED before Q2.4 can close.
+
+GATES: retrieval 7/7; full lib 64/64, 0 failed; rustfmt clean on
+owned file (crate-wide fmt flags another lane's bin lines, left
+untouched); clippy zero hits in owned file.
+SHA-256 src/retrieval/mod.rs (1210 lines):
+8acf1ba7617625d97eef34c93e9741f1df7f60b92cac9394bca40cf026a1628e
+OPEN: task harness for quality-gated ablations; injection owner;
+queues 3-5 stay gated. No certification claimed.

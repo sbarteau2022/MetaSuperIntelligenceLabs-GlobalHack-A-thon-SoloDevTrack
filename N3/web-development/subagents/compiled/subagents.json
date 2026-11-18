@@ -1,0 +1,330 @@
+{
+  "version": "1.0.0",
+  "slice": "agents 1-6 merged (A5 slices 1-3 + A6 slices 4-6)",
+  "date": "2026-10-31",
+  "status": "COMPILED",
+  "contract": "SUBAGENT_SWARM_LOGIC.md (orchestration: Explorer -> Architect contracts gate -> parallel coders disjoint ownership -> Critic sole verifier) + GLOBAL-LOGIC.md section 6 (VERIFICATION RULE: coders never self-approve; critic patch re-enters layer (b); loop exit at failing layer)",
+  "agents": [
+    {
+      "name": "kimi-webgl-graph-coder",
+      "slice": "4/6",
+      "role": "WebGL, R3F, Knowledge Graph & DAG Engineer",
+      "source": "kimi_webgl_graph_coder.rs",
+      "struct": "WebglGraphCoder",
+      "lifecycle": [
+        "create",
+        "inject",
+        "run",
+        "dispose"
+      ],
+      "typed_io": {
+        "inject": "RuntimeContext { workspace_root, contracts_ready }",
+        "run_in": "GraphCoderInput { scene, node_count }",
+        "run_out": "GraphCoderOutput { files, fps_class, instanced }"
+      },
+      "owns_write": [
+        "src/components/canvas/",
+        "src/components/graph/",
+        "src/components/dag/"
+      ],
+      "never_writes": [
+        "src/types/",
+        "src/store/",
+        "src/components/layout/",
+        "src/components/ui/",
+        "src/styles/"
+      ],
+      "tools_verbatim_from_definitions_json": {
+        "EnableWriteTools": true,
+        "EnableMCPTools": false,
+        "EnableSubagentTools": false
+      },
+      "judges": [
+        "TsgoTsc",
+        "AuditSh",
+        "ViteBuild",
+        "CriticGate"
+      ],
+      "escalation": {
+        "max_strikes_same_layer": 2,
+        "route": "human queue"
+      },
+      "disposers": [
+        "r3f-canvas",
+        "force-simulation",
+        "elk-layout-worker"
+      ]
+    },
+    {
+      "name": "kimi-workbench-ide-coder",
+      "slice": "5/6",
+      "role": "Dockview Workbench, Monaco & CodeMirror Specialist",
+      "source": "kimi_workbench_ide_coder.rs",
+      "struct": "WorkbenchIdeCoder",
+      "lifecycle": [
+        "create",
+        "inject",
+        "run",
+        "dispose"
+      ],
+      "typed_io": {
+        "inject": "RuntimeContext { workspace_root, contracts_ready }",
+        "run_in": "WorkbenchCoderInput { workbench, pane_count }",
+        "run_out": "WorkbenchCoderOutput { files, layout_serializable, workers_configured }"
+      },
+      "owns_write": [
+        "src/components/workbench/",
+        "src/components/editors/"
+      ],
+      "never_writes": [
+        "src/types/",
+        "src/store/",
+        "src/components/layout/",
+        "src/components/ui/",
+        "src/styles/",
+        "src/components/canvas/",
+        "src/components/graph/",
+        "src/components/dag/"
+      ],
+      "tools_verbatim_from_definitions_json": {
+        "EnableWriteTools": true,
+        "EnableMCPTools": false,
+        "EnableSubagentTools": false
+      },
+      "judges": [
+        "TsgoTsc",
+        "AuditSh",
+        "ViteBuild",
+        "CriticGate"
+      ],
+      "escalation": {
+        "max_strikes_same_layer": 2,
+        "route": "human queue"
+      },
+      "disposers": [
+        "dockview-api",
+        "monaco-models",
+        "codemirror-state"
+      ]
+    },
+    {
+      "name": "kimi-visual-qa-critic",
+      "slice": "6/6",
+      "role": "Vision-in-the-Loop Browser QA Critic (sole verifier)",
+      "source": "kimi_visual_qa_critic.rs",
+      "struct": "VisualQaCritic",
+      "lifecycle": [
+        "create",
+        "inject",
+        "run",
+        "dispose"
+      ],
+      "typed_io": {
+        "inject": "RuntimeContext { workspace_root, preview_url }",
+        "run_in": "CriticInput { console_errors, network_404s, horizontal_overflow, zero_dimension_canvases, patched }",
+        "run_out": "CriticOutput { verdict: Pass|Fail, needs_layer_b_reentry }"
+      },
+      "owns_write": [
+        "qa/verdicts/",
+        "qa/screenshots/"
+      ],
+      "patch_scope": "CSS/TSX defect patches only; every critic-introduced change re-enters judge layer (b)",
+      "tools_verbatim_from_definitions_json": {
+        "EnableWriteTools": true,
+        "EnableMCPTools": true,
+        "EnableSubagentTools": false
+      },
+      "mcp_tool": "chrome-devtools-mcp",
+      "sole_mcp_holder": true,
+      "judges": [
+        "TsgoTsc",
+        "AuditSh",
+        "ViteBuild",
+        "CriticGate(self)"
+      ],
+      "escalation": {
+        "max_strikes_same_layer": 2,
+        "route": "human queue"
+      },
+      "disposers": [
+        "devtools-session",
+        "screenshot-buffers",
+        "patch-workspace"
+      ],
+      "viewports": {
+        "desktop": [
+          1440,
+          900
+        ],
+        "mobile": [
+          390,
+          844
+        ]
+      }
+    },
+    {
+      "name": "kimi-ui-explorer",
+      "slice": "1/6",
+      "role": "Frontend Codebase & Token Explorer (read-only scanner)",
+      "source": "kimi_ui_explorer.rs",
+      "struct": "UiExplorer",
+      "lifecycle": [
+        "create",
+        "inject",
+        "run",
+        "dispose"
+      ],
+      "typed_io": {
+        "inject": "RuntimeContext { workspace_root } (NO contracts gate \u2014 runs first)",
+        "run_in": "ExplorerInput { paths_scanned }",
+        "run_out": "ExplorerBrief { sections[4], line_count<=60, missing_deps }"
+      },
+      "owns_write": [],
+      "never_writes": [
+        "src/types/",
+        "src/store/",
+        "src/components/layout/",
+        "src/components/ui/",
+        "src/styles/",
+        "src/components/canvas/",
+        "src/components/graph/",
+        "src/components/dag/",
+        "src/components/workbench/",
+        "src/components/editors/",
+        "qa/verdicts/",
+        "qa/screenshots/"
+      ],
+      "zero_writes_proof": "explorer_performs_zero_writes + unload_in_temp_workspace_drops_all_handles_no_files tests",
+      "tools_verbatim_from_definitions_json": {
+        "EnableWriteTools": false,
+        "EnableMCPTools": false,
+        "EnableSubagentTools": false
+      },
+      "judges": [
+        "ReadOnlyGate",
+        "BriefBudget",
+        "HandoffComplete"
+      ],
+      "brief_budget_lines": 60,
+      "escalation": {
+        "max_strikes_same_layer": 2,
+        "route": "human queue"
+      },
+      "disposers": [
+        "scan-handles",
+        "token-cache",
+        "brief-buffer"
+      ]
+    },
+    {
+      "name": "kimi-state-dag-architect",
+      "slice": "2/6",
+      "role": "State Machine, Type & Graph Architect",
+      "source": "kimi_state_dag_architect.rs",
+      "struct": "StateDagArchitect",
+      "lifecycle": [
+        "create",
+        "inject",
+        "run",
+        "dispose"
+      ],
+      "typed_io": {
+        "inject": "RuntimeContext { workspace_root } (creates contracts; no upstream gate)",
+        "run_in": "ArchitectInput { domains }",
+        "run_out": "ArchitectOutput { files, contracts_ready=true }"
+      },
+      "owns_write": [
+        "src/types/",
+        "src/store/"
+      ],
+      "never_writes": [
+        "src/components/layout/",
+        "src/components/ui/",
+        "src/styles/",
+        "src/components/canvas/",
+        "src/components/graph/",
+        "src/components/dag/",
+        "src/components/workbench/",
+        "src/components/editors/",
+        "qa/verdicts/",
+        "qa/screenshots/"
+      ],
+      "contracts_gate": "coders (surface + A6 graph/workbench) reject inject unless contracts_ready \u2014 inject_requires_contracts_gate tests",
+      "tools_verbatim_from_definitions_json": {
+        "EnableWriteTools": true,
+        "EnableMCPTools": false,
+        "EnableSubagentTools": false
+      },
+      "judges": [
+        "TsgoTsc",
+        "AuditSh",
+        "ViteBuild",
+        "CriticGate"
+      ],
+      "escalation": {
+        "max_strikes_same_layer": 2,
+        "route": "human queue"
+      },
+      "disposers": [
+        "types-buffer",
+        "store-buffer",
+        "dag-schema-cache"
+      ]
+    },
+    {
+      "name": "kimi-surface-motion-coder",
+      "slice": "3/6",
+      "role": "Principal UI Surface & Motion Choreographer",
+      "source": "kimi_surface_motion_coder.rs",
+      "struct": "SurfaceMotionCoder",
+      "lifecycle": [
+        "create",
+        "inject",
+        "run",
+        "dispose"
+      ],
+      "typed_io": {
+        "inject": "RuntimeContext { workspace_root, contracts_ready }",
+        "run_in": "SurfaceCoderInput { surface }",
+        "run_out": "SurfaceCoderOutput { files, bezel=double-bezel-doppelrand }"
+      },
+      "owns_write": [
+        "src/components/layout/",
+        "src/components/ui/",
+        "src/styles/"
+      ],
+      "never_writes": [
+        "src/types/",
+        "src/store/",
+        "src/components/canvas/",
+        "src/components/graph/",
+        "src/components/dag/",
+        "src/components/workbench/",
+        "src/components/editors/",
+        "qa/verdicts/",
+        "qa/screenshots/"
+      ],
+      "tools_verbatim_from_definitions_json": {
+        "EnableWriteTools": true,
+        "EnableMCPTools": false,
+        "EnableSubagentTools": false
+      },
+      "judges": [
+        "TsgoTsc",
+        "AuditSh",
+        "ViteBuild",
+        "CriticGate"
+      ],
+      "escalation": {
+        "max_strikes_same_layer": 2,
+        "route": "human queue"
+      },
+      "disposers": [
+        "theme-sheet",
+        "bezel-components",
+        "motion-choreography"
+      ]
+    }
+  ],
+  "agent5_slice_a": "MERGED 2026-10-31: A5 appended entries 1-3 verbatim; A6 entries 4-6 preserved byte-identical"
+}

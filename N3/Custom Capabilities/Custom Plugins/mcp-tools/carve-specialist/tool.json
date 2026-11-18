@@ -1,0 +1,11 @@
+{
+  "name": "carve-specialist",
+  "description": "Query the 12-Basin Hyperbolic Active Mind specialist carving profile and Gauss-Bonnet holonomy for a domain.",
+  "parameters": {
+    "domain": {
+      "type": "string",
+      "description": "coding_intensive, security_cyber, physics_math, legal_statutory, or medical_clinical"
+    }
+  },
+  "required": ["domain"]
+}

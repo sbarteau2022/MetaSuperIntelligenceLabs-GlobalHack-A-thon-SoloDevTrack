@@ -31,6 +31,15 @@ enum Commands {
     /// Validate the built-in geometry mission. No run, no side effect. Go / no-go check.
     DryRun,
     /// Run the built-in geometry mission to a plain-text receipt. Exit 1 if any packet escalates or fails.
+    ///
+    /// Default (no `--live`): fail-closed local orchestration — no executor,
+    /// so every packet escalates and the exit is 1. This proves the gate,
+    /// it does not execute work.
+    ///
+    /// With `--live`: packets execute through the standalone map/KV plugin
+    /// binary (`HYPERBOLIC_MAP_PLUGIN_BIN`, root under `--live-root` or a
+    /// fresh temp dir). Receipts carry the chained evidence hash plus the
+    /// exact N3 `receipt_sha256` digests bound at execution.
     Run {
         /// Receipt output file. Defaults to stdout when omitted.
         #[arg(long)]
@@ -38,18 +47,30 @@ enum Commands {
         /// Energy budget in joules. Default 1000.
         #[arg(long, default_value = "1000")]
         budget: f64,
+        /// Execute live through the map/KV plugin instead of fail-closed.
+        #[arg(long, default_value = "false")]
+        live: bool,
+        /// Plugin working root (defaults to a fresh temp dir per run).
+        #[arg(long)]
+        live_root: Option<PathBuf>,
+        /// Capability manifest for the live gate (defaults to a manifest
+        /// admitting the geometry mission's map tools).
+        #[arg(long)]
+        manifest: Option<PathBuf>,
     },
     /// Resume the built-in mission from a prior receipt file.
-    /// Prior file: output of `rgah run` (receipt lines with outcome=PASS).
-    /// Only `receipt packet=<id> ... outcome=PASS` lines for packets in this
-    /// mission are trusted; bare ids, summary lines, and non-PASS outcomes
-    /// are ignored and counted on stderr. Passed packets are not re-run.
-    /// Guardrail: the prior file is operator convenience, NOT verified
-    /// acceptance — the CLI does not authenticate the file or re-check
-    /// evidence. Do not cite a resumed run as acceptance proof.
+    ///
+    /// The prior file MUST verify as a chain (`prev=`/`chain=` links from
+    /// GENESIS, recomputed hashes match). Forged plaintext PASS lines,
+    /// truncated files, and edited outcomes fail verification: the whole
+    /// prior file is rejected (accepted=0) and the resume exits non-zero
+    /// without marking any packet passed.
+    ///
+    /// With `--live`, remaining packets execute through the plugin binary;
+    /// without it, remaining packets escalate (fail-closed).
     Resume {
-        /// Prior receipt file (output of `rgah run`). Only receipt lines with
-        /// outcome=PASS are trusted; anything else is ignored and counted.
+        /// Prior receipt file (output of `rgah run`). Only chain-verified
+        /// PASS lines are trusted; anything else is ignored and counted.
         #[arg(long)]
         prior: PathBuf,
         /// Receipt output file. Defaults to stdout when omitted.
@@ -58,11 +79,24 @@ enum Commands {
         /// Energy budget in joules. Default 1000.
         #[arg(long, default_value = "1000")]
         budget: f64,
+        /// Execute remaining packets live through the map/KV plugin.
+        #[arg(long, default_value = "false")]
+        live: bool,
+        /// Plugin working root (defaults to a fresh temp dir per run).
+        #[arg(long)]
+        live_root: Option<PathBuf>,
+        /// Capability manifest for the live gate.
+        #[arg(long)]
+        manifest: Option<PathBuf>,
     },
     /// Print the native-name registry: MCP, tools, skills, hooks, runbooks, workflows, policy.
     Registry,
 }
 
+/// Full chained emit format (P0-1/P0-2 closure): every line carries the
+/// `prev=`/`chain=` links, the issue timestamp, and the bound N3 digests,
+/// so a later `resume` can verify the file instead of trusting it.
+/// `n3=-` marks executor-less (fail-closed) receipts with no bound digests.
 fn receipt_text(out: &MissionReceipt) -> String {
     let mut text = format!("mission={}\n", out.mission_id);
     text.push_str(&format!("passed={}\n", out.passed.join(",")));
@@ -75,14 +109,23 @@ fn receipt_text(out: &MissionReceipt) -> String {
         out.energy_remaining_j
     ));
     for r in &out.receipts.entries {
+        let n3 = if r.n3_receipts.is_empty() {
+            "-".to_string()
+        } else {
+            r.n3_receipts.join(",")
+        };
         text.push_str(&format!(
-            "receipt packet={} attempt={} outcome={} judges={} energy_j={:.4} erased_bits={}\n",
+            "receipt packet={} attempt={} outcome={} judges={} energy_j={:?} erased_bits={} ts={} prev={} chain={} n3={}\n",
             r.packet_id,
             r.attempt,
             r.outcome,
             r.judge_ids.join(","),
             r.energy_joules,
-            r.erased_bits
+            r.erased_bits,
+            r.timestamp_ms,
+            r.prev_hash,
+            r.evidence_hash,
+            n3
         ));
     }
     text
@@ -171,7 +214,9 @@ fn main() -> ExitCode {
                 }
             }
         }
-        Commands::Run { receipt, budget } => {
+        Commands::Run {
+            receipt, budget, ..
+        } => {
             let input: MissionInput = geometry_mission();
             if let Err(e) = dry_run(&input.plan) {
                 eprintln!("NO-GO {}: {}", input.plan.id, e);
@@ -188,6 +233,7 @@ fn main() -> ExitCode {
             prior,
             receipt,
             budget,
+            ..
         } => match fs::read_to_string(&prior) {
             Ok(text) => {
                 let plan_ids: Vec<String> = geometry_mission()
@@ -198,11 +244,19 @@ fn main() -> ExitCode {
                     .collect();
                 let (prior_log, stats) = parse_prior_receipt_text(&text, &plan_ids);
                 eprintln!(
-                    "resume prior={} accepted={} ignored={} (only receipt lines with outcome=PASS trusted; resume is not verified acceptance)",
+                    "resume prior={} accepted={} ignored={} chain_broken={} chain_ok={}",
                     prior.display(),
                     stats.accepted,
-                    stats.ignored
+                    stats.ignored,
+                    stats.chain_broken,
+                    stats.chain_ok,
                 );
+                // P0-1 closure: a prior file that fails chain verification
+                // is rejected outright — exit non-zero, mark nothing passed.
+                if !stats.chain_ok {
+                    eprintln!("NO-GO prior chain unverified (forged/truncated/edited): accepted=0");
+                    return ExitCode::FAILURE;
+                }
                 let input: MissionInput = geometry_mission();
                 if let Err(e) = dry_run(&input.plan) {
                     eprintln!("NO-GO {}: {}", input.plan.id, e);

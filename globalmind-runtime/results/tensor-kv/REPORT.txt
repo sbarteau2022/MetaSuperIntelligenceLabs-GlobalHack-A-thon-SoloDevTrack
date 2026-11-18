@@ -1,0 +1,9 @@
+Lane B — candidate-v2 tensor K/V qualification, 2026-11-02
+
+Status: PASS for the frozen Qwen3.6 Layer-3 reconstruction on this machine.
+Command: `cargo test --release --test tensor_kv_qualification -- --nocapture --test-threads=1`
+Result: 1 passed, 0 failed in 42.64 s.
+
+The earlier debug-profile apparent hang was full-roster software SHA-256 before model loading. A worker-thread sample confirmed the hash path. The optimized run verified the full roster in 33.84 s, then completed all seven hardware gates: real Layer-3 K/V capture for two heads; isolated SurrealKV session and page writes; database restart; byte and digest equality; injected decode with bit-exact hidden and 248,320-logit parity; 20/20 identity misses; 11/11 invalid-write or readonly rejections. Phase markers now expose long stages.
+
+Authoritative detailed receipt: `../../../results/tensor-kv/tensor-kv-qualification-report.txt`. This report supersedes the earlier status-only lane note. The proof is exact-model, candidate-v2, partial-model scope. Full-model parity, model-neutral K/V, and encoder quality remain open.

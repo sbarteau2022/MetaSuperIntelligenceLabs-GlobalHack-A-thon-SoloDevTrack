@@ -71,7 +71,7 @@ No A39 run until ALL hold (each independently blocking):
 
 ## 5. Formalized dyptech — closing statement (my part complete)
 
-Companion file §§5–6 stand as the capstone: five lawful operators (ANCHOR/CARVE/WALK/DREAM/PROMOTE, single-writer rule "no operator writes to M_G except PROMOTE"), refusal/superposition method, proofs P-1–P-8 with explicit boundary. With this ruling, the co-agent's three files + two additions are certified to the maximum extent the evidence supports, and every remaining gap has an owner, a gate, and a falsifier. My formalization part is DONE; the ball is in: (a) owning agent — compile fix, calibrated guard, accumulator, v1.1; (b) steward — Q-1–Q-5 answers, TPE next task.
+Companion file §§5–6 stand as the capstone: five lawful operators (ANCHOR/CARVE/WALK/DREAM/PROMOTE, single-writer rule "no operator writes to M_G except PROMOTE"), refusal/superposition method, proofs P-1–P-8 with explicit boundary. With this ruling, the co-agent's three files + two additions are certified to the maximum extent the evidence supports, and every remaining gap has an owner, a gate, and a falsifier. My formalization part is DONE; the ball is in: (a) owning agent — compile fix, calibrated guard, accumulator, v1.1; (b) steward — Q-1–Q-5 answers, TPPE next task.
 
 ## What was NOT checked (this supplement)
 

@@ -1,0 +1,143 @@
+Queue 1 — First legitimate vertical slice — receipt
+HISTORICAL SCOPE CORRECTION (2026-11-02): Q1.1–Q1.5 below were executed
+before the sequential TPPE and atomic-bundle redo. The frozen-weight logits
+come from a custom Layer-3 reconstruction plus LM head, not the full Qwen
+model. Observer and tensor-K/V parity are internal to that path. The original
+crystallization below used ordered per-entity transactions; current source
+uses one bundle transaction, separately proven by the isolated
+distillation_surreal_live poisoned-bundle test. Rerun Q1.1–Q1.5 under the
+current TPPE before treating this as a current distillation receipt. Q1.6–Q1.7
+remain component evidence subject to their own contract identities.
+Date: 2026-11-02 (UTC). Executor: code lane (this session).
+Hardware: Apple M5 Pro, arm64, macOS 27.0.1. SurrealDB 3.3.5. rustc 1.99.0.
+Model: stamsam/Qwen3.6-35B-A3B-Claude-4.7-Opus-Reasoning-Distilled-MLX-oQ4-MTP
+  (local-frozen-2026-10-22, 4 shards + MTP, roster rehashed before every run).
+Token tape: GMTT v1, 3 tokens [151644, 872, 151644]; token 0 == token 2, so the
+  walk revisits one atom and closes a genuine rank-2 loop.
+Admitted path (retrieve -> walk/propose -> candidate atoms/edges/loops/charts
+  -> independent judge -> deterministic replay -> atomic Surreal crystallization):
+  every step below ran on the real frozen model in an isolated DB; the
+  quarantined hypermind/core database was never contacted.
+
+Q1.1 Native real-model trace with observer-nonperturbation receipt — PASS
+  cmd: globalmind-distill trace manifests/qwen36-opus-candidate.manifest
+    inputs/real-token-tape.bin /tmp/q1-verify.gmtrace
+  token_tape_digest=9d91404d69157c70906822f45200251c5028f1b45498815dc8295e462a41af1
+  observer_nonperturbation_receipt=9f45c4e949bd2870e141fa54b197f4ad0287c177bf1c52cca9f5113eb8de5e4a
+  control_logits_digest=b331b0702e9b5c99886bac4520c933b0e852b8cdac55bf70b925484a3b39b21b
+  observed_logits_digest=b331b0702e9b5c99886bac4520c933b0e852b8cdac55bf70b925484a3b39b21b
+  max_logit_abs_diff=0 (exact IEEE-754 bit parity, control vs observed)
+  trace_envelopes=7 trace_file_bytes=7673 database_writes=0
+
+Q1.2 Rank-0/1/2 candidate extraction with both TPPE radial laws — PASS
+  (extraction only; TPPE/RoPE candidates were NOT validly benched here)
+  cmd: globalmind-distill extract /tmp/q1-verify.gmtrace /tmp/q1-verify.gmcandidate
+  candidates_emitted=11 rank0=4 rank1=4 rank2=1 rank8=2 database_writes=0
+  CORRECTION 2026-11-02: the v1 qualifier rows formerly printed below are
+  VOID. That runner assigned full-forward 0 error / 0 runtime, measured a
+  byte-derived drive against itself, omitted state bytes from dominance,
+  and labeled a two-scalar phase recurrence as RoPE. Historical raw rows
+  (provenance only, not encoder-quality evidence):
+  trace_set_digest=e013263ce91b7b270bc43fb2f705433ca9cfd65fcbd9c58c105509805e86ac6e
+  linear_log_v1 mean_phase_error=0.086617 wall_us=5 state_bytes=64 -> benched_dominated [VOID]
+  log_v1        mean_phase_error=0.086617 wall_us=3 state_bytes=64 -> benched_dominated [VOID]
+  angle_only    mean_phase_error=0.086617 wall_us=0 state_bytes=16 -> benched_dominated [VOID]
+  rope_control  mean_phase_error=0.076829 wall_us=0 state_bytes=16 -> benched_dominated [VOID]
+  full_forward  mean_phase_error=0.000000 wall_us=0 state_bytes=6070 -> frontier (ceiling) [VOID]
+  No encoder promoted. No encoder benched. No winner selected.
+  Corrected status: held-out task suite required; see
+  results/queue2/tppe-bench-v2-smoke.txt (decision OPEN) and
+  results/queue2/ADVERSARIAL-AUDIT-2026-11-02.md.
+  Rank-8 remains optional (1 chart crystallized with measured
+  marginal_gain=0.019925, gram_min_diag=107.792480).
+  FIXTURE LABEL: the atoms/trajectory crystallized in Q1.4 below are
+  integration fixtures produced under tppe_linear_log_v1_candidate
+  (staged replay hardcodes RadialLaw::LinearLogV1). They prove the
+  pipeline works; they do not prove linear_log_v1 is the winning
+  positional encoder. If the held-out bakeoff selects any other arm,
+  Q1.1-Q1.5 must be re-executed (not redesigned) under the winner.
+
+Q1.3 Frozen independent judge and explicit rejection records — PASS
+  cmd: globalmind-distill judge /tmp/q1-verify.gmcandidate /tmp/q1-verify.gmverdict
+  judge_policy_digest=3d2c4ea6601a2ec0c31afd440d6ca506593e036fc0a9d6a81613e47ff46ec83f
+  judged_total=11 judged_pass=10 judged_reject=1 (1 explicit rejection persisted
+  in the binary .gmverdict bundle with receipt + novelty digests)
+  judge_receipt_digest=fd630adeea957986984710846db52e0ec375afaba52bf5d1df20d777d8a15005
+  eligibility_receipt_digest=b0f95eb23d0d3225f5b0b54525f88b15445cb31170087d24a0120c9de34c785
+  verdicts_file_bytes=14241 database_writes=0
+  The judge is frozen at construction (no setter/tuning API); receipts bind
+  candidate + evidence + policy digests; duplicate/non-finite/weak/rank-cap
+  paths reject.
+
+Q1.4 One replayed and atomically crystallized real trajectory in isolated
+SurrealDB, followed by restart/read/replay — PASS
+  cmd: globalmind-distill replay /tmp/q1-verify.gmtrace /tmp/q1-verify.gmverdict /tmp/q1-verify.gmwalk
+  walk_atoms=4 walk_steps=4 walk_loops=1 walk_charts=1
+  trajectory_digest=67269a46743fdae97f07beee282f8063ba14d6bc7e0e9012c190ced24248bf5e
+  replay_receipt=decf93e59eb414265e2a33319919c22bc24b563f7441d4184288bb7ff8e42332
+  database_writes=0
+  Isolated DB: 127.0.0.1:58138, NS gmdistill DB q1slice, surrealkv:///tmp/gm-q1-slice-db
+  schema 0001,0003..0011 applied with 0 errors.
+  cmd: globalmind-distill open manifests/run_cf80...admitted.manifest
+  opened_receipt=71c1ffa9e149ce0669513966b387154421864ccbfa6b75bbe4403302ff128005
+  cmd: globalmind-distill crystallize /tmp/q1-verify.gmwalk
+  packets_admitted=11 atoms_crystallized=4 trajectory_steps=4 trajectory_loops=1
+  charts_admitted=1 readback_packets=11 readback_atoms=4
+  PROCESS RESTART on the same storage, then:
+  cmd: globalmind-distill audit run_cf80d582fa1528b356586d71ca221c69af1a935e9e1159f8409e83b3992d4c08
+  packets expected=11 persisted=11 admitted_expected=10 admitted_persisted=10
+  atoms expected=4 persisted=4
+  trajectory state=crystallized header_ok=true steps_expected=4 loops_expected=1
+  loops expected=1 persisted=1 edge_crystallizations persisted=4 expected=4
+  charts expected=1 persisted=1 run_events persisted=4
+  output_digest=a3b18459bb083db2d7dfdeed1f2ed96f10ac469aae00bb3043f61b043af2b68f
+  balance=PASS (report: results/distillation/run_cf80...-audit-report.txt)
+  Duplicate-write atomicity proven by the integration suite (count stays 1).
+
+Q1.5 One real tensor-K/V page round trip with exact-model logit parity — PASS
+  cmd: cargo test --test tensor_kv_qualification (610.14s)
+  test tensor_kv_qualification_end_to_end ... ok (1 passed, 0 failed)
+  Full receipt: results/tensor-kv/tensor-kv-qualification-report.txt
+  Gates: session create, 2 page writes (heads 0/1, shape [4,256] f32), restart
+  (pid 96520 -> 96552), byte-for-byte fetch equality, injected-KV decode with
+  max_hidden_abs_diff=0.00000000 max_logit_abs_diff=0.00000000
+  (reference == injected digests, perturbed control differs), 20/20 identity
+  misses + 11/11 write/readonly rejections.
+
+Q1.6 Capability Atlas path: approximate problem retrieval through live
+registry reconciliation to a real read-only tool call — PASS
+  cmd: cargo test --test capability_atlas_audit (17.70s)
+  3 passed, 0 failed. Full receipt:
+  results/capability-atlas/capability-atlas-qualification-report.txt
+  12 atom kinds + 13 edge kinds enforced; 2-hop retrieval lands on the live
+  tool; offline mandatory rules block JSON/ExternalWrite in Rust; restart
+  preserves plan digest; real read-only tool call completes through
+  Atlas -> LiveRegistry -> planner -> MandatoryPolicyGate -> harness bridge
+  with policy/response/execution/utility receipts; version supersede keeps
+  history intact.
+
+Q1.7 Harness forward-pass smoke proving fail-closed behavior — PASS
+  Fix this session: src/capability/forward_smoke.rs was orphaned (never
+  declared in src/capability/mod.rs, so its 5 tests never ran). Wired with
+  `pub mod forward_smoke;` — no logic changed.
+  cmd: cargo test --lib forward_smoke (5 passed, 0 failed)
+  cmd: cargo test --lib (63 passed, 0 failed); clippy --lib PASS
+  Dead-endpoint probe fails closed; mandatory gate admits the valid read-only
+  call and blocks the LocalWrite variant with zero GlobalMind contact; all 8
+  identity-drift classes refuse with exact variants; registry-less execution
+  errors before the executor (invoked=false); healthy path completes with
+  policy/response/execution/utility receipts.
+
+Thermodynamic claim boundary (no electrical/heat claim is made):
+  task quality = exact logit parity (0.0 drift), 10/11 judged pass with 1
+  explicit reject, audit balance=PASS after restart;
+  admitted/rejected coverage = 11 candidates (4/4/1/2), 10 admitted 1 rejected;
+  latency/memory = per-gate wall_ms and RSS bytes in the tensor-KV receipt
+  (e.g. injected decode 1404.613ms, suite 645086.545ms);
+  wall power / temperature / full-forward control = NOT measured here; no
+  Landauer or energy-efficiency claim is made or implied.
+
+Files changed this session:
+  globalmind-runtime/src/capability/mod.rs (+1 line: `pub mod forward_smoke;`)
+  results/queue1-vertical-slice-receipt.txt (new, this file)
+Nothing staged, committed, or pushed. Live promotion not requested, not done.

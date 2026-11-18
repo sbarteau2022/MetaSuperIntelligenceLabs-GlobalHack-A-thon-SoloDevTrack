@@ -1,0 +1,11 @@
+[package]
+name = "cogmap-slice2"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "cogmap_slice2"
+path = "src/lib.rs"
+
+[dependencies]
+cogmap = { package = "cogmap-slice1", path = "../slice1" }

@@ -1,0 +1,9 @@
+[package]
+name = "deny_rules"
+version = "1.0.0"
+edition = "2021"
+description = "Compiled Deny predicates from rules-table.json (9 deny rules, incl. no-div-button — Wave-1 gap closure)"
+
+[lib]
+name = "deny_rules"
+path = "src/lib.rs"

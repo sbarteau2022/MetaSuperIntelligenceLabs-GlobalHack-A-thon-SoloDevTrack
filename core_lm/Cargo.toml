@@ -1,0 +1,29 @@
+[package]
+name = "core_lm"
+version = "0.1.0"
+edition = "2024"
+description = "Native Execution Plane for Monster Hybrid Server"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+fancy-regex = "0.14"
+memmap2 = "0.9"
+byteorder = "1.5"
+metal = "0.33"
+sha2 = "0.10"
+
+[patch.crates-io]
+block = { path = "vendor/block" }
+
+[[bench]]
+name = "kuramoto_opt"
+harness = false
+
+[[bench]]
+name = "kuramoto_gpu"
+harness = false
+
+[[bench]]
+name = "kuramoto_fusedk"
+harness = false

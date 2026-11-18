@@ -1,0 +1,46 @@
+{
+  "version": "1.0.0",
+  "slice": "agent-3-hooks-A + agent-4-hooks-B",
+  "date": "2026-10-31",
+  "status": "MIGRATED",
+  "contract": "HOOK_EVENT_SCHEMA.md (envelope: event/workspace_root/timestamp + path/content/operation)",
+  "events": {
+    "pre_write": {
+      "function": "pre_tool_guard",
+      "source": "pre_tool_guard.rs",
+      "input": "PreWriteEvent { event, workspace_root, timestamp, path, content: Option<String>, operation }",
+      "output": "PreVerdict { decision: allow|deny, report_reason, rule_id, fix }",
+      "fail_closed": true
+    },
+    "session_start": {
+      "function": "session_init",
+      "source": "session_init.rs",
+      "input": "SessionEvent { event, workspace_root, timestamp }",
+      "output": "SessionVerdict { system_message, detected: SessionDetected { package_json, package_json_unreadable, deps, gates } }",
+      "fail_closed": false,
+      "never_blocks": true
+    },
+    "post_write": {
+      "function": "post_edit_verify",
+      "source": "post_edit_verify.rs",
+      "input": "PostWriteEvent { event, workspace_root, timestamp, path, content: Option<String>, operation }",
+      "output": "() \u2014 verdict-free by contract; appends PendingIssue { ts, path, rule_id, message, fix } lines",
+      "fail_closed": false,
+      "never_blocks": true
+    },
+    "stop": {
+      "function": "stop_completion_gate",
+      "source": "stop_completion_gate.rs",
+      "input": "StopEvent { event, workspace_root, timestamp, termination_reason }",
+      "output": "StopVerdict { decision: allow|continue, report_reason }",
+      "archive_semantics": "continue archives reported lines to issues-archive.jsonl and truncates pending-issues.jsonl"
+    }
+  },
+  "rules_source": "rules-table.json severity=deny (8 rules) + severity=warn (9 rules), compiled in verbatim",
+  "proofs": {
+    "a_no_out_of_root_writes": true,
+    "b_no_unlisted_network": true,
+    "c_unload_restores_old_version": true,
+    "d_lists_callable_schemas": true
+  }
+}

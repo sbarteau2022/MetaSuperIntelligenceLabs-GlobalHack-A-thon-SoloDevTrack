@@ -1,0 +1,32 @@
+# docker-compose.yml — local development stack (template).
+# Status: PROPOSED. Date: 2026-10-30.
+# No secrets inline: app config comes from env_file (.env, gitignored);
+# RULES.md rules 9/53. Pin versions explicitly; floating tags are FORBIDDEN
+# (GLOBAL-LOGIC.md section 8).
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+  db:
+    image: postgres:16-alpine
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+volumes:
+  pgdata:

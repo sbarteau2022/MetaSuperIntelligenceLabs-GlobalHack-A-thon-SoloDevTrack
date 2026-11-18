@@ -11,3 +11,10 @@ node_modules/
 dist/
 build/
 *.log
+*.tsbuildinfo
+# Local RAG export and test database files are retained on disk, not versioned.
+N3/Quadrant Brain Library RAG/qdrant-points-20261101.jsonl
+globalmind-runtime/results/distillation/db-*/
+# Local MCP snapshots can carry credentials; keep them outside commits.
+N3/mcp-config-backup-*.json
+research-grade-harness/.claude/worktrees/

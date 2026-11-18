@@ -1,0 +1,9 @@
+[package]
+name = "ok_computer_loop"
+version = "0.1.0"
+edition = "2021"
+description = "Kimi OK-Computer 5-horizon loop compiled to a bounded Rust state machine (Agent 6 Wave 1 slice)"
+
+[[bin]]
+name = "ok_computer_loop"
+path = "ok_computer_loop.rs"

@@ -1,0 +1,11 @@
+{
+  "name": "minimalist-gate",
+  "description": "Validate premium minimal UI config: no heavy shadows, flat/texture/imagery backgrounds only, no absolute-black text, radius <= 12, transform/opacity motion only.",
+  "parameters": {
+    "shadow": { "type": "string", "description": "'none' or 'diffuse-005'" },
+    "bg_style": { "type": "string", "description": "'flat' | 'subtle-texture' | 'imagery'" },
+    "text_color": { "type": "string", "description": "any token except 'absolute-black'" },
+    "radius": { "type": "number", "description": "border radius, must be <= 12" }
+  },
+  "required": ["shadow", "bg_style", "text_color", "radius"]
+}

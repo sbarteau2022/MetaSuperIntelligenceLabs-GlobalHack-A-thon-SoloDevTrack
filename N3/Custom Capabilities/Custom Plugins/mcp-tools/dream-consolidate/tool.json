@@ -1,0 +1,17 @@
+{
+  "name": "dream-consolidate",
+  "description": "Execute an Autonomous Dream State consolidation cycle on the (:8088) Hyperbolic Active Mind: upgrades sub-rank ATOMA_OP_V3 charts to Rank-8 Local Jacobians via 7-ray icosahedral perturbations, bridges empty-space multi-concept trajectories across the 12 specialist silos, and folds recurring 1-cell spans.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "charts": {
+        "type": "integer",
+        "description": "Maximum sub-rank ATOMA_OP_V3 charts to complete to Rank-8 (default: 16)"
+      },
+      "bridges": {
+        "type": "integer",
+        "description": "Maximum empty-space multi-concept geodesic bridges to synthesize and crystallize (default: 4)"
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "version": "1.0.0",
+  "notes": "Stack-agnostic lifecycle. CWD is always the project root. All paths below are root-relative.",
+  "session_context": {
+    "enabled": true,
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "python3 skills/web-development/hooks/scripts/session_init.py",
+        "timeout": 10
+      }
+    ]
+  },
+  "pre_write_guard": {
+    "enabled": true,
+    "PreToolUse": [
+      {
+        "matcher": "write_file|edit_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 skills/web-development/hooks/scripts/pre_tool_guard.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "post_write_verifier": {
+    "enabled": true,
+    "PostToolUse": [
+      {
+        "matcher": "write_file|edit_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 skills/web-development/hooks/scripts/post_edit_verify.py",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  },
+  "stop_completion_gate": {
+    "enabled": true,
+    "Stop": [
+      {
+        "type": "command",
+        "command": "python3 skills/web-development/hooks/scripts/stop_completion_gate.py",
+        "timeout": 25
+      }
+    ]
+  }
+}

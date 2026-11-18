@@ -1,0 +1,56 @@
+# TPPE held-out bakeoff v3 — report
+
+## Provenance
+- date_utc: 2026-11-02T20:49:48Z (start); run completed
+- manifest: manifests/qwen36-layer3-candidate-v2.manifest
+- input_digest (manifest): a7a0e22f00e9a89fb104ea4e8dde4c481c734890088e133d484248bea5360a94
+- tape: inputs/heldout-token-tape.bin
+- token_tape_digest: 93098d3455074ae37e01dfeb0da9434f31670e9cca7a054f71dea87be0284f6b
+- tape tokens: 384 (383 predictions)
+- tape source: MasterDesignDocument/C13-Testing-Necessity-Benchmarks/Design.md (sha256 be3a37092bbde203d5808a133c7079bf2bb2ecd846af6a02c3bf4a76f873b4bf), contamination-checked vs history.txt (0/314 windows)
+- repeats: 3 (counterbalanced)
+- candidate identity: tppe-layer3-candidate-v2 (contract binding source digests + numeric config)
+- runtime: globalmind-runtime (Layer-3 path only, no full-model forward)
+- command: `cargo run --release --bin globalmind-tppe-qualify -- manifests/qwen36-layer3-candidate-v2.manifest inputs/heldout-token-tape.bin 3`
+- skill discipline applied: autonomous-math-olympiad (Commandments VI one-variable, VII staged, X scripts before claims). One experiment, one variable (encoder), one machine.
+- log: results/queue2/logs/tppe-bench-v3-20261102.log
+
+## Measured (Layer-3 path; 383 predictions per arm)
+
+| arm | mean NLL | top1 hits | mean wall us | enc state bytes | mean|logit-delta| vs rope | paired delta (vs rope) | 95% CI |
+|---|---|---|---|---|---|---|---|---|
+| native_rope | 16.6383 | 0/383 | 113294562.35 | 0 | 0.0000 | 0.0000 | 0.0000 (baseline) |
+| angle_only_toroidal | 16.5343 | 0/383 | 113273469.18 | 16 | 0.7554 | -0.1039991 | 0.14245 (crosses zero) |
+| tppe_linear_log_v1 | 16.5405 | 0/383 | 113708496.22 | 64 | 0.7724 | -0.0977691 | 0.14485 (crosses zero) |
+| tppe_log_v1 | 16.5371 | 0/383 | 114002381.08 | 64 | 0.7619 | -0.1012325 | 0.14341 (crosses zero) |
+| radial (linear-log) delta | - | - | - | - | - | 0.0034634 | 0.0062942 (crosses zero) |
+
+## Decision
+
+decision = OPEN_PARTIAL_MODEL_COMPONENT_COMPARISON
+component_promoted = none
+component_benched = none
+component_radial_winner = none (tie)
+promoted = none
+benched = none
+radial_winner = none
+
+Every paired-NLL CI crosses zero, so by the runner's own preregistered rule (bench if CI entirely above +0.01 nats vs RoPE; promote only if CI entirely <= 0 with no wall regression) none of the four arms qualifies for promotion or bench. The two TPPE radial laws are statistically indistinguishable (CI 0.0063 crosses zero). All arms sit within 0.1 nats NLL of each other; the rotation does move logits (0.75-0.77 mean abs delta, max ~15), but on this 383-prediction single-Layer-3 path the quality frontier is unresolved.
+
+## Interpretation (Commandment honest labels)
+
+- VERIFIED: the run executed end-to-end and the numbers above. Wall time/CI math computed by the runner (paired_nll_stats).
+- INFERRED: that encoder choice is not yet deciding quality. Evidence: CIs cross zero; Layer-3 single-layer path; top1=0/383 all arms (expected, this is a component path, not a full decoder).
+- NOT YET DONE: independent task corpus + held-out partition; complete Qwen model reference; cross-model portability. The runner's `promoted=none`/`benched=none` is authoritative.
+- NOT GROUNDS FOR: selecting any radial law; claiming TPPE superiority; rerunning trajectory/extract/replay under a "winner" identity (none selected).
+
+Per the Queue 2 TPPE correction: the fixture label `tppe_linear_log_v1_candidate` remains unchanged until a real bakeoff selects a winner. No architecture rebuild triggered (no winner selected).
+
+## Open gates
+- independent task/token suite (contamination-checked, held-out) with counterbalanced repeats
+- full-model reference comparison (currently only Layer-3 q/k boundary exercised)
+- Q1.5 tensor K/V requalification under v2 identity if its contract permits
+- Q1.6 Capability Atlas + Q1.7 fail-closed harness smoke only if their contracts embed the old TPPE digest
+
+## Verdict by this skill
+L2 computation, single variable, staged (3-token smoke v2 precedes this held-out run), oracle undefined for this component path — no measured method approaches the model's own full-forward (not exercised here), so the run reports component parity only. No promotion. No claim shipped. report.tex/TODO.md untouched pending owner's go-ahead for requalification.

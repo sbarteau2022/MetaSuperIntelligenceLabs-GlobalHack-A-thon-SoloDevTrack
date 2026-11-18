@@ -1,7 +1,7 @@
-# Prediction-Error Minimization — Scope (TPE + FEP + harness)
+# Prediction-Error Minimization — Scope (TPPE + FEP + harness)
 
 **Date.** 2026-10-28. **Author.** Muse (contributor lane). **Status.** PROPOSED scope (no silicon claimed).
-**Parents.** `ToroidalPhasePositionalEncoding-ConceptFormalization.md` §§1–2 (D1–D3 budget law); `ToroidalPhasePositionalEncoding-ConceptsToProofs.md` P6 (budget monotonicity + spiral coupling); `tpe_fep_budget.py` (reference controller, P6 5/5 PASS — VERIFIED controller logic, f64 reference, not production); HEAR full text (REPORTED 2026-10-28 read: `d_i = π(h_i, s_j)`, intent≠control, Guard requirements override preferences); JAZ full text (REPORTED: pass-by-reference history, selective read wins on cost); GenMem full text (REPORTED: addressing invariance, evolution without drift).
+**Parents.** `ToroidalPhasePositionalEncoding-ConceptFormalization.md` §§1–2 (D1–D3 budget law); `ToroidalPhasePositionalEncoding-ConceptsToProofs.md` P6 (budget monotonicity + spiral coupling); `tppe_fep_budget.py` (reference controller, P6 5/5 PASS — VERIFIED controller logic, f64 reference, not production); HEAR full text (REPORTED 2026-10-28 read: `d_i = π(h_i, s_j)`, intent≠control, Guard requirements override preferences); JAZ full text (REPORTED: pass-by-reference history, selective read wins on cost); GenMem full text (REPORTED: addressing invariance, evolution without drift).
 **Standards.** Documentation-standards (labels); C03.3 (no vault/freeze file modified).
 
 ---
@@ -25,7 +25,7 @@
 ## 3. Levers in scope (all real-runnable, none synthetic)
 
 1. **Aperture law** (`τ` sweep × depth, A41-RUN-02 manifest staged). Real control: `causal_scores_windowed` path in `a41_task_run.py` (VERIFIED code) + Q32_31 port (staged, C6 integer audit).
-2. **Budget law** (`B(d̂,Ω)`, `B_max` fail-closed). Real control: `tpe_fep_budget.py::FEPBudgetController` (VERIFIED 5/5) + madmind `Budget` command + receipt log (VERIFIED `cargo test` 30/30, 2026-10-28).
+2. **Budget law** (`B(d̂,Ω)`, `B_max` fail-closed). Real control: `tppe_fep_budget.py::FEPBudgetController` (VERIFIED 5/5) + madmind `Budget` command + receipt log (VERIFIED `cargo test` 30/30, 2026-10-28).
 3. **Address stability** (GenMem principle, PROPOSED adoption). Real control: fixed SID-style addresses for fibers across revisions; content churn must not reassign addresses (GenMem Table 4 pattern: SID-addressed rises 30.56→36.20 while content-coupled decays — REPORTED).
 4. **Engine feedback** (HEAR contract, PROPOSED adoption). Real control: harness→engine intent/requirements + engine→harness residency/queue state; Guard-style requirement overrides preference (HEAR Table 3: 1.61× + TTFT 63.1→4.6s — REPORTED). Your controller currently speaks only to itself; hearing back is the gap.
 5. **Selective read** (JAZ pattern, PROPOSED adoption). Real control: meta-agent reads sub-traces selectively instead of full replay (JAZ: ACE reflector 10×/task cost vs batched selective read — REPORTED).

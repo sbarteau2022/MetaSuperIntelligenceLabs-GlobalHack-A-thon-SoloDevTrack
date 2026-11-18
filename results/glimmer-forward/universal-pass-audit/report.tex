@@ -1,0 +1,186 @@
+\documentclass{article}
+\usepackage[margin=1in]{geometry}
+\begin{document}
+\title{Adversarial audit of the Glimmer forward and universal decoder pass}
+\date{2026-11-03}
+\maketitle
+
+\section*{Question and fixed acceptance bar}
+The pass is a native, model-neutral, checkpoint-attested forward through the
+harness/automaton/MCP/one GlobalMind boundary, with exact model-bound tensor
+K/V reuse and a no-recall control. A correct token from one prompt is a
+component observation, not this pass. Checks were fixed before drawing a
+verdict: artifact identity includes weight bytes; requests are isolated;
+model I/O is typed binary; graph admission rejects ambiguous contracts;
+K/V is preserved as exact tensor state; full-model output is independently
+compared; one live harness round trip is receipted.
+
+\section*{Methods and oracle}
+L0 source audit plus L1 counterexample. The oracle for checkpoint identity is
+an injective encoding of the list of artifact digests before a collision-
+resistant hash. A config/tokenizer-only hash cannot distinguish arbitrary
+weight changes. For graph identity, the oracle is a domain-separated,
+length-delimited encoding of each node, shape partition, and tensor binding.
+No latency/quality optimization was attempted; no GPU sweep ran. The live
+model probe used the already-running \texttt{serve\_glimmer} process on
+127.0.0.1:8011 and the ignored \texttt{model\_seat\_mission} test, with one
+prompt and no changed model weights.
+
+\section*{Findings}
+\begin{enumerate}
+\item \textbf{Real but narrow forward:} the live test passed and emitted token
+13796 (``Paris'') first, with four output token IDs and a logit digest. This
+establishes an HTTP-to-model execution observation on this prompt only. The
+claimed binary SHA in \texttt{native-glimmer-forward-2026-11-03.md} is truncated
+and differs from the actual local \texttt{generate\_glimmer} SHA-256
+\texttt{ada4357a801161d54efebf6196aab9aec326fc9d7a55e7553fd79fd22a85dfbe}.
+The tested server is a different binary. Neither a full-logit oracle nor a
+model-neutral second architecture was checked.
+\item \textbf{Checkpoint identity falsified:} \texttt{seat\_identity} in
+\texttt{core\_lm/src/glimmer\_model.rs} hashes config, a zero byte, and
+tokenizer, omitting shard bytes and the index. The committed L1 verifier
+constructs two different weight files with identical config/tokenizer and
+gets the same seat ID. Therefore using that ID as \texttt{checkpoint\_digest}
+cannot authorize exact tensor K/V reuse.
+\item \textbf{Request isolation unproven and source-violated:}
+\texttt{serve\_glimmer}'s \texttt{generate\_amst} and \texttt{forward\_json}
+start positions at zero on one long-lived model while neither calls the
+available \texttt{reset\_memory}. Old local geometric atoms can enter a
+subsequent request. A fresh-process control and repeated-request parity are
+required before claiming coherent recall.
+\item \textbf{Model boundary and K/V fail:} \texttt{GlimmerHttpSeat::forward}
+sends JSON and accepts empty/missing output fields; \texttt{tokenize} also
+uses JSON. This violates the frozen no-JSON model I/O rule. The Glimmer seat
+refuses \texttt{kv\_page}; the local geometric map stores bytes internally
+but does not expose an exact Surreal tensor K/V page. The pass through
+\texttt{mind.kv\_exact} has not occurred.
+\item \textbf{Graph identity defect fixed:} the former
+\texttt{attest\_graph} concatenated dimensions without shape boundaries, so
+\([1,2]\) and \([1],[2]\) had the same prehash byte stream. Commit
+\texttt{2a809fd} adds domain separation, counts, length prefixes, bounded
+admission, and a regression test. This is graph-admission code, not an
+execution engine; no operator topology or numerical kernel is certified.
+\end{enumerate}
+
+\section*{Verification record}
+\texttt{sh scripts/verify.sh}: same seat, different weight digests, PASS;
+script SHA-256 \texttt{d1221efe65a1a61220814d8ca359e90e98e5a8c57b5aee09e142d9e24d2e4e1e}.
+\texttt{cargo check --tests}, \texttt{cargo test --lib universal\_decoder}
+(6 passed), and \texttt{cargo clippy --lib -- -D warnings} passed in
+\texttt{globalmind-runtime}. The live \texttt{model\_seat\_mission} test
+passed (one prompt) against the already-running local server. No independent
+full-model reference, restart parity, or harness/MCP/model chain ran.
+The wider \texttt{globalmind-runtime} test run passed 86 library tests and
+several live integrations, then one disposable SurrealDB startup timed out
+at 20 seconds while another integration passed. The failed test passed in a
+targeted rerun (7.70 s). This is an intermittent startup gate, not evidence
+that the full suite passed. All-target Clippy passed; formatting required a
+separate export-order correction committed as \texttt{5343fbfe}.
+
+\section*{Geometric-cache counterexample and consequence}
+The checkpoint-identity and request-isolation findings above describe the
+original server snapshot. A later, quarantined \texttt{core\_lm} edit added
+streaming shard/index hashing and request resets; its focused compiler and
+unit gates passed, but that variant was not promoted to the canonical
+decoder or shown in a live repeated-request parity run. It does not change
+the following selection counterexample.
+The quarantined \texttt{core\_lm/src/glimmer\_forward.rs} writes raw per-head
+K/V bytes into a local geometric map, then retrieves at most 512 nearby atoms
+before computing softmax. This is not an exact transformer K/V continuation
+algorithm for an unbounded full-attention layer. Construct a history with
+513 equal-scoring keys. Give one of them value 1 in one output coordinate
+and the other 512 value 0; choose the nonzero item to be the one excluded
+by the map's top-512 tie order. Full attention assigns that item positive
+softmax mass and returns $1/513$ in that coordinate. The retrieved subset
+returns 0. A native AWK check evaluated $1/(512+1)$ as
+\texttt{0.0019493177387914229}, unequal to zero. The example is a
+counterexample to universal parity, not a measurement of Glimmer's actual
+error on natural prompts. It also holds when K/V payload bytes are stored
+losslessly: selection and softmax renormalization discard a contribution.
+
+The same source retrieves top-512 before applying the sliding-window time
+filter. A closer set of stale atoms can exhaust top-512 and then all be
+discarded, despite an eligible recent atom existing outside that set.
+Window eligibility must be imposed before ranking if this approximate
+algorithm remains an experiment. Exact continuation instead needs the
+trained layer's complete applicable K/V state, with token positions and
+the immutable model/prefix/tensor/position contract preserved across restart.
+Thus a local geometric map cannot be relabeled as a Surreal exact K/V page;
+the native decoder must either expose exact tensors or the Glimmer lane must
+remain outside the exact-K/V certification claim.
+
+\section*{Verdict}
+Partial component proof; the requested pass is \textbf{not certified}.
+The exact blockers and one-variable next experiments are in \texttt{TODO.md}.
+
+\section*{2026-11-04 continuation: exact K/V passed; knowledge admission failed}
+An isolated hardware gate now streams all frozen Glimmer shard/config/tokenizer
+digests, runs all 52 native layers, persists 104 exact K/V head pages in a
+disposable SurrealKV database, restarts that server, attests a real MCP child,
+recalls a linked prefix witness at a TPPE-derived H3/T2 address, and restores
+every layer/head. The resumed next-token logits matched the uninterrupted
+run bit for bit. Changed model/page digests and a missing head missed; changing
+a K/V value changed the logits. The receipt is
+\texttt{results/glimmer-forward/mcp-surreal-kv-full-pass-2026-11-04.md}.
+This proves exact model-bound tensor continuation through a real MCP read seam.
+The prefix witness is not a distilled knowledge atom, and the test does not
+show that a recalled proposition changes the model's answer. The reference
+native executor remains untracked and cannot be silently promoted as the
+competition runtime.
+
+The current distillation lane fails the model-agnostic/actionable atom bar.
+\texttt{extract::atom\_key} hashes trace kind, dtype, layer, head, shape,
+and payload digest. This preimage depends on the teacher's tensor topology and
+bytes even though it omits the teacher name. Two models expressing one
+proposition with different head/layer layouts therefore do not share a
+canonical content preimage; a cryptographic hash cannot repair that mismatch.
+The map address is then derived from this digest. The replay writer stores
+\texttt{content\_text = "replayed atom <digest>"}, not a proposition or
+actionable step. These observations directly contradict the cross-model
+coalescence and learned-symbol requirements in
+\texttt{DistillationProtocol/PROTOCOL.md} section 8. The admitted Qwen
+Layer-3 artifact is a model-bound trace witness until reingested through a
+model-independent claim/trajectory representation with immutable origins and
+cross-model behavioral evidence. No current artifact proves that admission.
+
+The governing backend also disappeared from the current tree in commit
+\texttt{ba8273e6}, which rebuilt the Ares site. The prior backend exists in
+Git history at \texttt{6d9a7255}, but the reported dirty Glimmer seat was
+not committed there. The earlier HTTP mission cannot serve as a current live
+harness gate. These are source-state observations, not a claim that the work
+was never performed.
+\section*{Independent oracle and Rust numerical assessment}
+An offline MLX 0.32.4 oracle loaded the frozen Glimmer checkpoint's custom
+architecture and mixed-bit quantization map. On the pinned six-token tape,
+the MLX and Rust exact-K/V forward chose the same argmax, but their 202048
+final logits had maximum absolute difference
+\texttt{0.13231056928634644}; only two f32 values matched exactly. MLX
+batch and sequential modes also differed (maximum
+\texttt{0.1807829551398754}), so a tolerance cannot be inferred from exact
+f32 equality. No tolerance was preregistered; reference parity remains open.
+The numerical receipt is
+\texttt{results/glimmer-forward/independent-mlx-oracle-2026-11-04.md}.
+
+The first observed divergence precedes attention. MLX keeps the
+post-normalization embedding in bfloat16; Rust's implementation keeps f32.
+For the frozen BOS embedding, offline bfloat16 rounding of Rust's result
+increased exact component matches from 219 to 6339 of 6656, but residual
+differences remained. A further raw-row comparison replayed the MLX
+embedding's bfloat16 rounding before and after its f32 row out-scale; this
+matched all 6656 raw BOS components exactly. Thus the first measured
+divergence is a precision-contract mismatch in the embedding, not an
+attention-stage failure. This does not prove that all later differences have
+one cause. The model-bound K/V restart result remains
+valid as an internal Rust invariant, not checkpoint-reference correctness.
+The gated Rust embedding ablation matched the real MLX BOS embedding
+componentwise, but worsened the final-logit maximum absolute difference
+from 0.13231056928634644 to 0.13553541898727417. It therefore remains
+benched. The next measured mismatch is already in layer-0 pre-attention
+normalization; tuning the attention kernel before resolving the checkpoint
+numerical profile would not address that divergence.
+The scalar attention loop and per-call CPU worker spawning are plausible Rust
+performance targets only after fixed-precision stage parity and held-out
+task output checks. The current source's default HTTP seat still hashes
+config and tokenizer but not shard bytes into its identity, so it cannot
+authorize persistent K/V reuse across a changed weight file.
+\end{document}

@@ -1,0 +1,30 @@
+Lane 7 — Harness plugin — end-of-lane report (gate assessment only)
+Date: 2026-11-02
+Hardware: Apple M5 Pro, arm64, macOS 27.0.1
+
+GATE RULE
+"Do not start until lanes 1-6 produce receipts. Then edit only
+research-grade-harness plugin boundary; fail closed when GlobalMind is
+absent or identities differ."
+
+RECEIPT CHECK AT ASSESSMENT TIME
+Lane 1 trace:        results/trace/REPORT.txt        PRESENT
+Lane 2 tppe:         results/tppe/REPORT.txt         PRESENT (v1 bench VOID per 2026-11-02 audit; no encoder benched or promoted; corrected v2 decision OPEN, held-out rerun required)
+Lane 3 extract:      results/extract/REPORT.txt      PRESENT
+Lane 4 judge:        results/judge/REPORT.txt        PRESENT
+Lane 5 surreal:      results/surreal/REPORT.txt      PRESENT
+Lane 6 tensor-kv:    results/tensor-kv/REPORT.txt    STATUS ONLY — no
+                     qualification receipt from its owner; its required
+                     gates (restart byte-verify, same-model logit parity)
+                     are not yet evidenced.
+
+VERDICT
+Gate NOT satisfied: lane 6 has no qualification receipt. Lane 7 was
+therefore not started; no file under research-grade-harness was edited
+by this executor. Starting it now would violate the preregistered gate.
+
+UNBLOCKER
+Lane 6 owner produces results/tensor-kv receipt proving K/V restart
+byte-equality and same-model logit parity. Then lane 7 edits only the
+research-grade-harness plugin boundary (map_plugin/plugins surface),
+failing closed when GlobalMind is absent or identities differ.
