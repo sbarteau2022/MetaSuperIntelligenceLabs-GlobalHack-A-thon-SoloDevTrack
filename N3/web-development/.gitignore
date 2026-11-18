@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Build output
+dist/
+build/
+out/
+.next/
+.nuxt/
+.svelte-kit/
+.output/
+*.tsbuildinfo
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Agent hook runtime state (append-only issue store, archives)
+.agent-state/
+
+# Test & coverage
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+screenshots/
+videos/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Caches
+.cache/
+.parcel-cache/
+.turbo/
+.eslintcache
+.stylelintcache
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Editors & OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/settings.json
+*.swp
+
+# Local databases / data dumps
+*.sqlite
+*.sqlite3
+*.db
+data/*.dump

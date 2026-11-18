@@ -1,0 +1,98 @@
+Model forward-pass smoke on the audited minimum vertical slice: receipts
+Date: 2026-11-02 (UTC). Owner: capability-lane agent (this session).
+Scope: globalmind-runtime/src/capability/forward_smoke.rs (new),
+  one-line module registration, this report, README rows.
+The trace envelope (src/trace/) and slice audit (src/capability/
+vertical_slice.rs, results/capability/, results/trace/) are preserved
+byte-identical; the Atlas was not expanded (13 profiles / 17 edges).
+No other lane's files were edited. Nothing staged, committed, or pushed.
+
+1. Scope honesty
+Queue 1 item 7 asks for a harness forward-pass smoke proving fail-closed
+behavior when GlobalMind is unavailable or identity contracts mismatch.
+That is exactly what ran. No model inference is claimed: the native
+`trace` CLI is still unimplemented (`globalmind-distill` offers only
+`verify`/`open`), so no forward activations were produced. The smoke binds
+to the frozen Qwen3.6 manifest by file presence/size only; byte rehash
+belongs to `verify` and was not re-run here.
+
+2. Exact digests (SHA-256)
+- globalmind-runtime/src/capability/forward_smoke.rs:
+  38413d08d1b91387f21ba9ef259bb43c21c2686ce8e408fc0021c0abf3bd3c64
+- Runtime/hardware: rustc 1.99.0 (Homebrew), Apple M5 Pro arm64, macOS 27.0.1.
+- No SurrealDB contact in this smoke (unavailability is the point); no
+  namespace/database touched. Live hypermind/core never contacted.
+
+3. Commands (run in globalmind-runtime/)
+- cargo fmt --check                        -> PASS
+- cargo check --tests                      -> PASS
+- cargo clippy --lib -- -D warnings        -> PASS
+- cargo test --lib                         -> 45 passed, 0 failed
+- cargo test --lib forward_smoke -- --nocapture -> 5 passed; receipt block
+  below transcribed verbatim from observed output (only the ephemeral
+  refused port number varies run to run).
+
+4. Observed smoke receipt block (verbatim values)
+forward_smoke_receipt_v1
+manifest_path=manifests/qwen36-opus-candidate.manifest
+manifest_models=1
+artifact weights-00001 bytes=5343699404 present=true
+artifact weights-00002 bytes=5368472723 present=true
+artifact weights-00003 bytes=5368324201 present=true
+artifact weights-00004 bytes=3428527593 present=true
+artifact mtp-weights bytes=491319646 present=true
+artifact weight-index bytes=187263 present=true
+artifact model-config bytes=25424 present=true
+artifact tokenizer bytes=19989339 present=true
+artifact tokenizer-config bytes=380 present=true
+artifact chat-template bytes=8057 present=true
+slice_profiles=13
+slice_edges=17
+nearest_family=vs_family_audit
+selected_tool=vs_tool_live
+ranked_candidate=vs_tool_live
+neighborhood_size=9
+excluded_count=2
+dag_digest=30de612952d018865ee9f799a322ed0af32bb7ba80bbb5a5a2048028f4b6a43c
+used_fallback=false
+dag_mandatory_rule=vs_rule
+unavailable_probe_error=connect 127.0.0.1:<ephemeral>: Connection refused
+  (os error 61); observed port 64772, varies per run
+gate_receipt_without_globalmind=99e5ce68d18678702843a535dde63acb88e1b6e26c7f0ae9cebeb57f1000ba07
+mismatch case=missing_entry reason=MissingFromLiveRegistry
+mismatch case=not_installed reason=NotInstalled
+mismatch case=unhealthy reason=Unhealthy
+mismatch case=version_mismatch reason=VersionMismatch { expected: "1.0.0", live: "9.9.9-smoke" }
+mismatch case=arg_digest_mismatch reason=ArgumentSchemaDigestMismatch
+mismatch case=result_digest_mismatch reason=ResultSchemaDigestMismatch
+mismatch case=config_digest_mismatch reason=ConfigurationDigestMismatch
+mismatch case=missing_permission reason=MissingPermission("atlas.slice.read")
+execution_without_registry_error=selected tool missing from live registry at execution time
+executor_invoked_on_failure=false
+readonly_tool=vs_tool_live
+policy_receipt=99e5ce68d18678702843a535dde63acb88e1b6e26c7f0ae9cebeb57f1000ba07
+response_digest=0c1044d36bbeb0c7dfe69e56cd8b7419fe660ac0718d89d18a00856b7bfe8e91
+execution_receipt=b1b1d1b90378c1cc5d0e4b6fa3259f3b42bc577cb2344380413b1afe3964f6b5
+utility_outcome=succeeded
+response_bytes=72
+
+Notes: policy_receipt equals gate_receipt_without_globalmind because both
+enforce the identical projection + request bytes (deterministic receipt).
+response_bytes=72 is the 8-byte GMBI header plus the 64-byte hex file
+digest of migration 0012 read from disk by the real executor.
+
+5. Fail-closed results
+- Dead-endpoint contract verification errors; smoke treats success as failure.
+- Mandatory gate admits the valid read-only call and blocks the LocalWrite
+  variant with zero GlobalMind contact.
+- All 8 identity-drift classes refuse with their exact variant names.
+- Registry-less execution errors before the executor; invoked=false proves
+  the tool never ran.
+- Healthy path completes with policy/response/execution/utility receipts.
+
+6. Untouched gates (explicitly NOT claimed)
+- Real model forward inference, trace extraction, and logit parity (need the
+  unimplemented trace CLI + engine).
+- Manifest byte rehash (use `verify`), Surreal backup/concurrency/corruption.
+- Research-harness plugin wiring and broader Atlas population.
+- This smoke is harness-path + fail-closed evidence only, not certification.

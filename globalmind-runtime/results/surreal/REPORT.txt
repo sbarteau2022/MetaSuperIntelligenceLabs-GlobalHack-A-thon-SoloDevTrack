@@ -1,0 +1,36 @@
+Lane 5 — Surreal integration test — end-of-lane report
+Date: 2026-11-02
+Hardware: Apple M5 Pro, arm64, macOS 27.0.1; SurrealDB 3.3.5
+Files (lane-owned only): tests/surreal_integration.rs, results/surreal/
+
+WHAT LANDED
+tests/surreal_integration.rs spawns its own isolated SurrealDB on an
+ephemeral port with file-backed surrealkv storage in a temp dir (never
+core, never the live instance), applies schema chain 0001, 0003..0011,
+seeds workspace/hub/twelve specified wells, builds one real judged
+trajectory (lane-1 traces -> lane-3 extractor -> lane-4 judge -> packets
+-> crystallized atoms -> atomic trajectory with 2 steps and 1 loop),
+proves a duplicate admission fails atomically (count stays 1), restarts
+the database process on the same storage, and reads back the crystallized
+trajectory, its steps, and its loop.
+
+COMMANDS AND RESULTS
+cargo test --test surreal_integration -> 1 passed, 0 failed (7.7s)
+cargo test --lib -> 25 passed, 0 failed
+
+COUNTS
+candidates emitted: 5 (2 rank-0, 2 rank-1, 1 rank-2); judged pass: 5;
+packets admitted: 5; atoms crystallized: 2; trajectories admitted: 1;
+failed duplicate writes: 1 (atomic, count unchanged); restarts survived: 1.
+
+FAILURES FOUND DURING THE LANE
+1. trajectory_step_transition_unique (0007) rejected two steps sharing
+   one transition digest -> root cause was extractor atom identity
+   binding token position; fixed in lane 3 (atom_key), test now uses one
+   rank-1 candidate per step.
+2. Atomicity assertion compared raw HTTP responses (per-request ids) ->
+   now compares result bodies.
+
+UNTOUCHED GATES
+Backup/restore and corruption/concurrency gates remain open (Completion
+Definition). Live promotion was not requested and not performed.

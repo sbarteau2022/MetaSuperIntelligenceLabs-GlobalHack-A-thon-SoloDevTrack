@@ -1,0 +1,15 @@
+{
+  "description": "Atoma harness loop guards",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo ATOMA-HARNESS-LIVE tool-first law active"
+          }
+        ]
+      }
+    ]
+  }
+}

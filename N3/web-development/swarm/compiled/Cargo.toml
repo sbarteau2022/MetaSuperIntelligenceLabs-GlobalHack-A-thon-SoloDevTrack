@@ -1,0 +1,9 @@
+[package]
+name = "kimi_swarm"
+version = "0.1.0"
+edition = "2021"
+description = "Kimi subagent swarm compiled to a reusable DAG (Agent B1 Wave 3-FINAL)"
+
+[[bin]]
+name = "swarm"
+path = "swarm.rs"

@@ -1,0 +1,9 @@
+GOVERNED RUN governed-run-30-2026-11-04
+steps_passed=30 escalated=["neg-undeclared", "neg-unsupported", "neg-malformed"] skipped=0 failed=0
+kv_misses=6 kv_hits=24 (expected 6 and 24)
+telemetry_writes=96 (local OTLP sink, not HyperDX)
+receipt_entries=33 chain_verified=true
+latency_s min=7.4 median=7.6 max=30.2 total_wall_s=271
+generated_tokens=120 energy_spent_j=272.3
+model_composite=dbe78c78f2072bd53add370dcce8d39bd9779c477af79cab8797747683941a7e
+audit_failures=0

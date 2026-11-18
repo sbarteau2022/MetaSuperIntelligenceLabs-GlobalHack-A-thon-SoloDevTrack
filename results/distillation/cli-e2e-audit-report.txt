@@ -1,0 +1,19 @@
+distillation audit report
+FIXTURE LABEL 2026-11-02: integration fixture produced under
+tppe_linear_log_v1_candidate. The atoms/trajectory below prove the
+pipeline works; they do not prove linear_log_v1 is the winning
+positional encoder. No encoder is promoted or benched; the held-out
+bakeoff decision is OPEN (results/queue2/tppe-bench-v2-smoke.txt).
+run_id=run_535473b648455d7c349da03125f0517f51bb7520fdf0a5de4ad7806f07559452
+input_digest=535473b648455d7c349da03125f0517f51bb7520fdf0a5de4ad7806f07559452
+trajectory_digest=046090edfb237ad6fdf4fd3dcd0a93b8993f671a7f489df76605f826d7cda02b
+replay_receipt=ffd7d4e07ae3a4dcd356b60c6a7315c784971d815bfa24b84157c45cfc0fea6c
+packets expected=5 persisted=5 admitted_expected=5 admitted_persisted=5
+atoms expected=2 persisted=2
+trajectory state=crystallized header_ok=true steps_expected=2 loops_expected=1
+loops expected=1 persisted=1
+edge_crystallizations persisted=2 expected=2
+charts expected=0 persisted=0
+run_events persisted=4
+output_digest=a925af7bc776320d6e60990dff30c07ddca5efa0eba83b71003bb1bfddba9a77
+balance=PASS

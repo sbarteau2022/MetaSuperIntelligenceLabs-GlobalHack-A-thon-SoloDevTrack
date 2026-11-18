@@ -1,0 +1,12 @@
+{
+  "name": "plugin-build-gate",
+  "description": "Validate a build-your-own step: skill/plugin/connector kind, spec first, >=2 hand-computed examples, sandbox run, Stewart approval for connectors.",
+  "parameters": {
+    "kind": { "type": "string", "description": "'skill' | 'plugin' | 'connector'" },
+    "spec_done": { "type": "boolean", "description": "true: spec paragraph written first" },
+    "examples_count": { "type": "number", "description": ">= 2, one an edge case" },
+    "sandbox_ok": { "type": "boolean", "description": "true: examples pass in sandbox (60s, workspace-only writes)" },
+    "approved": { "type": "boolean", "description": "true: approved (required for connectors)" }
+  },
+  "required": ["kind", "spec_done", "examples_count", "sandbox_ok"]
+}

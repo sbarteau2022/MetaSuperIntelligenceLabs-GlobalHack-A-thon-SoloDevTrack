@@ -1,0 +1,35 @@
+{
+  "tool": "frontend-dev",
+  "version": "1.0.0",
+  "date": "2026-10-31",
+  "input": {
+    "bannedHitCount": {
+      "type": "number",
+      "description": "Count of ban-rule pattern hits over the area source (0 required)."
+    },
+    "contractOnDisk": {
+      "type": "boolean",
+      "description": "Area contract exists on disk (contract file / migration / env matrix / token file / spec)."
+    },
+    "auditClean": {
+      "type": "boolean",
+      "description": "Deterministic audit over the area reports zero deny hits."
+    }
+  },
+  "output": {
+    "pass": {
+      "type": "boolean",
+      "description": "True only if bannedHitCount==0 AND contractOnDisk AND auditClean. Fail closed otherwise."
+    },
+    "skill": {
+      "type": "string",
+      "const": "frontend-dev"
+    }
+  },
+  "ban_rules": "12",
+  "implementation": {
+    "ts": "compiled/tool.ts",
+    "rs": "compiled/tool.rs",
+    "evaluate": "evaluate(GateInput) -> GateResult"
+  }
+}

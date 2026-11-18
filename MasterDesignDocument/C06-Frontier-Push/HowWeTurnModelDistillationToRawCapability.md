@@ -1,7 +1,7 @@
 # How We Turn Model Distillation Into Raw Capability
 
 **Date.** 2026-10-27. **Author.** Muse (contributor lane), on steward's directive.
-**Status.** PROPOSED formalization — derived from vault code read this pass. **Parent.** Formalized dyptech capstone + carving methodology + TPE spec.
+**Status.** PROPOSED formalization — derived from vault code read this pass. **Parent.** Formalized dyptech capstone + carving methodology + TPPE spec.
 **Scope.** The execution half the distillation doc leaves implicit: the exact path from stored charts/trajectories to acting capability, with code refs, followed by the steward's 12 GB-slice / 75%-fill model-class comparison, computed from measured byte budgets.
 **Standards.** Documentation-standards (labels); research-evidence (measured > reported); C03.3 (no vault file modified).
 

@@ -1,0 +1,5 @@
+next_index=3400
+arcs=100288
+base_vocab=202048
+origin=qwen3.6-35b-a3b-optiq4
+mode=live_mlx_canonical_v2

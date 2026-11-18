@@ -1,0 +1,20 @@
+# Forward recall and active-inference gates
+
+- [ ] Measure cache-hit and memory effects of the versioned radix key under a frozen workload; only identity correctness was tested.
+- [ ] Connect `ForwardRecall` to a real model executor and verify the consumed K/V page against a baseline forward on the same token tape. Current bridge test proves only the read/join boundary.
+- [ ] Verify full-model activation and logit parity on frozen artifacts; Layer-3 component evidence cannot certify the whole model.
+- [ ] Build Rust-native Qwen VL query embedding parity against the stored 1024D ingest recipe, then test held-out brain-library retrieval.
+- [ ] Correct `fep.rs` coefficient units and beta-limit interpretation; verify a physical energy calibration before using joules in a score.
+- [ ] Make `PolicyRanker` honor an explicit resource budget and quality floor; current execution ranking ignores its `landauer_cost`.
+- [ ] Specify a quality-floor and resource-budget controller with measured-cost calibration before promoting AttentionEconomics as policy. The current reward/free-energy equivalence is refuted in `report.tex`.
+- [ ] Independently review the math and the live counterexample; no agent vote was run because spawning agents requires owner approval.
+- [ ] Measure recall candidate scan latency at current corpus size before claiming fast graph traversal; the current read path ranks candidates client-side.
+
+## 2026-11-02 milestone
+- [x] Real Qwen3.6 Layer-3 harness smoke consumed both bridge-fetched K/V heads and matched hidden output and all 248,320 logits bit-exact after isolated SurrealKV restart. Receipt: `results/tensor-kv/tensor-kv-harness-bridge-report.txt`.
+- [ ] Full 40-layer model smoke remains open; the Layer-3 component result must not be promoted to whole-model parity.
+
+## Qdrant milestone
+- [x] Research text retrieval works through Qdrant's scored BM25 index and the Rust backend, preserving 48,422 point IDs and both Qwen vector ranks. Receipt: `results/qdrant/bm25-text-retrieval-2026-11-02.md`.
+- [ ] Audit the 55-point text-index metadata discrepancy (all points have nonempty text by `is_empty` count) before asserting full text-search coverage.
+- [ ] Implement native Qwen VL query embedding and verify parity with the stored 1024D ingest vectors; BM25 does not close this gate.

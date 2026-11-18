@@ -1,0 +1,1 @@
+/Users/stewartbarteau/Desktop/N3/Custom Capabilities/Custom Tools/atoma-harness-commands/harness-status.md

@@ -1,0 +1,35 @@
+QUALITY: novel facts, same question with / without / mismatched recalled atom
+answered with_atom=5/6 without_atom=0/6 wrong_atom=1/6
+judge: planted-answer token sequence must appear in the 6 generated tokens (model-independent)
+fact 0 expected_ids=[220, 3299]
+  with_atom    ok=true generated=[14463, 220, 3299, 6231, 335, 4984]
+  without_atom ok=false generated=[589, 186066, 1425, 842, 46269, 552]
+  wrong_atom   ok=true generated=[14463, 220, 3299, 6231, 335, 4198]
+fact 1 expected_ids=[350, 1737]
+  with_atom    ok=true generated=[589, 350, 1737, 323, 13220, 35837]
+  without_atom ok=false generated=[589, 16735, 812, 12843, 392, 954]
+  wrong_atom   ok=false generated=[589, 143625, 44102, 198, 4198, 38]
+fact 2 expected_ids=[118868]
+  with_atom    ok=false generated=[143625, 1574, 954, 27459, 323, 3193]
+  without_atom ok=false generated=[589, 32835, 310, 3193, 565, 1406]
+  wrong_atom   ok=false generated=[15325, 198, 4198, 38, 2473, 373]
+fact 3 expected_ids=[590, 8783]
+  with_atom    ok=true generated=[590, 8783, 75168, 198, 4198, 38]
+  without_atom ok=false generated=[25279, 530, 13252, 87, 1067, 9152]
+  wrong_atom   ok=false generated=[589, 21633, 11985, 728, 56768, 198]
+fact 4 expected_ids=[98685]
+  with_atom    ok=true generated=[589, 98685, 3364, 323, 97704, 30404]
+  without_atom ok=false generated=[220, 859, 418, 3364, 323, 290]
+  wrong_atom   ok=false generated=[589, 49858, 2509, 33805, 1240, 26552]
+fact 5 expected_ids=[220, 21325]
+  with_atom    ok=true generated=[220, 21325, 198, 4198, 38, 2403]
+  without_atom ok=false generated=[220, 29, 24, 1052, 181620, 323]
+  wrong_atom   ok=false generated=[220, 3299, 368, 19068, 442, 954]
+NOTES (added by operator-side reading of the run)
+- Result: with recalled atom 5/6, without atom 0/6, mismatched atom 1/6 (fact 0 only).
+- Test: `Ares WebSite : App/backend/tests/native_glimmer_kv_live.rs::recalled_atoms_improve_answers_on_novel_facts`.
+  Real MCP recall over a disposable Surreal, digest-verified atom text, native tokenize, exact forward on frozen Muse Glimmer.
+  The facts are invented, so a correct answer has to come from the atom. The judge is a planted-answer token match, independent of the model.
+- Caveats: n=6 and one run; the "violet" fact missed even with its atom; the single mismatched-atom hit on fact 0 shares its first
+  generated token with the with-atom arm and may be a numeric guess, so the control is weak at this n; answers are token IDs with no
+  detokenizer; this shows atom text in context helps (prompt-prepend), not that exact K/V reuse or the speculative loop add quality.

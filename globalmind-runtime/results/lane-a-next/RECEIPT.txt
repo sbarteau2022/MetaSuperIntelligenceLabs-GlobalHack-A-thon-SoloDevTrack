@@ -1,0 +1,63 @@
+Lane A — Immediate Next Action receipt bundle
+Date: 2026-11-02
+Scope executed: inventory eligible model paths, compute digests, first real
+write attempt against a NEW isolated database only. No promotion or backfill
+of the quarantined 2,079 atoms was requested or performed. The live
+hypermind/core database was never targeted.
+
+INVENTORY (actual paths on disk, /Users/stewartbarteau/models)
+Eligible generative rosters (weights + config + tokenizer present):
+  1. /Users/stewartbarteau/models/fused/Qwen3.6-MoE-Combined (19G, 4 shards + MTP)
+  2. /Users/stewartbarteau/models/Muse-Glimmer-q4km-gs128-MLX (4 shards)
+  3. /Users/stewartbarteau/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit-Abliterated (4 shards + MTP)
+Not eligible as distillation teachers (embedding models / adapters / empty):
+  Qwen3-Embedding-8B-4bit-DWQ, Qwen3-VL-Embedding-2B-6bit(-RUN), bge-m3,
+  bge-m3-5617a9f, qwen-moe-fable-adapter-*, "Distillation " (empty).
+
+ROSTERS (typed line manifests, digests computed from disk this session)
+  manifests/qwen36-opus-candidate.manifest      (pre-existing, re-verified)
+  manifests/muse-glimmer-candidate.manifest     (new; 9 artifacts hashed)
+  manifests/nemotron-lightning-candidate.manifest (new; 9 artifacts hashed)
+
+G0 VERIFY (compiled release binary, zero database writes)
+  qwen36-opus-candidate:      input_digest=cf80d582fa1528b356586d71ca221c69af1a935e9e1159f8409e83b3992d4c08 database_writes=0 EXIT=0
+  muse-glimmer-candidate:     input_digest=5ec5680c736f3d4aaee64827e67e8ef037a34d4e5f9ce570f66385a563b6c465 database_writes=0 EXIT=0
+  nemotron-lightning-candidate: input_digest=6d3d5fdf3830c33bb70b70016ad61e46637c3b95fe762b17e3f39c727b89dabf database_writes=0 EXIT=0
+
+ELIGIBILITY DETERMINATION
+  Prior fingerprint receipts exist under DistillationProtocol/
+  (qwen36_35b_moe, muse_glimmer, nemotron_35_lightning) but they are shard
+  fingerprints, not eligibility or independent-judge receipts. No manifest
+  carries eligibility_receipt_digest or judge_receipt_digest. Therefore no
+  inventoried model is legally openable yet; minting such receipts is an
+  owner/judge-lane decision and was not fabricated here.
+
+FIRST REAL WRITE (new isolated database)
+  Instance: disposable SurrealDB 3.3.5, 127.0.0.1:8933, in-memory,
+  namespace gmnext, database gmdev (created this session, stopped after).
+  Schema chain applied with zero errors: 0001, 0003, 0004, 0005, 0006,
+  0007, 0008, 0009, 0010, 0011. Seeded workspace globalmind, geometry h3t2
+  (specified, not certified), one hub, twelve wells (specified).
+  globalmind-contract: "GlobalMind SurrealDB contract verified" EXIT=0.
+  open attempts (each rehashed its full roster first):
+    qwen36-opus-candidate:      REJECTED "has no eligibility receipt" EXIT=1
+    muse-glimmer-candidate:     REJECTED "has no eligibility receipt" EXIT=1
+    nemotron-lightning-candidate: REJECTED "has no eligibility receipt" EXIT=1
+  Post-attempt readback counts (all zero, fail-closed proven):
+    model_source=0 distillation_admission=0 distillation_run=0
+    distillation_run_event=0 atom=0
+
+COMPLETION DEFINITION STATUS (honest, per handoff)
+  - eligible frozen models freshly distilled: NO (blocked on eligibility
+    and independent-judge receipts; extractor lane also outstanding)
+  - teacher-neutral twin-model invariance: NO (spec exists, not run)
+  - atoms/edges/loops/charts/trajectories admitted and replayed: proven at
+    runtime level in Lane A/C sessions on isolated DBs; not from real
+    frozen-weight extraction
+  - Superposition Holding zero-emission deliberation: YES (Lane C receipt)
+  - transformer K/V restart + forward parity: other lane in progress
+  - research harness via fresh plugin boundary: NO
+  - backup/restore and corruption/concurrency gates: NO
+  - no parallel map or legacy CoreLM runtime: holds (nothing new created)
+  - live promotion after owner approval: NOT REQUESTED, NOT DONE
+  Thread goal remains active.

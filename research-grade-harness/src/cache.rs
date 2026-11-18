@@ -1,6 +1,11 @@
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
+fn hash_field(hasher: &mut Sha256, value: &str) {
+    hasher.update((value.len() as u64).to_le_bytes());
+    hasher.update(value.as_bytes());
+}
+
 pub const MASS_SCALE: i64 = 1_000_000;
 pub const DEAD_THRESHOLD: i64 = 10_000; // mass below => reclaim-eligible
 
@@ -45,13 +50,18 @@ impl Cache {
 
     pub fn key(&self, parent: Option<&str>, token: &str) -> String {
         let mut h = Sha256::new();
-        if let Some(p) = parent {
-            h.update(p.as_bytes());
+        h.update(b"rgah-radix-prefix-v2");
+        match parent {
+            Some(p) => {
+                h.update([1]);
+                hash_field(&mut h, p);
+            }
+            None => h.update([0]),
         }
-        h.update(token.as_bytes());
-        h.update(self.model_id.as_bytes());
-        h.update(self.tokenizer_id.as_bytes());
-        h.update(self.quant_id.as_bytes());
+        hash_field(&mut h, token);
+        hash_field(&mut h, &self.model_id);
+        hash_field(&mut h, &self.tokenizer_id);
+        hash_field(&mut h, &self.quant_id);
         hex::encode(h.finalize())
     }
 

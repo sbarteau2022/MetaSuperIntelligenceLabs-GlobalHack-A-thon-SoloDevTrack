@@ -56,4 +56,4 @@ Digest `6d3a100a0746eb8b` (`map_proof_results.json`, in-repo).
    mass-coefficient sweep → p@k* at scale is the damage metric.
 2. Rust the hot path: embed via native_mlx → score via vault `score()` →
    gate via madmind `Budget` → receipts. Python proves, Rust ships.
-3. RUN-03 (TPE τ-refinement + content suite) consumes the calibrated gate.
+3. RUN-03 (TPPE τ-refinement + content suite) consumes the calibrated gate.

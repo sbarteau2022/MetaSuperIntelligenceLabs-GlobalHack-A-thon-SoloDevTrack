@@ -1,0 +1,13 @@
+{
+  "name": "arch-decision-gate",
+  "description": "Validate an architecture decision: requirements + constraints, >=2 options plus do-nothing, numeric comparison, one-sentence decision, risky slice proven first.",
+  "parameters": {
+    "requirements_set": { "type": "boolean", "description": "true: what it must do + numbers + must-nevers" },
+    "options_count": { "type": "number", "description": ">= 2 real options (+do-nothing)" },
+    "decided": { "type": "boolean", "description": "true: one-sentence decision recorded" },
+    "risky_sliced": { "type": "boolean", "description": "true: riskiest assumption sliced and proven first" },
+    "blockers": { "type": "number", "description": "review blocker count (do-not-merge if > 0)" },
+    "should_fix": { "type": "number", "description": "review should-fix count" }
+  },
+  "required": ["requirements_set", "options_count", "decided", "risky_sliced"]
+}

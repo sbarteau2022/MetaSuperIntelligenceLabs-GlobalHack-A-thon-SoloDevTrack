@@ -1,0 +1,15 @@
+{
+  "name": "checkpoint-status",
+  "description": "Inspect or append a milestone to the Atoma Brain anti-lobotomy continuity checkpoint (/tmp/atoma_brain_latest_checkpoint.json).",
+  "parameters": {
+    "action": {
+      "type": "string",
+      "description": "'status' or 'save_note'"
+    },
+    "note": {
+      "type": "string",
+      "description": "Milestone note to record when action is save_note"
+    }
+  },
+  "required": ["action"]
+}

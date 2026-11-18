@@ -1,0 +1,20 @@
+Queue 1.2–1.4 candidate integration redo — 2026-11-02
+Status: isolated integration PASS; TPPE quality decision OPEN; full-model equivalence NOT PROVEN.
+
+Scope: real frozen Qwen weights executed in the custom single-Layer-3 path plus LM head, three-token GMTT tape. Current sequential TPPE linear_log_v1 candidate and source-bound tppe-layer3-candidate-v2 identity. No claim of complete Qwen forward or model-neutral knowledge. Quarantined hypermind/core was never contacted.
+
+Candidate contract SHA-256: 8b50715ac84650d9d1333757da82d382537591d74b4a0c016fbf2d79768ae456.
+Negative identity control: the same native trace command with the old
+`qwen36-opus-candidate.manifest` exited 1 with `manifest TPPE identity does
+not match Layer-3 candidate runtime`; no output trace file was created.
+Run/input digest: a7a0e22f00e9a89fb104ea4e8dde4c481c734890088e133d484248bea5360a94.
+Trace: 7 native envelopes, 7,680 bytes, control/observer logit digest 813b043517d356d7008e941f7775a8f7cbc25ebeeca3b5ed7d9b550c26859f60, max logit difference 0, database writes 0.
+Extraction: 11 candidates (rank0=4, rank1=4, rank2=1, rank8=2), database writes 0.
+Judge: 10 passed, 1 rejected; judge receipt fd630adeea957986984710846db52e0ec375afaba52bf5d1df20d777d8a15005; eligibility receipt 62918eda9189d061b16d5c70a35306bad652ea2a2e1213f30209a5159ad3b2af; database writes 0.
+Replay: 4 atoms, 4 steps, 1 loop, 1 chart; trajectory digest c78a1b195102cfeb14be0838bc6b0040bd0ed572834ba36e699f3019222c09c8; replay receipt 6616a915dc74271ac9b76d394a454d3ae5a57825430960431d8bbccba14f1db7; database writes 0.
+Isolated SurrealKV: 127.0.0.1:58139, namespace gmdistill, database q1_2_candidate_v2, schemas 0001 and 0003–0011 applied with zero SQL errors. Opened receipt 27bb931552745cfae2b6d99cf7b95a79c551a66653d7db39e6ec7dc695786974. One atomic bundle admitted 11 packets, 4 atoms, 4 trajectory steps, 1 loop, 1 chart.
+After a SurrealDB process restart, explicit manifest/walk audit returned balance=PASS: 11/11 packets, 10/10 admitted, 4/4 atoms, 4/4 edges, 1/1 loop, 1/1 chart, 4 run events. Audit report: globalmind-runtime/results/distillation/q1_2_candidate_v2-audit-report.txt. Test server stopped; file-backed isolated database remains offline for inspection. Live port 8000 unchanged.
+
+Artifacts: globalmind-runtime/results/distillation/q1_2_candidate_v2.{gmtrace,gmcandidate,gmverdict,gmwalk}; candidate and admitted manifests are under globalmind-runtime/manifests/. No files staged, committed, or pushed by this redo.
+
+Limits: source-bound candidate identity and observer parity prove a corrected integration path. They do not establish held-out task quality, radial-law superiority, complete-model fidelity, TIT, energy savings, or cross-model distillation. Q1.5 tensor K/V qualification has not been rerun under this new candidate identity.

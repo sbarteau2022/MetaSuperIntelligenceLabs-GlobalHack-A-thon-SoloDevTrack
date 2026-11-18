@@ -1,0 +1,167 @@
+# Minimal API contract — template.
+# Status: PROPOSED. Date: 2026-10-30.
+# Conformance: RULES.md rules 36-42 (edge validation, envelope, idempotency,
+# pagination, /v1 versioning); middleware/SKILL.md section 4 pipeline.
+openapi: 3.1.0
+info:
+  title: Template API
+  version: 1.0.0
+servers:
+  - url: https://api.example.com
+paths:
+  /v1/health:
+    get:
+      summary: Liveness probe
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                properties:
+                  status:
+                    type: string
+                    const: "ok"
+  /v1/widgets:
+    get:
+      summary: List widgets (cursor-paginated)
+      operationId: listWidgets
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from the previous page; omit for the first page.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Page size.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: A page of widgets
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Widget'
+                  nextCursor:
+                    type:
+                      - string
+                      - 'null'
+                    description: Pass as cursor for the next page; null means end.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      summary: Create a widget (idempotent)
+      operationId: createWidget
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Client-generated key; retries with the same key return the original result.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WidgetInput'
+      responses:
+        '201':
+          description: Widget created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Widget'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+components:
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: BAD_REQUEST
+        message:
+          type: string
+          example: Request failed.
+        requestId:
+          type: string
+          format: uuid
+        details:
+          type: object
+          additionalProperties: true
+    Widget:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+    WidgetInput:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+      additionalProperties: false
+  responses:
+    BadRequest:
+      description: Input failed edge validation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    UnsupportedMediaType:
+      description: Only application/json request bodies are accepted
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'

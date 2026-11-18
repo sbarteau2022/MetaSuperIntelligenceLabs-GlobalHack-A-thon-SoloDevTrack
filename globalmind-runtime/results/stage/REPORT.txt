@@ -1,0 +1,47 @@
+Stage pipeline trace -> extract -> judge -> open — end-of-stage report
+Date: 2026-11-02
+Hardware: Apple M5 Pro, arm64, macOS 27.0.1; SurrealDB 3.3.5
+Binary: src/bin/globalmind_stage.rs (fresh layer-3 forward slice engine;
+slice offsets are frozen-artifact facts verified by header-length asserts)
+Model: Qwen3.6-35B-A3B-Claude-4.7-Opus-Reasoning-Distilled-MLX-oQ4-MTP
+roster manifests/qwen36-opus-candidate.manifest
+model_roster_digest=2341d9dfe7723e73e6f145b8a71446b4e2476a4b2a6f041c0af1380629a70cba
+input_digest=cf80d582fa1528b356586d71ca221c69af1a935e9e1159f8409e83b3992d4c08
+
+STAGE 1 trace (dual run on immutable token tape [9707,25,315,279,1124,13])
+token_tape_digest=9e0abdca8f304a7a542381b760a63d0bba5c631b894bb12474d460bb309b8a2c
+control vs observed: max_logit_drift=0, state_equal=true
+observer_nonperturbation_receipt=e20580e00e9c44ae1522bfc3de86a0e263e8c9636d07fcbbf2404081bf658ca7
+logits_digest=ffbee63d6ced3aa3c6e21e70a9d769921ace4d85237c1beb7a611f4dba4cd392
+top1_token=12949; trace_envelopes=7; trace_file_bytes=1001027; wall_ms=41555
+Preregistered tolerance: exact f32 equality (LOGIT_TOLERANCE=0.0), named
+before the run, not tuned after. Scope honesty: the forward is the real
+layer-3 full-attention slice + final norm + lm_head over frozen weights,
+the same slice the tensor-K/V lane qualifies; it is not a 40-layer run.
+
+STAGE 2 extract (both TPPE radial candidates over the same trace)
+linear_log_v1: final_u=0.000685 poincare=0.000342 margin=0.999658 rev=0.07 Lorentz OK
+log_v1:        final_u=0.000677 poincare=0.000338 margin=0.999662 rev=0.07 Lorentz OK
+candidates_emitted=13 (rank0=7, rank1=6, rank2=0, rank8=0)
+No loop closed on this 6-token tape and no weight trace was emitted, so
+rank-2/rank-8 counts are honestly zero, not placeholder-filled.
+File: results/stage/candidates.txt
+
+STAGE 3 judge (separately versioned frozen judge, policy digest
+5c49a9532a3f99264831644ba698b723f8f29da647806e9dea1b6369ee4bfb70)
+judged_pass=13 judged_reject=0; every verdict persisted with receipt and
+novelty digests. File: results/stage/judge-receipts.txt
+
+STAGE 4 open (only after real receipts; candidate manifest untouched)
+admitted_manifest=manifests/run_cf80d582fa1528b356586d71ca221c69af1a935e9e1159f8409e83b3992d4c08.admitted.manifest
+eligibility_receipt_digest=99ee1c6078861545ce9ae702988ef9cd125a3abf5869e2738d4959bbd23d5e14
+judge_receipt_digest=18d17ea10da8e7f3dceac3e240d8636239805fd90e39f2efcab4132bc5be73ab
+opened_receipt=71c1ffa9e149ce0669513966b387154421864ccbfa6b75bbe4403302ff128005
+Isolated DB (127.0.0.1:8934, ns gmstage, in-memory, stopped after):
+model_source=1 distillation_admission=1 distillation_run=1
+distillation_run_event=1. The original candidate manifest was not edited.
+
+UNTOUCHED GATES
+replay and crystallize of these 13 candidates through the opened run;
+audit stage; twin-model invariance on real traces; 40-layer trace;
+backup/restore and corruption/concurrency; live promotion (not requested).

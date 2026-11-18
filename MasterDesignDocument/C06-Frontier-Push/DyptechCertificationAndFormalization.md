@@ -147,9 +147,9 @@ The steward's next assignment — RoPE's hyperbolic replacement, the **TorodialP
 
 1. **Carrier.** Keep `TorPhaseEncoder::evolve` (Kuramoto 2:1 + amplitude channel) as the iteration kernel — it already spirals (radius monotone in rotations, `radius_for_rotations` + amplitude term; test asserts expansion every turn).
 2. **Spiral-out law (frozen shape).** `r(w) = r_min + span·(0.35w + 0.65·ln(1+w))`: linear term dominates early (escape), log term late (bounded growth, no blowup) — spiral, not corkscrew (corkscrew = fixed radius; ruled out by the monotone-expansion test). Constants are the current implementation values; retuning = preregistered amendment.
-3. **What changes vs RoPE.** RoPE: fixed radii, position = angle only. TPE: position = (angle, radius, amplitude) — radius encodes depth-of-processing (rotations), amplitude encodes drive energy. Attention scores consume `(θ, r, amp)` triples, not angles alone (cf. M-4 `radial_pair_toroidal_coherence` row to be added).
+3. **What changes vs RoPE.** RoPE: fixed radii, position = angle only. TPPE: position = (angle, radius, amplitude) — radius encodes depth-of-processing (rotations), amplitude encodes drive energy. Attention scores consume `(θ, r, amp)` triples, not angles alone (cf. M-4 `radial_pair_toroidal_coherence` row to be added).
 4. **Falsifier.** If angle-only ablation matches triple ablation on the fixed corpus, the extra channels are ornament — ship angle-only (C13.1).
-5. Full TPE spec is the NEXT document on steward's call — this section stages its interface, not its implementation.
+5. Full TPPE spec is the NEXT document on steward's call — this section stages its interface, not its implementation.
 
 ---
 

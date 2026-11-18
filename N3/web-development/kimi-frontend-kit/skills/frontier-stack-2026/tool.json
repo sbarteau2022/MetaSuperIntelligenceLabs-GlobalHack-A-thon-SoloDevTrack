@@ -1,0 +1,12 @@
+{
+  "name": "frontier-stack-gate",
+  "description": "Validate the 2026 frontier stack: React 19 + Tailwind v4 + tsgo + motion/react import source; lenis restricted to marketing surfaces.",
+  "parameters": {
+    "react19": { "type": "boolean", "description": "true: React 19 patterns" },
+    "tailwind_v4": { "type": "boolean", "description": "true: Tailwind v4 CSS-first @theme" },
+    "tsgo": { "type": "boolean", "description": "true: tsgo --noEmit clean" },
+    "motion_src": { "type": "string", "description": "'motion-react'" },
+    "lenis_surface": { "type": "string", "description": "'marketing' if lenis smooth scroll is used" }
+  },
+  "required": ["react19", "tailwind_v4", "tsgo", "motion_src"]
+}

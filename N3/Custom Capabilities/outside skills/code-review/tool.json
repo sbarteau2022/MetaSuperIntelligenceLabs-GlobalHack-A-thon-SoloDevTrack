@@ -1,0 +1,11 @@
+{
+  "name": "review-gate",
+  "description": "Validate a code review: traced to spec, edge cases checked, blockers reproduced, verdict one of approve/approve-with-changes/do-not-merge.",
+  "parameters": {
+    "spec_traced": { "type": "boolean", "description": "true: each rule traced to lines, each branch to a rule" },
+    "edges_done": { "type": "boolean", "description": "true: empty/one/max/None/threshold edges checked" },
+    "repro_present": { "type": "boolean", "description": "true: blockers carry runnable repro" },
+    "verdict": { "type": "string", "description": "'approve'|'approve-with-changes'|'do-not-merge'" }
+  },
+  "required": ["spec_traced", "edges_done", "repro_present", "verdict"]
+}

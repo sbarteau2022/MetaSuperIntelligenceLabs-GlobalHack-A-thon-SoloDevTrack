@@ -1,0 +1,9 @@
+contract = globalmind-distillation-ingress-v1
+scope = roster_rehash_and_append_only_ingress
+candidate_extraction = not_implemented
+teacher_neutral_projection = not_implemented
+independent_judge = required_before_open
+trajectory_replay = not_implemented
+database = isolated_only
+quarantined_core = forbidden
+

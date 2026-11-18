@@ -1,0 +1,14 @@
+[package]
+name = "prose_law_compiled"
+version = "0.1.0"
+edition = "2021"
+description = "Compiled prose-law predicates (Agent C4 build 2026-10-31): MUST->Deny+veto, SHOULD->Warn+record, MAY->Allow"
+license = "MIT"
+
+[lib]
+name = "prose_law_compiled"
+path = "src/lib.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"

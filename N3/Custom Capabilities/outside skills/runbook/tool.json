@@ -1,0 +1,13 @@
+{
+  "name": "runbook-packet-gate",
+  "description": "Validate an Agentic Runbook step packet: judge + pass condition stated before execution, reversible, budgeted, named stop on failure.",
+  "parameters": {
+    "judge_set": { "type": "boolean", "description": "true: packet names its deterministic judge" },
+    "pass_set": { "type": "boolean", "description": "true: pass condition stated before execution" },
+    "reversible": { "type": "boolean", "description": "true: rollback filled" },
+    "budget_set": { "type": "boolean", "description": "true: token/time/loop budget declared" },
+    "stop": { "type": "string", "description": "named stop on failure: unparseable_input|spin_detected|cap_exhausted|judge_unavailable|scope_boundary|irreversible_needs_commander" },
+    "repair_passes": { "type": "number", "description": "Loop-C passes for this packet, max 5" }
+  },
+  "required": ["judge_set", "pass_set", "reversible", "budget_set"]
+}

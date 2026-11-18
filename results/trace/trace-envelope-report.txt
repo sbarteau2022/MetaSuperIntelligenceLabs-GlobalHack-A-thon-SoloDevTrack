@@ -1,0 +1,67 @@
+Lane 1 — Native trace envelope: end-of-lane report
+Date: 2026-11-02 (UTC). Owner: lane-1 agent (this session).
+Scope: globalmind-runtime/src/trace/ only, plus this report and README rows.
+No other lane's files were edited.
+
+1. What was done
+- Verified the existing fresh binary trace envelope (magic "GMTR", version 1,
+  fixed 219-byte header, native payload bytes, SHA-256 payload digest,
+  observer-nonperturbation receipt digest, teacher-neutral content digest).
+- Hardened decode fail-closed behavior:
+  a) nonzero shape padding slots now reject (canonical framing);
+  b) u64 payload length converts via checked try_from (no silent truncation).
+- Added 4 adversarial unit tests: padding rejection, concatenated-frame walk
+  (decode strict vs decode_frame consumed-byte exactness), 3 kinds x 5 dtypes
+  roundtrip matrix, shape/payload bound enforcement (8-dim ok, 0/9-dim, zero
+  dim, empty payload rejected).
+
+2. Exact digests (SHA-256, repo-relative paths)
+- globalmind-runtime/src/trace/mod.rs:     d30dd3e1eb4902e1f450dba7280d0073069fba0df069e947822986e8c6015397
+- globalmind-runtime/src/trace/codec.rs:   29f521f6949abf1586b376a49213cd7df168cb453c08972c0c754cd967148b1c
+- globalmind-runtime/src/identity.rs:      08864d85442ad4c9aa373649fbbec18a27181e06bfb74e21af92e5f75f7093cb
+- No model, config, or tokenizer artifacts were loaded, so no model digests
+  exist for this lane. No SurrealDB contact was made (no namespace/database).
+
+3. Runtime / hardware
+- rustc 1.99.0 (b940084d7 2026-09-28) (Homebrew)
+- cargo 1.99.0 (5f94df478 2026-08-27) (Homebrew)
+- Apple M5 Pro, arm64, macOS 27.0.1
+- Latency/memory/power: not measured; codec-only unit scope, no bakeoff claim.
+
+4. Commands (run in globalmind-runtime/)
+- cargo fmt --check                                    -> PASS
+- cargo check --lib                                    -> PASS
+- cargo clippy --lib -- -D warnings                    -> PASS
+- cargo test --lib                                     -> 24 passed, 0 failed
+- cargo test --lib trace                               -> 9 trace tests passed,
+  0 failed (filter also matched 2 lane-3 extract tests, both passed)
+
+5. Inputs / counts
+- Inputs: hand-constructed in-memory envelopes only (no real model trace yet;
+  real-trace ingestion belongs to lanes 3/5/6 with a live forward pass).
+- Emitted: 9/9 trace unit tests pass; 15 kind/dtype roundtrip combinations pass.
+- Admitted: well-formed v1 frames with matching payload digest and shape/dtype.
+- Rejected (fail-closed, all covered by tests): bad magic, wrong version,
+  wrong header length, truncation (header or payload), tampered payload,
+  tampered payload digest, tampered shape, nonzero padding, empty/zero/9-dim
+  shape, empty payload, unknown kind/dtype codes, trailing bytes under decode.
+
+6. Failures and known limits
+- No lane-1 failures remain. One self-caught test bug during development
+  (F16 payload sized for F32) was fixed before this report.
+- OBSERVED, NOT MINE: globalmind-runtime/tests/surreal_integration.rs (lane 5)
+  appeared mid-session from a parallel lane and currently has Rust syntax
+  errors (mangled string escapes near lines 586/592). It breaks crate-wide
+  `cargo check --tests` / `cargo clippy --all-targets`. I did not touch it
+  per file-ownership rules; lane 5 must fix. Lane-1 gates above are lib-scoped
+  and fully green.
+- The observer-nonperturbation receipt is a bound digest, not a cryptographic
+  proof by itself; its evidentiary content is produced by the tap owner and
+  verified by lanes 3/5 against real forward outputs.
+
+7. Untouched gates (explicitly NOT claimed)
+- No real model trace has been ingested; no G1 forward parity exists for traces.
+- No teacher-neutral twin-model invariance receipt (lane 3 + real models).
+- No SurrealDB persistence/restart proof (lane 5).
+- No TPPE bakeoff or radial-law selection (lane 2).
+- Compiler/unit success here is component evidence only, not certification.

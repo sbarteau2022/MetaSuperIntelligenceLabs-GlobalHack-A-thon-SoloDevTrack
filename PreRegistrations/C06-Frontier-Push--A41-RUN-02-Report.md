@@ -4,7 +4,7 @@
 **Manifest.** `A41-RUN-02-Manifest.md` (frozen; τ grid {1,4,16,64}, Ω {0.9, 0.5}, lengths 512–32768, cells 25/10, seed 411 + τ/Ω salts).
 **Status.** VERIFIED silicon (this machine, this run) + PROPOSED readings.
 **Digest.** `93119e8f7801179b`. **Wall.** 211 s. **Voids.** 0 (confound control clean).
-**Scripts.** `a41_task_run.py` (RECONSTRUCTED 2026-10-28 after RUN-01 script loss — only RUN-01 JSONs survived; radius law inlined from ConceptFormalization P1; `--taus/--omegas` delta per manifest §3) + `tpe_fep_budget.py` (unchanged).
+**Scripts.** `a41_task_run.py` (RECONSTRUCTED 2026-10-28 after RUN-01 script loss — only RUN-01 JSONs survived; radius law inlined from ConceptFormalization P1; `--taus/--omegas` delta per manifest §3) + `tppe_fep_budget.py` (unchanged).
 **Hardware/settings.** Apple Silicon, Python 3.x, numpy f64 reference (NOT Q32_31 — same boundary as RUN-01).
 
 ---

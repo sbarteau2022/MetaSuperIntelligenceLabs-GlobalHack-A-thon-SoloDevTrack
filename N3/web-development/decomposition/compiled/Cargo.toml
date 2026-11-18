@@ -1,0 +1,12 @@
+[package]
+name = "b2_decomp_prereg"
+version = "0.1.0"
+edition = "2021"
+description = "B2 Wave 3-FINAL: typed decomposition DAG + sealed preregistration (disjoint from B1 swarm DAG)"
+
+[lib]
+name = "b2_decomp_prereg"
+path = "lib.rs"
+
+[dependencies]
+sha2 = "=0.10.9"
