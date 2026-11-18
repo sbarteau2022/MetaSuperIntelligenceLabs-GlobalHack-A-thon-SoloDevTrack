@@ -1,0 +1,40 @@
+{
+  "p_dspark": 0.47766666666666663,
+  "dspark_tps": 97.49779962618256,
+  "rows": [
+    {
+      "prompt": 0,
+      "completion_tokens": 128,
+      "wall_s": 1.731660041026771,
+      "tps": 73.91751092443275,
+      "engine_tps": 74.3,
+      "accept_len": 2.415,
+      "cap": 4,
+      "p": 0.35375,
+      "mode": "dspark"
+    },
+    {
+      "prompt": 1,
+      "completion_tokens": 128,
+      "wall_s": 1.1818755420390517,
+      "tps": 108.30243578707598,
+      "engine_tps": 108.5,
+      "accept_len": 3.122,
+      "cap": 4,
+      "p": 0.5305,
+      "mode": "dspark"
+    },
+    {
+      "prompt": 2,
+      "completion_tokens": 131,
+      "wall_s": 1.1879559170920402,
+      "tps": 110.27345216703897,
+      "engine_tps": 110.4,
+      "accept_len": 3.195,
+      "cap": 4,
+      "p": 0.54875,
+      "mode": "dspark"
+    }
+  ],
+  "note": "p = (accept_len-1)/cap from engine metrics; tps = completion tokens / wall time"
+}
